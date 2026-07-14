@@ -1,0 +1,234 @@
+<?php
+
+namespace App\Services\Savings;
+
+use App\Exceptions\Savings\InsufficientBalanceException;
+use App\Models\ChartOfAccount;
+use App\Models\Member;
+use App\Models\SavingsAccount;
+use App\Models\SavingsProduct;
+use App\Models\SavingsTransaction;
+use App\Services\Accounting\JournalEngine;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Setor/tarik simpanan lewat Teller (PRD §8, Task 1.12). The only writer of
+ * `savings_accounts.balance` and `savings_transactions` — every call posts
+ * through JournalEngine in the same DB transaction so the cached `balance`
+ * and the ledger can never drift apart.
+ */
+class SavingsService
+{
+    /** Default cash account code used for over-the-counter Teller cash transactions. */
+    private const DEFAULT_CASH_ACCOUNT_CODE = '1101';
+
+    public function __construct(private readonly JournalEngine $journalEngine) {}
+
+    public function openAccount(
+        Member $member,
+        SavingsProduct $product,
+        int $branchId,
+        float $initialDeposit,
+        int $createdBy,
+    ): SavingsAccount {
+        return DB::transaction(function () use ($member, $product, $branchId, $initialDeposit, $createdBy) {
+            $account = SavingsAccount::query()->create([
+                'branch_id' => $branchId,
+                'member_id' => $member->id,
+                'savings_product_id' => $product->id,
+                'account_number' => $this->generateAccountNumber($product),
+                'balance' => 0,
+                'status' => 'aktif',
+                'opened_at' => now()->toDateString(),
+            ]);
+
+            if ($initialDeposit > 0) {
+                $this->deposit($account, $initialDeposit, $createdBy, 'Setoran awal pembukaan rekening');
+            }
+
+            return $account->fresh();
+        });
+    }
+
+    public function deposit(
+        SavingsAccount $account,
+        float $amount,
+        int $createdBy,
+        ?string $description = null,
+        ?string $idempotencyKey = null,
+    ): SavingsTransaction {
+        return DB::transaction(function () use ($account, $amount, $createdBy, $description, $idempotencyKey) {
+            $product = $account->savingsProduct;
+            $newBalance = bcadd((string) $account->balance, (string) $amount, 2);
+
+            $entry = $this->journalEngine->post([
+                'branch_id' => $account->branch_id,
+                'entry_date' => now()->toDateString(),
+                'description' => $description ?? "Setoran simpanan {$account->account_number}",
+                'created_by' => $createdBy,
+                'source' => $account,
+                'idempotency_key' => $idempotencyKey,
+                'lines' => [
+                    ['chart_of_account_id' => $this->cashAccount()->id, 'debit' => $amount, 'credit' => 0],
+                    ['chart_of_account_id' => $product->coa_liability_account_id, 'debit' => 0, 'credit' => $amount],
+                ],
+            ]);
+
+            $account->update(['balance' => $newBalance]);
+
+            return SavingsTransaction::query()->create([
+                'branch_id' => $account->branch_id,
+                'savings_account_id' => $account->id,
+                'type' => 'setor',
+                'amount' => $amount,
+                'balance_after' => $newBalance,
+                'journal_entry_id' => $entry->id,
+                'created_by' => $createdBy,
+                'description' => $description,
+            ]);
+        });
+    }
+
+    public function withdraw(
+        SavingsAccount $account,
+        float $amount,
+        int $createdBy,
+        ?string $description = null,
+        ?string $idempotencyKey = null,
+    ): SavingsTransaction {
+        if (bccomp((string) $account->balance, (string) $amount, 2) < 0) {
+            throw new InsufficientBalanceException($account->account_number, (string) $account->balance, (string) $amount);
+        }
+
+        return DB::transaction(function () use ($account, $amount, $createdBy, $description, $idempotencyKey) {
+            $product = $account->savingsProduct;
+            $newBalance = bcsub((string) $account->balance, (string) $amount, 2);
+
+            $entry = $this->journalEngine->post([
+                'branch_id' => $account->branch_id,
+                'entry_date' => now()->toDateString(),
+                'description' => $description ?? "Penarikan simpanan {$account->account_number}",
+                'created_by' => $createdBy,
+                'source' => $account,
+                'idempotency_key' => $idempotencyKey,
+                'lines' => [
+                    ['chart_of_account_id' => $product->coa_liability_account_id, 'debit' => $amount, 'credit' => 0],
+                    ['chart_of_account_id' => $this->cashAccount()->id, 'debit' => 0, 'credit' => $amount],
+                ],
+            ]);
+
+            $account->update(['balance' => $newBalance]);
+
+            return SavingsTransaction::query()->create([
+                'branch_id' => $account->branch_id,
+                'savings_account_id' => $account->id,
+                'type' => 'tarik',
+                'amount' => $amount,
+                'balance_after' => $newBalance,
+                'journal_entry_id' => $entry->id,
+                'created_by' => $createdBy,
+                'description' => $description,
+            ]);
+        });
+    }
+
+    /**
+     * Reduces the cached balance for a non-cash debit journaled by the
+     * CALLER (e.g. POS "potong saldo simpanan" — the money never leaves as
+     * cash, it becomes sales revenue in the same combined journal entry,
+     * so withdraw()'s own Dr Kewajiban/Cr Kas journal would be wrong here).
+     * Still the only place `balance`/`savings_transactions` are written,
+     * keeping the invariant on SavingsAccount intact — the caller must
+     * post its own journal FIRST, in the same DB transaction, and pass its id.
+     */
+    public function debitBalanceForNonCashTransaction(
+        SavingsAccount $account,
+        string $amount,
+        int $journalEntryId,
+        int $createdBy,
+        ?string $description = null,
+    ): SavingsTransaction {
+        if (bccomp((string) $account->balance, $amount, 2) < 0) {
+            throw new InsufficientBalanceException($account->account_number, (string) $account->balance, $amount);
+        }
+
+        $newBalance = bcsub((string) $account->balance, $amount, 2);
+        $account->update(['balance' => $newBalance]);
+
+        return SavingsTransaction::query()->create([
+            'branch_id' => $account->branch_id,
+            'savings_account_id' => $account->id,
+            'type' => 'tarik',
+            'amount' => $amount,
+            'balance_after' => $newBalance,
+            'journal_entry_id' => $journalEntryId,
+            'created_by' => $createdBy,
+            'description' => $description,
+        ]);
+    }
+
+    /**
+     * Mirror of debitBalanceForNonCashTransaction() — restores balance for
+     * a Retur Penjualan against a "potong saldo simpanan" sale. Crediting
+     * never fails a sufficiency check.
+     */
+    public function creditBalanceForNonCashTransaction(
+        SavingsAccount $account,
+        string $amount,
+        int $journalEntryId,
+        int $createdBy,
+        ?string $description = null,
+    ): SavingsTransaction {
+        $newBalance = bcadd((string) $account->balance, $amount, 2);
+        $account->update(['balance' => $newBalance]);
+
+        return SavingsTransaction::query()->create([
+            'branch_id' => $account->branch_id,
+            'savings_account_id' => $account->id,
+            'type' => 'setor',
+            'amount' => $amount,
+            'balance_after' => $newBalance,
+            'journal_entry_id' => $journalEntryId,
+            'created_by' => $createdBy,
+            'description' => $description,
+        ]);
+    }
+
+    /**
+     * Preview journal lines without persisting anything — used to render
+     * the Journal Preview panel on the Teller form (DESIGN §Transaction Panel)
+     * before the Teller confirms the transaction.
+     *
+     * @return array<int, array{account_code: string, account_name: string, debit: float, credit: float}>
+     */
+    public function previewLines(SavingsAccount $account, string $type, float $amount): array
+    {
+        $product = $account->savingsProduct;
+        $cash = $this->cashAccount();
+        $liability = $product->liabilityAccount;
+
+        return $type === 'setor'
+            ? [
+                ['account_code' => $cash->code, 'account_name' => $cash->name, 'debit' => $amount, 'credit' => 0],
+                ['account_code' => $liability->code, 'account_name' => $liability->name, 'debit' => 0, 'credit' => $amount],
+            ]
+            : [
+                ['account_code' => $liability->code, 'account_name' => $liability->name, 'debit' => $amount, 'credit' => 0],
+                ['account_code' => $cash->code, 'account_name' => $cash->name, 'debit' => 0, 'credit' => $amount],
+            ];
+    }
+
+    private function cashAccount(): ChartOfAccount
+    {
+        return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
+    }
+
+    private function generateAccountNumber(SavingsProduct $product): string
+    {
+        do {
+            $candidate = strtoupper($product->code).'-'.now()->format('ymd').'-'.str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+        } while (SavingsAccount::query()->where('account_number', $candidate)->exists());
+
+        return $candidate;
+    }
+}

@@ -1,0 +1,94 @@
+code,name,type,group,normal_balance,is_postable,parent_code,statement,notes
+1000,ASET,ASET,,DEBIT,FALSE,,NERACA,Header
+1100,Aset Lancar,ASET,Aset Lancar,DEBIT,FALSE,1000,NERACA,Header
+1101,Kas,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,Kas di tangan / kas cabang (termasuk kas Teller)
+1102,Kas Kecil,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,Petty cash
+1110,Bank,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,Rekening bank koperasi
+1120,Piutang Pinjaman Anggota,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,Pokok pinjaman beredar
+1121,Penyisihan Penurunan Nilai Piutang,ASET,Aset Lancar,KREDIT,TRUE,1100,NERACA,Kontra-aset (cadangan kerugian piutang)
+1130,Piutang Bunga/Jasa Pinjaman,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,Bunga/jasa yang masih harus diterima
+1131,Piutang Iuran UPF,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,v2 - Piutang iuran kios/tenant (kebersihan/keamanan/listrik/air/dst) - default mapping coa_account_receivable_id Master Jenis Iuran
+1132,Rekening Antar Kantor (RAK),ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,v2 - Hanya dipakai bila transaksi lintas cabang diaktifkan (PRD Sec 6). Saldo per cabang bisa debit/kredit; total seluruh cabang harus nol dan dieliminasi saat laporan konsolidasi (RPT-05)
+1133,Piutang Denda Pinjaman,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,v2 - Denda keterlambatan angsuran yang masih harus diterima - default mapping coa_account_penalty_receivable_id Master Produk Pinjaman
+1140,Persediaan Barang Dagang,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,Unit Toko/Ritel - dikelola perpetual via Stock Ledger Engine (average cost)
+1150,Biaya Dibayar Dimuka,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,Sewa/asuransi dibayar dimuka
+1160,Perlengkapan,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,ATK/supplies
+1200,Aset Tidak Lancar,ASET,Aset Tidak Lancar,DEBIT,FALSE,1000,NERACA,Header
+1210,Tanah,ASET,Aset Tidak Lancar,DEBIT,TRUE,1200,NERACA,
+1220,Bangunan,ASET,Aset Tidak Lancar,DEBIT,TRUE,1200,NERACA,
+1221,Akumulasi Penyusutan Bangunan,ASET,Aset Tidak Lancar,KREDIT,TRUE,1200,NERACA,Kontra-aset
+1230,Peralatan & Inventaris,ASET,Aset Tidak Lancar,DEBIT,TRUE,1200,NERACA,
+1231,Akumulasi Penyusutan Peralatan,ASET,Aset Tidak Lancar,KREDIT,TRUE,1200,NERACA,Kontra-aset
+1240,Kendaraan,ASET,Aset Tidak Lancar,DEBIT,TRUE,1200,NERACA,
+1241,Akumulasi Penyusutan Kendaraan,ASET,Aset Tidak Lancar,KREDIT,TRUE,1200,NERACA,Kontra-aset
+1250,Aset Tetap Lainnya,ASET,Aset Tidak Lancar,DEBIT,TRUE,1200,NERACA,v2 - Catch-all untuk Kategori Aktiva Tetap dinamis baru (Master Kategori Aktiva Tetap) yang belum punya akun khusus
+1251,Akumulasi Penyusutan Aset Tetap Lainnya,ASET,Aset Tidak Lancar,KREDIT,TRUE,1200,NERACA,v2 - Kontra-aset pasangan 1250
+2000,LIABILITAS,LIABILITAS,,KREDIT,FALSE,,NERACA,Header
+2100,Liabilitas Jangka Pendek,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,FALSE,2000,NERACA,Header
+2101,Simpanan Sukarela Anggota,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,Dapat ditarik sewaktu-waktu -> kewajiban
+2102,Simpanan Berjangka (< 12 bln),LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,Deposito anggota jatuh tempo <12 bln
+2110,Utang Usaha,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,v2 - Utang ke Supplier (Master Supplier) untuk pembelian barang dagang MAUPUN pembelian aktiva tetap - default mapping coa_account_payable_id
+2120,Utang Bunga Simpanan,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,Bunga simpanan yang masih harus dibayar
+2130,Beban Masih Harus Dibayar,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,Accrued expenses
+2140,Utang Pajak,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,
+2150,Dana Pembagian SHU,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,Bagian SHU anggota yang belum dibayarkan
+2160,Dana Pendidikan,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,Dana-dana dari alokasi SHU
+2161,Dana Sosial,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,Dana-dana dari alokasi SHU
+2162,Dana Pengurus & Pengawas,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,Dana-dana dari alokasi SHU
+2163,Dana Pembangunan Daerah Kerja,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,Dana-dana dari alokasi SHU
+2200,Liabilitas Jangka Panjang,LIABILITAS,Liabilitas Jangka Panjang,KREDIT,FALSE,2000,NERACA,Header
+2210,Simpanan Berjangka (> 12 bln),LIABILITAS,Liabilitas Jangka Panjang,KREDIT,TRUE,2200,NERACA,Deposito anggota jatuh tempo >12 bln
+2220,Utang Bank Jangka Panjang,LIABILITAS,Liabilitas Jangka Panjang,KREDIT,TRUE,2200,NERACA,Pinjaman dari bank/lembaga lain
+3000,EKUITAS,EKUITAS,,KREDIT,FALSE,,NERACA,Header
+3101,Simpanan Pokok,EKUITAS,Ekuitas,KREDIT,TRUE,3000,NERACA,Modal anggota - dibayar sekali saat masuk. Berlaku untuk Jenis Anggota dengan wajib_simpanan_pokok=TRUE
+3102,Simpanan Wajib,EKUITAS,Ekuitas,KREDIT,TRUE,3000,NERACA,Modal anggota - dibayar rutin
+3110,Modal Penyertaan,EKUITAS,Ekuitas,KREDIT,TRUE,3000,NERACA,Modal penyertaan (bila bersifat ekuitas)
+3120,Modal Sumbangan/Hibah,EKUITAS,Ekuitas,KREDIT,TRUE,3000,NERACA,Hibah/donasi yang tidak mengikat
+3130,Dana Cadangan (Cadangan Umum),EKUITAS,Ekuitas,KREDIT,TRUE,3000,NERACA,Akumulasi cadangan dari SHU
+3140,Cadangan Tujuan Risiko,EKUITAS,Ekuitas,KREDIT,TRUE,3000,NERACA,Cadangan risiko untuk USP
+3150,SHU Tahun Berjalan,EKUITAS,Ekuitas,KREDIT,TRUE,3000,NERACA,Sisa Hasil Usaha belum dibagi (tahun berjalan) - hanya menghitung kontribusi Jenis Anggota dengan berlaku_untuk_shu=TRUE
+3160,SHU Ditahan / Tahun Lalu,EKUITAS,Ekuitas,KREDIT,TRUE,3000,NERACA,Akumulasi SHU tahun-tahun sebelumnya
+4000,PENDAPATAN,PENDAPATAN,,KREDIT,FALSE,,LABA_RUGI,Header
+4100,Pendapatan Unit Simpan Pinjam,PENDAPATAN,Pendapatan Usaha,KREDIT,FALSE,4000,LABA_RUGI,Header
+4101,Pendapatan Bunga/Jasa Pinjaman,PENDAPATAN,Pendapatan Usaha,KREDIT,TRUE,4100,LABA_RUGI,Default mapping coa_account_interest_income_id Master Produk Pinjaman
+4102,Pendapatan Provisi & Administrasi,PENDAPATAN,Pendapatan Usaha,KREDIT,TRUE,4100,LABA_RUGI,Default mapping coa_account_provision_income_id Master Produk Pinjaman
+4103,Pendapatan Denda Keterlambatan,PENDAPATAN,Pendapatan Usaha,KREDIT,TRUE,4100,LABA_RUGI,
+4200,Pendapatan Unit Toko,PENDAPATAN,Pendapatan Usaha,KREDIT,FALSE,4000,LABA_RUGI,Header
+4201,Penjualan Barang Dagang,PENDAPATAN,Pendapatan Usaha,KREDIT,TRUE,4200,LABA_RUGI,Default mapping coa_account_sales_revenue_id Master Barang (POS)
+4202,Retur Penjualan,PENDAPATAN,Pendapatan Usaha,DEBIT,TRUE,4200,LABA_RUGI,Kontra-pendapatan - dipakai Retur Penjualan (STK-04)
+4203,Potongan Penjualan,PENDAPATAN,Pendapatan Usaha,DEBIT,TRUE,4200,LABA_RUGI,Kontra-pendapatan / diskon anggota
+4300,Pendapatan Unit Pengelola Fasilitas,PENDAPATAN,Pendapatan Usaha,KREDIT,FALSE,4000,LABA_RUGI,Header
+4301,Pendapatan Sewa/Jasa Fasilitas,PENDAPATAN,Pendapatan Usaha,KREDIT,TRUE,4300,LABA_RUGI,UPF
+4302,Pendapatan Iuran Kebersihan,PENDAPATAN,Pendapatan Usaha,KREDIT,TRUE,4300,LABA_RUGI,"v2 - Default mapping coa_account_revenue_id untuk Jenis Iuran ""Kebersihan"" (contoh bawaan, Master Jenis Iuran dinamis)"
+4303,Pendapatan Iuran Keamanan,PENDAPATAN,Pendapatan Usaha,KREDIT,TRUE,4300,LABA_RUGI,v2 - contoh bawaan Jenis Iuran "Keamanan"
+4304,Pendapatan Iuran Listrik,PENDAPATAN,Pendapatan Usaha,KREDIT,TRUE,4300,LABA_RUGI,v2 - contoh bawaan Jenis Iuran "Listrik" (satuan per-meter)
+4305,Pendapatan Iuran Air,PENDAPATAN,Pendapatan Usaha,KREDIT,TRUE,4300,LABA_RUGI,v2 - contoh bawaan Jenis Iuran "Air" (satuan per-meter)
+4306,Pendapatan Iuran Lainnya,PENDAPATAN,Pendapatan Usaha,KREDIT,TRUE,4300,LABA_RUGI,v2 - Catch-all untuk Jenis Iuran dinamis baru yang belum punya akun khusus
+4900,Pendapatan Lain-lain,PENDAPATAN,Pendapatan Lain-lain,KREDIT,FALSE,4000,LABA_RUGI,Header
+4901,Pendapatan Bunga Bank,PENDAPATAN,Pendapatan Lain-lain,KREDIT,TRUE,4900,LABA_RUGI,
+4902,Pendapatan Lain,PENDAPATAN,Pendapatan Lain-lain,KREDIT,TRUE,4900,LABA_RUGI,
+4903,Laba Pelepasan Aset Tetap,PENDAPATAN,Pendapatan Lain-lain,KREDIT,TRUE,4900,LABA_RUGI,v2 - Selisih positif nilai jual vs nilai buku saat Pelepasan Aktiva Tetap (DEP-05)
+4904,Pendapatan Penyesuaian Persediaan,PENDAPATAN,Pendapatan Lain-lain,KREDIT,TRUE,4900,LABA_RUGI,"v2 - Selisih plus Koreksi Persediaan (stok fisik > stok sistem, STK-05)"
+5000,BEBAN,BEBAN,,DEBIT,FALSE,,LABA_RUGI,Header
+5100,Beban Pokok,BEBAN,Beban Pokok,DEBIT,FALSE,5000,LABA_RUGI,Header
+5101,Harga Pokok Penjualan,BEBAN,Beban Pokok,DEBIT,TRUE,5100,LABA_RUGI,"HPP Unit Toko - default mapping coa_account_cogs_id Master Barang, dihitung dari average cost berjalan (Stock Ledger Engine)"
+5102,Beban Bunga/Jasa Simpanan,BEBAN,Beban Pokok,DEBIT,TRUE,5100,LABA_RUGI,Bunga simpanan sukarela & berjangka - default mapping coa_account_interest_expense_id Master Produk Simpanan
+5103,Retur Pembelian,BEBAN,Beban Pokok,KREDIT,TRUE,5100,LABA_RUGI,"v2 - Kontra-beban, opsional/informasional: pada metode perpetual/average cost (Stock Ledger Engine) retur pembelian secara default langsung mengurangi 1140 Persediaan tanpa menyentuh akun ini; pakai akun ini hanya bila koperasi ingin melacak nilai retur pembelian secara terpisah di CALK"
+5200,Beban Operasional,BEBAN,Beban Usaha,DEBIT,FALSE,5000,LABA_RUGI,Header
+5201,Beban Gaji & Tunjangan,BEBAN,Beban Usaha,DEBIT,TRUE,5200,LABA_RUGI,
+5202,Beban Sewa,BEBAN,Beban Usaha,DEBIT,TRUE,5200,LABA_RUGI,
+5203,"Beban Listrik, Air & Komunikasi",BEBAN,Beban Usaha,DEBIT,TRUE,5200,LABA_RUGI,
+5204,Beban Penyusutan,BEBAN,Beban Usaha,DEBIT,TRUE,5200,LABA_RUGI,v2 - Dipakai Depreciation Engine (batch bulanan) untuk seluruh Kategori Aktiva Tetap kecuali koperasi memilih memecah ke sub-akun tersendiri per kategori
+5205,Beban Penyisihan Piutang,BEBAN,Beban Usaha,DEBIT,TRUE,5200,LABA_RUGI,Kerugian penurunan nilai piutang
+5206,Beban Administrasi & Umum,BEBAN,Beban Usaha,DEBIT,TRUE,5200,LABA_RUGI,
+5207,Beban Perlengkapan/ATK,BEBAN,Beban Usaha,DEBIT,TRUE,5200,LABA_RUGI,
+5208,Beban Pemeliharaan,BEBAN,Beban Usaha,DEBIT,TRUE,5200,LABA_RUGI,
+5209,Beban Rapat Anggota (RAT),BEBAN,Beban Usaha,DEBIT,TRUE,5200,LABA_RUGI,
+5210,Beban Pendidikan & Pelatihan,BEBAN,Beban Usaha,DEBIT,TRUE,5200,LABA_RUGI,
+5211,Beban Promosi,BEBAN,Beban Usaha,DEBIT,TRUE,5200,LABA_RUGI,
+5212,Beban Susut/Kerugian Persediaan,BEBAN,Beban Usaha,DEBIT,TRUE,5200,LABA_RUGI,"v2 - Selisih minus Koreksi Persediaan setelah disetujui (stok fisik < stok sistem, STK-05/06)"
+5900,Beban Lain-lain,BEBAN,Beban Lain-lain,DEBIT,FALSE,5000,LABA_RUGI,Header
+5901,Beban Bunga Pinjaman Bank,BEBAN,Beban Lain-lain,DEBIT,TRUE,5900,LABA_RUGI,
+5902,Beban Pajak,BEBAN,Beban Lain-lain,DEBIT,TRUE,5900,LABA_RUGI,
+5903,Beban Lain,BEBAN,Beban Lain-lain,DEBIT,TRUE,5900,LABA_RUGI,
+5904,Rugi Pelepasan Aset Tetap,BEBAN,Beban Lain-lain,DEBIT,TRUE,5900,LABA_RUGI,v2 - Selisih negatif nilai jual vs nilai buku saat Pelepasan Aktiva Tetap (DEP-05)
