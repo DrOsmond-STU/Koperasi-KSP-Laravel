@@ -2,12 +2,14 @@
 
 namespace Tests\Feature\Reporting;
 
+use App\Models\AccountingPeriod;
 use App\Models\Branch;
 use App\Models\ChartOfAccount;
 use App\Models\User;
 use App\Services\Accounting\JournalEngine;
 use App\Services\Reporting\FinancialReportEngine;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 /**
@@ -153,5 +155,44 @@ class FinancialReportEngineTest extends TestCase
         $labaRugi = app(FinancialReportEngine::class)->labaRugi($branch->id, '2020-01-01', '2020-01-31');
 
         $this->assertFalse($labaRugi['has_data']);
+    }
+
+    public function test_report_for_a_closed_period_is_cached(): void
+    {
+        $branch = Branch::factory()->create();
+        $user = User::factory()->create();
+        $aset = ChartOfAccount::factory()->create(['type' => 'ASET', 'statement' => 'NERACA', 'normal_balance' => 'DEBIT']);
+        $ekuitas = ChartOfAccount::factory()->create(['type' => 'EKUITAS', 'statement' => 'NERACA', 'normal_balance' => 'KREDIT']);
+
+        $this->postEntry($branch->id, $user->id, '2026-02-10', [
+            ['chart_of_account_id' => $aset->id, 'debit' => 1000000, 'credit' => 0],
+            ['chart_of_account_id' => $ekuitas->id, 'debit' => 0, 'credit' => 1000000],
+        ]);
+
+        AccountingPeriod::query()->create([
+            'branch_id' => $branch->id,
+            'period_start' => '2026-02-01',
+            'period_end' => '2026-02-28',
+            'status' => 'closed',
+            'closed_by' => $user->id,
+            'closed_at' => now(),
+        ]);
+
+        $cacheKey = "financial_report:neraca:{$branch->id}:2026-02-28:sak_ep";
+        $this->assertFalse(Cache::has($cacheKey));
+
+        $neraca = app(FinancialReportEngine::class)->neraca($branch->id, '2026-02-28');
+
+        $this->assertTrue(Cache::has($cacheKey));
+        $this->assertEquals('1000000.00', $neraca['total_aset']);
+    }
+
+    public function test_report_for_an_open_period_is_never_cached(): void
+    {
+        $branch = Branch::factory()->create();
+
+        app(FinancialReportEngine::class)->neraca($branch->id, '2026-03-31');
+
+        $this->assertFalse(Cache::has("financial_report:neraca:{$branch->id}:2026-03-31:sak_ep"));
     }
 }

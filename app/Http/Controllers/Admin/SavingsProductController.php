@@ -14,6 +14,8 @@ class SavingsProductController extends Controller
 {
     public function index(): View
     {
+        $this->authorize('master_data.read');
+
         return view('admin.master.produk-simpanan.index', [
             'products' => SavingsProduct::query()->latest()->get(),
         ]);
@@ -21,6 +23,8 @@ class SavingsProductController extends Controller
 
     public function create(): View
     {
+        $this->authorize('master_data.create');
+
         return view('admin.master.produk-simpanan.create', [
             'postableAccounts' => ChartOfAccount::query()->where('is_postable', true)->orderBy('code')->get(),
         ]);

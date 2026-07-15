@@ -13,6 +13,8 @@ class FeeTypeController extends Controller
 {
     public function index(): View
     {
+        $this->authorize('master_data.read');
+
         return view('admin.master.jenis-iuran.index', [
             'feeTypes' => FeeType::query()->latest()->get(),
         ]);
@@ -20,6 +22,8 @@ class FeeTypeController extends Controller
 
     public function create(): View
     {
+        $this->authorize('master_data.create');
+
         return view('admin.master.jenis-iuran.create', [
             'postableAccounts' => ChartOfAccount::query()->where('is_postable', true)->orderBy('code')->get(),
         ]);

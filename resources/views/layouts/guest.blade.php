@@ -14,6 +14,17 @@
             margin: 0; font-family: 'Inter', system-ui, sans-serif; background: var(--paper);
             color: var(--pine-ink); display: flex; align-items: center; justify-content: center; min-height: 100vh;
         }
+
+        /* A11Y-01: focus visible wajib terlihat di semua kontrol. */
+        a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
+        textarea:focus-visible, [tabindex]:focus-visible {
+            outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 6px;
+        }
+
+        /* A11Y-04: matikan animasi/transisi bila pengguna minta gerak berkurang. */
+        @media (prefers-reduced-motion: reduce) {
+            * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+        }
         .guest-card {
             background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
             box-shadow: 0 1px 2px rgba(16,32,25,.04), 0 8px 24px -12px rgba(16,32,25,.16);

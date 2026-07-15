@@ -2,17 +2,25 @@
 
 namespace App\Services\Reporting;
 
+use App\Models\AccountingPeriod;
 use App\Models\ChartOfAccount;
 use App\Models\JournalLine;
 use App\Services\Accounting\GeneralLedgerService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Mesin Laporan Keuangan on-demand dari ledger (PRD §2.3/§17, Task 5.3) —
  * Neraca, Laba Rugi, Arus Kas, CALK. Every figure is computed fresh from
- * journal_lines every call (LED-09 single source of truth) — nothing is
- * cached or precomputed, same principle as GeneralLedgerService.
+ * journal_lines (LED-09 single source of truth) — EXCEPT for a single
+ * branch's report over a period that's already closed (`AccountingPeriod
+ * status=closed`), which JournalEngine::assertPeriodOpen() guarantees can
+ * never receive another posting — so it's cached forever (08_TASK_INSTRUCTION
+ * 6.2). Open periods and consolidated (`$branchId === null`) reports are
+ * never cached — a consolidated view spans every branch's periods, and
+ * confirming all of them are closed isn't worth the complexity for a
+ * report that's requested rarely (RAT/year-end), not on the hot path.
  *
  * `$basis` ('sak_ep'|'sak_emkm') only changes report titles/labels — the
  * underlying chart of accounts and ledger are shared across both bases
@@ -31,6 +39,18 @@ class FinancialReportEngine
      * Neraca (Balance Sheet) — RPT-01/RPT-05.
      */
     public function neraca(?int $branchId, string $asOfDate, string $basis = 'sak_ep'): array
+    {
+        if ($branchId !== null && $this->isDateInClosedPeriod($branchId, $asOfDate)) {
+            return Cache::rememberForever(
+                "financial_report:neraca:{$branchId}:{$asOfDate}:{$basis}",
+                fn () => $this->computeNeraca($branchId, $asOfDate, $basis),
+            );
+        }
+
+        return $this->computeNeraca($branchId, $asOfDate, $basis);
+    }
+
+    private function computeNeraca(?int $branchId, string $asOfDate, string $basis): array
     {
         $accounts = ChartOfAccount::query()
             ->where('statement', 'NERACA')
@@ -71,6 +91,18 @@ class FinancialReportEngine
      */
     public function labaRugi(?int $branchId, string $periodStart, string $periodEnd, string $basis = 'sak_ep'): array
     {
+        if ($branchId !== null && $this->isRangeInClosedPeriod($branchId, $periodStart, $periodEnd)) {
+            return Cache::rememberForever(
+                "financial_report:laba_rugi:{$branchId}:{$periodStart}:{$periodEnd}:{$basis}",
+                fn () => $this->computeLabaRugi($branchId, $periodStart, $periodEnd, $basis),
+            );
+        }
+
+        return $this->computeLabaRugi($branchId, $periodStart, $periodEnd, $basis);
+    }
+
+    private function computeLabaRugi(?int $branchId, string $periodStart, string $periodEnd, string $basis): array
+    {
         $accounts = ChartOfAccount::query()
             ->where('statement', 'LABA_RUGI')
             ->where('is_postable', true)
@@ -105,6 +137,18 @@ class FinancialReportEngine
      * accounts (LED-09 style consistency check).
      */
     public function arusKas(?int $branchId, string $periodStart, string $periodEnd): array
+    {
+        if ($branchId !== null && $this->isRangeInClosedPeriod($branchId, $periodStart, $periodEnd)) {
+            return Cache::rememberForever(
+                "financial_report:arus_kas:{$branchId}:{$periodStart}:{$periodEnd}",
+                fn () => $this->computeArusKas($branchId, $periodStart, $periodEnd),
+            );
+        }
+
+        return $this->computeArusKas($branchId, $periodStart, $periodEnd);
+    }
+
+    private function computeArusKas(?int $branchId, string $periodStart, string $periodEnd): array
     {
         $cashAccounts = ChartOfAccount::query()->whereIn('code', self::CASH_BANK_CODES)->get();
         $dayBeforeStart = Carbon::parse($periodStart)->subDay()->toDateString();
@@ -157,6 +201,18 @@ class FinancialReportEngine
      */
     public function calk(?int $branchId, string $asOfDate, string $basis = 'sak_ep'): array
     {
+        if ($branchId !== null && $this->isDateInClosedPeriod($branchId, $asOfDate)) {
+            return Cache::rememberForever(
+                "financial_report:calk:{$branchId}:{$asOfDate}:{$basis}",
+                fn () => $this->computeCalk($branchId, $asOfDate, $basis),
+            );
+        }
+
+        return $this->computeCalk($branchId, $asOfDate, $basis);
+    }
+
+    private function computeCalk(?int $branchId, string $asOfDate, string $basis): array
+    {
         $accounts = ChartOfAccount::query()->where('is_postable', true)->orderBy('code')->get();
 
         $groups = $accounts
@@ -173,6 +229,26 @@ class FinancialReportEngine
             'kebijakan_akuntansi' => $this->standardAccountingPolicies($basis),
             'groups' => $groups,
         ];
+    }
+
+    private function isDateInClosedPeriod(int $branchId, string $date): bool
+    {
+        return AccountingPeriod::query()
+            ->where('branch_id', $branchId)
+            ->where('status', 'closed')
+            ->whereDate('period_start', '<=', $date)
+            ->whereDate('period_end', '>=', $date)
+            ->exists();
+    }
+
+    private function isRangeInClosedPeriod(int $branchId, string $start, string $end): bool
+    {
+        return AccountingPeriod::query()
+            ->where('branch_id', $branchId)
+            ->where('status', 'closed')
+            ->whereDate('period_start', '<=', $start)
+            ->whereDate('period_end', '>=', $end)
+            ->exists();
     }
 
     /**

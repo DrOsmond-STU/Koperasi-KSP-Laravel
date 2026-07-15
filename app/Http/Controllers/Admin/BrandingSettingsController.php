@@ -14,6 +14,8 @@ class BrandingSettingsController extends Controller
 
     public function edit(): View
     {
+        $this->authorize('branding.manage');
+
         return view('admin.pengaturan.branding', [
             'setting' => $this->branding->current(),
         ]);
