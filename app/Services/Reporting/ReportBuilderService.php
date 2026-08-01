@@ -7,6 +7,7 @@ use App\Models\ReportTemplate;
 use App\Models\User;
 use App\Services\FixedAsset\FixedAssetReportService;
 use App\Services\Inventory\InventoryReportService;
+use App\Services\Retribution\RetributionReportService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
@@ -22,6 +23,7 @@ class ReportBuilderService
     public function __construct(
         private readonly InventoryReportService $inventoryReportService,
         private readonly FixedAssetReportService $fixedAssetReportService,
+        private readonly RetributionReportService $retributionReportService,
     ) {}
 
     /**
@@ -106,6 +108,7 @@ class ReportBuilderService
                 $filters['period_end'],
             ),
             'aktiva_tetap_kartu_penyusutan' => $this->fixedAssetReportService->kartuPenyusutan((int) $filters['fixed_asset_id']),
+            'retribusi_upf' => $this->retributionReportService->retribusiUpf($filters),
             default => collect(),
         };
     }

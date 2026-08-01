@@ -5,6 +5,7 @@ namespace App\Services\MemberCard;
 use App\Exceptions\MemberCard\NoActiveCardTemplateException;
 use App\Models\Member;
 use App\Models\MemberCardTemplate;
+use App\Services\Settings\BrandingService;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\HtmlString;
 
@@ -32,8 +33,9 @@ class MemberCardRenderer
     {
         $template = $this->resolveTemplate($template);
 
-        $backgroundImage = $template->background_image_path
-            ? "background-image: url('".Storage::disk('public')->url($template->background_image_path)."'); background-size: cover;"
+        $backgroundDataUri = $template->background_image_path ? $this->dataUri($template->background_image_path) : null;
+        $backgroundImage = $backgroundDataUri
+            ? "background-image: url('{$backgroundDataUri}'); background-size: cover;"
             : '';
 
         $fieldsHtml = $template->fields->map(fn ($field) => $this->renderField($field, $member))->implode('');
@@ -56,17 +58,23 @@ class MemberCardRenderer
         );
 
         if ($field->isPhoto()) {
-            $photoUrl = $member->photo_path
-                ? Storage::disk('public')->url($member->photo_path)
-                : null;
+            $photoDataUri = $member->photo_path ? $this->dataUri($member->photo_path) : null;
 
-            if ($photoUrl) {
-                return "<img src=\"{$photoUrl}\" style=\"{$style} object-fit: cover;\" alt=\"Foto {$member->name}\">";
+            if ($photoDataUri) {
+                return "<img src=\"{$photoDataUri}\" style=\"{$this->imageStyle($field)} object-fit: cover;\" alt=\"Foto {$member->name}\">";
             }
 
             $initial = mb_strtoupper(mb_substr($member->name, 0, 1));
 
             return "<div style=\"{$style} display: flex; align-items: center; justify-content: center; background: #E9F1EC; color: #11543B; font-weight: 700;\">{$initial}</div>";
+        }
+
+        if ($field->isLogo()) {
+            $logoDataUri = app(BrandingService::class)->logoDataUri();
+
+            return $logoDataUri
+                ? "<img src=\"{$logoDataUri}\" style=\"{$this->imageStyle($field)} object-fit: contain;\" alt=\"Logo Koperasi\">"
+                : '';
         }
 
         $textStyle = $style
@@ -78,5 +86,41 @@ class MemberCardRenderer
         $value = e($field->resolveValue($member));
 
         return "<div style=\"{$textStyle}\">{$value}</div>";
+    }
+
+    /**
+     * dompdf silently ignores width/height on an absolutely positioned
+     * `<img>` unless they're marked `!important` — without it the image
+     * renders at its native pixel size regardless of the CSS box, blowing
+     * way past the field's placement on the card. Text/placeholder `<div>`
+     * fields don't need this (dompdf sizes those correctly already).
+     */
+    private function imageStyle($field): string
+    {
+        return sprintf(
+            'position: absolute; left: %smm; top: %smm;%s%s',
+            $field->position_x_mm,
+            $field->position_y_mm,
+            $field->width_mm ? " width: {$field->width_mm}mm !important;" : '',
+            $field->height_mm ? " height: {$field->height_mm}mm !important;" : '',
+        );
+    }
+
+    /**
+     * dompdf's `enable_remote` is off by default, so an http(s) Storage URL
+     * silently fails to render inside a PDF — embed the bytes directly
+     * instead (this renderer only ever feeds print/PDF output, never a
+     * live browser preview, so a data URI is safe here unconditionally).
+     */
+    private function dataUri(string $path): ?string
+    {
+        if (! Storage::disk('public')->exists($path)) {
+            return null;
+        }
+
+        $mime = Storage::disk('public')->mimeType($path);
+        $contents = Storage::disk('public')->get($path);
+
+        return 'data:'.$mime.';base64,'.base64_encode($contents);
     }
 }

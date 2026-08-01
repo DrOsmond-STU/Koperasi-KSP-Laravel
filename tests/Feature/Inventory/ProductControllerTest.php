@@ -3,9 +3,12 @@
 namespace Tests\Feature\Inventory;
 
 use App\Models\ChartOfAccount;
+use App\Models\Product;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
@@ -103,5 +106,104 @@ class ProductControllerTest extends TestCase
         ]);
 
         $response->assertForbidden();
+    }
+
+    public function test_uploading_image_on_create_stores_file_and_path(): void
+    {
+        Storage::fake('public');
+        $user = $this->manajer();
+        $account = ChartOfAccount::factory()->create();
+        $image = UploadedFile::fake()->image('barang.jpg');
+
+        $this->actingAs($user)->post(route('admin.master.products.store'), [
+            'code' => 'BRG-010',
+            'name' => 'Barang Bergambar',
+            'unit' => 'pcs',
+            'coa_inventory_account_id' => $account->id,
+            'coa_cogs_account_id' => $account->id,
+            'coa_sales_revenue_account_id' => $account->id,
+            'image' => $image,
+        ]);
+
+        $product = Product::query()->where('code', 'BRG-010')->firstOrFail();
+        $this->assertNotNull($product->image_path);
+        Storage::disk('public')->assertExists($product->image_path);
+    }
+
+    public function test_uploading_new_image_on_update_replaces_old_file(): void
+    {
+        Storage::fake('public');
+        $user = $this->manajer();
+        $account = ChartOfAccount::factory()->create();
+        $oldPath = UploadedFile::fake()->image('lama.jpg')->store('products', 'public');
+        $product = Product::factory()->create([
+            'coa_inventory_account_id' => $account->id,
+            'coa_cogs_account_id' => $account->id,
+            'coa_sales_revenue_account_id' => $account->id,
+            'image_path' => $oldPath,
+        ]);
+        $newImage = UploadedFile::fake()->image('baru.jpg');
+
+        $this->actingAs($user)->put(route('admin.master.products.update', $product), [
+            'code' => $product->code,
+            'name' => $product->name,
+            'unit' => $product->unit,
+            'coa_inventory_account_id' => $account->id,
+            'coa_cogs_account_id' => $account->id,
+            'coa_sales_revenue_account_id' => $account->id,
+            'image' => $newImage,
+        ]);
+
+        Storage::disk('public')->assertMissing($oldPath);
+        $this->assertNotEquals($oldPath, $product->fresh()->image_path);
+        Storage::disk('public')->assertExists($product->fresh()->image_path);
+    }
+
+    public function test_edit_and_update_are_gated_by_master_data_update_permission(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+        $user = User::factory()->create(['two_factor_confirmed_at' => now()]);
+        $user->assignRole('teller');
+
+        $account = ChartOfAccount::factory()->create();
+        $product = Product::factory()->create([
+            'coa_inventory_account_id' => $account->id,
+            'coa_cogs_account_id' => $account->id,
+            'coa_sales_revenue_account_id' => $account->id,
+        ]);
+
+        $this->actingAs($user)->put(route('admin.master.products.update', $product), [
+            'code' => $product->code,
+            'name' => 'Coba Ubah',
+            'unit' => $product->unit,
+            'coa_inventory_account_id' => $account->id,
+            'coa_cogs_account_id' => $account->id,
+            'coa_sales_revenue_account_id' => $account->id,
+        ])->assertForbidden();
+    }
+
+    public function test_updating_product_succeeds_and_ignores_own_code(): void
+    {
+        $user = $this->manajer();
+        $account = ChartOfAccount::factory()->create();
+        $product = Product::factory()->create([
+            'code' => 'BRG-011',
+            'coa_inventory_account_id' => $account->id,
+            'coa_cogs_account_id' => $account->id,
+            'coa_sales_revenue_account_id' => $account->id,
+        ]);
+
+        $response = $this->actingAs($user)->put(route('admin.master.products.update', $product), [
+            'code' => 'BRG-011',
+            'name' => 'Nama Baru',
+            'unit' => $product->unit,
+            'selling_price' => 75000,
+            'coa_inventory_account_id' => $account->id,
+            'coa_cogs_account_id' => $account->id,
+            'coa_sales_revenue_account_id' => $account->id,
+        ]);
+
+        $response->assertRedirect(route('admin.master.products.index'));
+        $this->assertDatabaseHas('products', ['code' => 'BRG-011', 'name' => 'Nama Baru']);
     }
 }

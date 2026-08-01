@@ -55,6 +55,16 @@ class OpeningBalanceBatch extends Model
         return $this->hasMany(OpeningBalanceCoa::class);
     }
 
+    public function upf(): HasMany
+    {
+        return $this->hasMany(OpeningBalanceUpf::class);
+    }
+
+    public function stock(): HasMany
+    {
+        return $this->hasMany(OpeningBalanceStock::class);
+    }
+
     public function isDraft(): bool
     {
         return $this->status === 'draft';

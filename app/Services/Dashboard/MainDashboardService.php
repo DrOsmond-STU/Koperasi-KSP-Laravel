@@ -4,8 +4,11 @@ namespace App\Services\Dashboard;
 
 use App\Models\JournalLine;
 use App\Models\Loan;
+use App\Models\LoanSchedule;
 use App\Models\Member;
 use App\Models\SavingsAccount;
+use App\Models\SavingsTransaction;
+use Illuminate\Support\Carbon;
 
 /**
  * KPI Dashboard Utama (PRD §15) — semua angka diturunkan langsung dari
@@ -41,15 +44,100 @@ class MainDashboardService
         $nplOutstanding = (float) (clone $loanBase)->whereIn('collectibility', ['kurang_lancar', 'diragukan', 'macet'])->sum('principal_amount');
         $nplRatio = $totalLoanOutstanding > 0 ? round($nplOutstanding / $totalLoanOutstanding * 100, 2) : 0.0;
 
+        $loanByCollectibility = (clone $loanBase)
+            ->selectRaw('collectibility, count(*) as count, sum(principal_amount) as total')
+            ->groupBy('collectibility')
+            ->get();
+
+        $shuBreakdown = $this->shuBreakdown($branchId);
+
         return [
             'members_by_type' => $membersByType,
             'total_members' => (int) $membersByType->sum('total'),
             'savings_by_product' => $savingsByProduct,
             'total_savings' => (float) $savingsByProduct->sum('total'),
             'total_loan_outstanding' => $totalLoanOutstanding,
+            'loan_outstanding_by_collectibility' => $loanByCollectibility,
             'npl_ratio' => $nplRatio,
-            'shu_running' => $this->calculateRunningShu($branchId),
+            'shu_running' => $shuBreakdown['shu'],
+            'shu_breakdown' => $shuBreakdown,
+            'problematic_loans' => (clone $loanBase)
+                ->whereIn('collectibility', ['kurang_lancar', 'diragukan', 'macet'])
+                ->with('member')
+                ->orderByDesc('principal_amount')
+                ->limit(8)
+                ->get(),
+            'due_installments' => LoanSchedule::query()
+                ->whereIn('status', ['belum_bayar', 'sebagian'])
+                ->whereHas('loan', fn ($q) => $q->where('status', 'dicairkan')->when($branchId, fn ($q2) => $q2->where('branch_id', $branchId)))
+                ->with('loan.member')
+                ->orderBy('due_date')
+                ->limit(8)
+                ->get(),
+            // Every status, not just $loanBase's "dicairkan" — this is a
+            // feed of the most recently touched loans (submitted, decided,
+            // disbursed, cancelled), not a snapshot of outstanding ones.
+            'recent_loan_activity' => Loan::query()
+                ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+                ->with('member')
+                ->orderByDesc('updated_at')
+                ->limit(8)
+                ->get(),
+            'daily_activity' => $this->dailyActivity($branchId),
         ];
+    }
+
+    /**
+     * Simpanan & Pinjaman are activity that actually happened (transaksi
+     * setor/tarik, tanggal pencairan). "Angsuran" is deliberately based on
+     * `due_date` (jadwal jatuh tempo), not payments received — this app has
+     * no loan-repayment-recording feature yet (`loan_schedules.paid_amount`
+     * is only ever written as 0 at schedule generation), so due-amount is
+     * the only real, populated daily signal available for installments.
+     */
+    private function dailyActivity(?int $branchId = null): array
+    {
+        $windowStart = now()->subDays(13)->startOfDay();
+        $days = collect(range(13, 0))->map(fn (int $i) => now()->subDays($i)->toDateString());
+
+        $savingsByDay = SavingsTransaction::query()
+            ->whereNull('cancelled_at')
+            ->where('created_at', '>=', $windowStart)
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->selectRaw('DATE(created_at) as day, SUM(amount) as total')
+            ->groupBy('day')
+            ->pluck('total', 'day');
+
+        $loanByDay = Loan::query()
+            ->whereNotNull('disbursed_at')
+            ->where('disbursed_at', '>=', $windowStart->toDateString())
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->selectRaw('disbursed_at as day, SUM(principal_amount) as total')
+            ->groupBy('day')
+            ->pluck('total', 'day');
+
+        $installmentByDay = LoanSchedule::query()
+            ->where('due_date', '>=', $windowStart->toDateString())
+            ->where('due_date', '<=', now()->toDateString())
+            ->whereHas('loan', fn ($q) => $q->when($branchId, fn ($q2) => $q2->where('branch_id', $branchId)))
+            ->selectRaw('due_date as day, SUM(total_amount) as total')
+            ->groupBy('day')
+            ->pluck('total', 'day');
+
+        return $days->map(function (string $day) use ($savingsByDay, $loanByDay, $installmentByDay) {
+            $simpanan = (float) ($savingsByDay[$day] ?? 0);
+            $pinjaman = (float) ($loanByDay[$day] ?? 0);
+            $angsuran = (float) ($installmentByDay[$day] ?? 0);
+
+            return [
+                'date' => $day,
+                'label' => Carbon::parse($day)->translatedFormat('d/m'),
+                'simpanan' => $simpanan,
+                'pinjaman' => $pinjaman,
+                'angsuran' => $angsuran,
+                'total' => $simpanan + $pinjaman + $angsuran,
+            ];
+        })->all();
     }
 
     /**
@@ -58,8 +146,10 @@ class MainDashboardService
      * Pendapatan dihitung (kredit − debit); Beban dihitung (debit − kredit)
      * — ini otomatis benar walau ada akun kontra (mis. Retur Penjualan yang
      * bersaldo normal debit di dalam kelompok PENDAPATAN).
+     *
+     * @return array{pendapatan: float, beban: float, shu: float}
      */
-    private function calculateRunningShu(?int $branchId): float
+    private function shuBreakdown(?int $branchId): array
     {
         $baseQuery = fn () => JournalLine::query()
             ->join('journal_entries', 'journal_lines.journal_entry_id', '=', 'journal_entries.id')
@@ -76,6 +166,6 @@ class MainDashboardService
             ->selectRaw('COALESCE(SUM(journal_lines.debit - journal_lines.credit), 0) as net')
             ->value('net');
 
-        return round($pendapatan - $beban, 2);
+        return ['pendapatan' => $pendapatan, 'beban' => $beban, 'shu' => round($pendapatan - $beban, 2)];
     }
 }

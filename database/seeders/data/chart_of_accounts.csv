@@ -6,7 +6,7 @@ code,name,type,group,normal_balance,is_postable,parent_code,statement,notes
 1110,Bank,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,Rekening bank koperasi
 1120,Piutang Pinjaman Anggota,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,Pokok pinjaman beredar
 1121,Penyisihan Penurunan Nilai Piutang,ASET,Aset Lancar,KREDIT,TRUE,1100,NERACA,Kontra-aset (cadangan kerugian piutang)
-1130,Piutang Bunga/Jasa Pinjaman,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,Bunga/jasa yang masih harus diterima
+1130,Piutang Jasa Pinjaman,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,Jasa yang masih harus diterima
 1131,Piutang Iuran UPF,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,v2 - Piutang iuran kios/tenant (kebersihan/keamanan/listrik/air/dst) - default mapping coa_account_receivable_id Master Jenis Iuran
 1132,Rekening Antar Kantor (RAK),ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,v2 - Hanya dipakai bila transaksi lintas cabang diaktifkan (PRD Sec 6). Saldo per cabang bisa debit/kredit; total seluruh cabang harus nol dan dieliminasi saat laporan konsolidasi (RPT-05)
 1133,Piutang Denda Pinjaman,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,v2 - Denda keterlambatan angsuran yang masih harus diterima - default mapping coa_account_penalty_receivable_id Master Produk Pinjaman
@@ -28,7 +28,7 @@ code,name,type,group,normal_balance,is_postable,parent_code,statement,notes
 2101,Simpanan Sukarela Anggota,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,Dapat ditarik sewaktu-waktu -> kewajiban
 2102,Simpanan Berjangka (< 12 bln),LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,Deposito anggota jatuh tempo <12 bln
 2110,Utang Usaha,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,v2 - Utang ke Supplier (Master Supplier) untuk pembelian barang dagang MAUPUN pembelian aktiva tetap - default mapping coa_account_payable_id
-2120,Utang Bunga Simpanan,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,Bunga simpanan yang masih harus dibayar
+2120,Utang Jasa Simpanan,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,Jasa simpanan yang masih harus dibayar
 2130,Beban Masih Harus Dibayar,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,Accrued expenses
 2140,Utang Pajak,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,
 2150,Dana Pembagian SHU,LIABILITAS,Liabilitas Jangka Pendek,KREDIT,TRUE,2100,NERACA,Bagian SHU anggota yang belum dibayarkan
@@ -50,7 +50,7 @@ code,name,type,group,normal_balance,is_postable,parent_code,statement,notes
 3160,SHU Ditahan / Tahun Lalu,EKUITAS,Ekuitas,KREDIT,TRUE,3000,NERACA,Akumulasi SHU tahun-tahun sebelumnya
 4000,PENDAPATAN,PENDAPATAN,,KREDIT,FALSE,,LABA_RUGI,Header
 4100,Pendapatan Unit Simpan Pinjam,PENDAPATAN,Pendapatan Usaha,KREDIT,FALSE,4000,LABA_RUGI,Header
-4101,Pendapatan Bunga/Jasa Pinjaman,PENDAPATAN,Pendapatan Usaha,KREDIT,TRUE,4100,LABA_RUGI,Default mapping coa_account_interest_income_id Master Produk Pinjaman
+4101,Pendapatan Jasa Pinjaman,PENDAPATAN,Pendapatan Usaha,KREDIT,TRUE,4100,LABA_RUGI,Default mapping coa_account_interest_income_id Master Produk Pinjaman
 4102,Pendapatan Provisi & Administrasi,PENDAPATAN,Pendapatan Usaha,KREDIT,TRUE,4100,LABA_RUGI,Default mapping coa_account_provision_income_id Master Produk Pinjaman
 4103,Pendapatan Denda Keterlambatan,PENDAPATAN,Pendapatan Usaha,KREDIT,TRUE,4100,LABA_RUGI,
 4200,Pendapatan Unit Toko,PENDAPATAN,Pendapatan Usaha,KREDIT,FALSE,4000,LABA_RUGI,Header
@@ -72,7 +72,7 @@ code,name,type,group,normal_balance,is_postable,parent_code,statement,notes
 5000,BEBAN,BEBAN,,DEBIT,FALSE,,LABA_RUGI,Header
 5100,Beban Pokok,BEBAN,Beban Pokok,DEBIT,FALSE,5000,LABA_RUGI,Header
 5101,Harga Pokok Penjualan,BEBAN,Beban Pokok,DEBIT,TRUE,5100,LABA_RUGI,"HPP Unit Toko - default mapping coa_account_cogs_id Master Barang, dihitung dari average cost berjalan (Stock Ledger Engine)"
-5102,Beban Bunga/Jasa Simpanan,BEBAN,Beban Pokok,DEBIT,TRUE,5100,LABA_RUGI,Bunga simpanan sukarela & berjangka - default mapping coa_account_interest_expense_id Master Produk Simpanan
+5102,Beban Jasa Simpanan,BEBAN,Beban Pokok,DEBIT,TRUE,5100,LABA_RUGI,Jasa simpanan sukarela & berjangka - default mapping coa_account_interest_expense_id Master Produk Simpanan
 5103,Retur Pembelian,BEBAN,Beban Pokok,KREDIT,TRUE,5100,LABA_RUGI,"v2 - Kontra-beban, opsional/informasional: pada metode perpetual/average cost (Stock Ledger Engine) retur pembelian secara default langsung mengurangi 1140 Persediaan tanpa menyentuh akun ini; pakai akun ini hanya bila koperasi ingin melacak nilai retur pembelian secara terpisah di CALK"
 5200,Beban Operasional,BEBAN,Beban Usaha,DEBIT,FALSE,5000,LABA_RUGI,Header
 5201,Beban Gaji & Tunjangan,BEBAN,Beban Usaha,DEBIT,TRUE,5200,LABA_RUGI,

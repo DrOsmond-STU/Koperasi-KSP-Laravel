@@ -11,7 +11,13 @@
         .receipt td { padding: 4px 0; }
         .receipt .total-row { border-top: 1px dashed var(--line); font-weight: 700; }
         .btn-print { padding: 8px 14px; background: var(--pine); color: #fff; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; }
-        @media print { .no-print { display: none; } }
+        @media print {
+            .no-print { display: none; }
+            body { background: #fff !important; color: #000 !important; }
+            .receipt { background: #fff !important; border: 1px solid #ccc !important; box-shadow: none !important; }
+            .receipt .muted { color: #444 !important; }
+            .receipt .total-row { border-top: 1px dashed #000 !important; }
+        }
     </style>
 
     <div class="receipt">
@@ -32,8 +38,21 @@
         </table>
 
         <p class="muted">
-            Metode Bayar: {{ $sale->payment_method === 'tunai' ? 'Tunai' : 'Potong Saldo Simpanan — '.$sale->savingsAccount?->account_number.' ('.$sale->savingsAccount?->member?->name.')' }}
+            Metode Bayar: {{ match ($sale->payment_method) {
+                'tunai' => 'Tunai',
+                'potong_simpanan' => 'Potong Saldo Simpanan — '.$sale->savingsAccount?->account_number.' ('.$sale->savingsAccount?->member?->name.')',
+                'hutang' => 'Hutang — Pinjaman '.$sale->loan?->loan_number.' ('.$sale->loan?->member?->name.')',
+            } }}
         </p>
+
+        @if ($sale->payment_method === 'hutang' && $sale->loan)
+            <p class="muted">
+                Tenor: {{ $sale->loan->tenor_months }} bulan
+                @if ($sale->loan->schedules->isNotEmpty())
+                    — Angsuran pertama jatuh tempo {{ $sale->loan->schedules->first()->due_date->translatedFormat('d M Y') }}
+                @endif
+            </p>
+        @endif
 
         <button class="btn-print no-print" onclick="window.print()">Cetak Struk</button>
     </div>

@@ -48,4 +48,9 @@ class PurchaseReturn extends Model
     {
         return $this->belongsTo(JournalEntry::class);
     }
+
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
 }

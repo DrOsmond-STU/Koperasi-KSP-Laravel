@@ -6,6 +6,9 @@ use App\Exceptions\Reporting\ReportBuilderException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\GenerateCustomReportRequest;
 use App\Jobs\ExportReportJob;
+use App\Models\Branch;
+use App\Models\FixedAsset;
+use App\Models\Product;
 use App\Models\ReportExport;
 use App\Services\Reporting\ReportBuilderService;
 use App\Services\Reporting\ReportTypeRegistry;
@@ -25,6 +28,9 @@ class CustomReportController extends Controller
         return view('admin.laporan-kustom.index', [
             'reportTypes' => ReportTypeRegistry::definitions(),
             'templates' => $this->reportBuilder->templatesAvailableTo(auth()->user()),
+            'branches' => Branch::query()->where('is_active', true)->orderBy('name')->get(),
+            'products' => Product::query()->where('is_active', true)->orderBy('name')->get(),
+            'fixedAssets' => FixedAsset::query()->where('status', 'aktif')->orderBy('code')->get(),
         ]);
     }
 

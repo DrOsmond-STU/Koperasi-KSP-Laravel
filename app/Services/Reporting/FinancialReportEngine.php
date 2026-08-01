@@ -33,6 +33,8 @@ class FinancialReportEngine
 
     private const CASH_BANK_CODES = ['1101', '1102', '1110'];
 
+    private const SHU_BERJALAN_ACCOUNT_CODE = '3150';
+
     public function __construct(private readonly GeneralLedgerService $ledger) {}
 
     /**
@@ -62,9 +64,26 @@ class FinancialReportEngine
             $isRak = $account->code === self::RAK_ACCOUNT_CODE;
             $eliminated = $branchId === null && $isRak;
 
+            if ($eliminated) {
+                $balance = '0.00';
+            } elseif ($account->code === self::SHU_BERJALAN_ACCOUNT_CODE) {
+                // Belum ada mekanisme tutup buku (yang menjurnal Pendapatan/
+                // Beban ke akun ini) — jadi saldonya dihitung LIVE dari
+                // laba/rugi kumulatif sejak awal ledger, bukan dibaca dari
+                // jurnal (yang akan selalu 0 sampai tutup buku pertama
+                // dijalankan). Tanpa ini Neraca tidak akan pernah seimbang
+                // begitu ada transaksi pendapatan/beban apa pun, karena
+                // sisi Aset berubah tapi sisi Ekuitas tidak — bukan
+                // kesalahan data, tapi memang begitu cara kerja neraca
+                // interim sebelum tutup buku.
+                $balance = $this->shuBerjalan($branchId, $asOfDate);
+            } else {
+                $balance = $this->ledger->balanceFor($account, $branchId, $asOfDate);
+            }
+
             return [
                 'account' => $account,
-                'balance' => $eliminated ? '0.00' : $this->ledger->balanceFor($account, $branchId, $asOfDate),
+                'balance' => $balance,
                 'eliminated' => $eliminated,
             ];
         });
@@ -264,6 +283,23 @@ class FinancialReportEngine
             'Pengakuan pendapatan & beban menggunakan basis akrual.',
             'Penyusutan aktiva tetap dihitung sesuai metode yang ditetapkan per aset (Garis Lurus/Saldo Menurun).',
         ];
+    }
+
+    /**
+     * Laba/rugi kumulatif sejak awal ledger s.d. $asOfDate — angka yang
+     * sama persis dengan yang dipakai Dashboard Utama untuk "SHU Berjalan"
+     * (MainDashboardService::shuBreakdown()), supaya kedua tempat selalu
+     * konsisten.
+     */
+    private function shuBerjalan(?int $branchId, string $asOfDate): string
+    {
+        $pendapatan = ChartOfAccount::query()->where('type', 'PENDAPATAN')->where('is_postable', true)->get()
+            ->reduce(fn (string $carry, ChartOfAccount $a) => bcadd($carry, $this->ledger->balanceFor($a, $branchId, $asOfDate), 2), '0.00');
+
+        $beban = ChartOfAccount::query()->where('type', 'BEBAN')->where('is_postable', true)->get()
+            ->reduce(fn (string $carry, ChartOfAccount $a) => bcadd($carry, $this->ledger->balanceFor($a, $branchId, $asOfDate), 2), '0.00');
+
+        return bcsub($pendapatan, $beban, 2);
     }
 
     /**

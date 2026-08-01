@@ -9,7 +9,7 @@
         .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
         .field input, .field select { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; }
         .btn-primary { padding: 10px 18px; background: var(--pine); color: #fff; border: none; border-radius: 9px; font-weight: 700; cursor: pointer; }
-        .error-text { color: #A8472F; font-size: 12px; margin-top: 4px; }
+        .error-text { color: var(--brick); font-size: 12px; margin-top: 4px; }
     </style>
 
     <h2>Tambah Barang</h2>
@@ -21,9 +21,13 @@
     @endif
 
     <div class="form-card">
-        <form method="POST" action="{{ route('admin.master.products.store') }}">
+        <form method="POST" action="{{ route('admin.master.products.store') }}" enctype="multipart/form-data">
             @csrf
 
+            <div class="field">
+                <label>Foto Barang</label>
+                <input type="file" name="image" accept="image/png,image/jpeg">
+            </div>
             <div class="field">
                 <label>Kode Barang</label>
                 <input type="text" name="code" value="{{ old('code') }}" required>
@@ -50,7 +54,7 @@
             </div>
             <div class="field">
                 <label>Akun COA — Persediaan</label>
-                <select name="coa_inventory_account_id" required>
+                <select name="coa_inventory_account_id" required class="js-searchable">
                     <option value="">— Pilih Akun —</option>
                     @foreach ($postableAccounts as $account)
                         <option value="{{ $account->id }}">{{ $account->code }} — {{ $account->name }}</option>
@@ -59,7 +63,7 @@
             </div>
             <div class="field">
                 <label>Akun COA — HPP</label>
-                <select name="coa_cogs_account_id" required>
+                <select name="coa_cogs_account_id" required class="js-searchable">
                     <option value="">— Pilih Akun —</option>
                     @foreach ($postableAccounts as $account)
                         <option value="{{ $account->id }}">{{ $account->code }} — {{ $account->name }}</option>
@@ -68,7 +72,7 @@
             </div>
             <div class="field">
                 <label>Akun COA — Pendapatan Penjualan</label>
-                <select name="coa_sales_revenue_account_id" required>
+                <select name="coa_sales_revenue_account_id" required class="js-searchable">
                     <option value="">— Pilih Akun —</option>
                     @foreach ($postableAccounts as $account)
                         <option value="{{ $account->id }}">{{ $account->code }} — {{ $account->name }}</option>

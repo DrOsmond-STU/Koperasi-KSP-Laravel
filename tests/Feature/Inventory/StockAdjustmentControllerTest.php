@@ -82,4 +82,64 @@ class StockAdjustmentControllerTest extends TestCase
         $approve->assertRedirect(route('admin.persediaan.koreksi.index'));
         $this->assertEquals('diposting', $adjustment->fresh()->status);
     }
+
+    public function test_creator_can_cancel_own_posted_surplus_adjustment(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+        $creator = User::factory()->create(['two_factor_confirmed_at' => now()]);
+        $creator->assignRole('manajer');
+        UserBranchScope::query()->create(['user_id' => $creator->id, 'scope_type' => 'all']);
+
+        $branch = Branch::factory()->create();
+        $product = Product::factory()->create();
+        $reason = StockReason::factory()->create();
+        app(StockLedgerEngine::class)->receive($product, $branch->id, '10', '1000', 'pembelian', $creator->id);
+
+        $this->actingAs($creator)->post(route('admin.persediaan.koreksi.store'), [
+            'branch_id' => $branch->id,
+            'product_id' => $product->id,
+            'physical_qty' => 15,
+            'stock_reason_id' => $reason->id,
+        ]);
+        $adjustment = StockAdjustment::query()->firstOrFail();
+        $this->assertEquals('diposting', $adjustment->status);
+
+        $response = $this->actingAs($creator)->post(route('admin.persediaan.koreksi.cancel', $adjustment), [
+            'reason' => 'Salah input stok fisik',
+        ]);
+
+        $response->assertRedirect(route('admin.persediaan.koreksi.index'));
+        $this->assertEquals('dibatalkan', $adjustment->fresh()->status);
+    }
+
+    public function test_other_manajer_at_different_scope_cannot_cancel_someone_elses_adjustment(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+        $creator = User::factory()->create(['two_factor_confirmed_at' => now()]);
+        $creator->assignRole('manajer');
+        UserBranchScope::query()->create(['user_id' => $creator->id, 'scope_type' => 'all']);
+
+        $branch = Branch::factory()->create();
+        $product = Product::factory()->create();
+        $reason = StockReason::factory()->create();
+        app(StockLedgerEngine::class)->receive($product, $branch->id, '10', '1000', 'pembelian', $creator->id);
+
+        $this->actingAs($creator)->post(route('admin.persediaan.koreksi.store'), [
+            'branch_id' => $branch->id,
+            'product_id' => $product->id,
+            'physical_qty' => 15,
+            'stock_reason_id' => $reason->id,
+        ]);
+        $adjustment = StockAdjustment::query()->firstOrFail();
+
+        $teller = User::factory()->create(['two_factor_confirmed_at' => now()]);
+        $teller->assignRole('teller');
+        UserBranchScope::query()->create(['user_id' => $teller->id, 'scope_type' => 'all']);
+
+        $this->actingAs($teller)->post(route('admin.persediaan.koreksi.cancel', $adjustment), [
+            'reason' => 'Coba batalkan tanpa izin',
+        ])->assertForbidden();
+
+        $this->assertEquals('diposting', $adjustment->fresh()->status);
+    }
 }

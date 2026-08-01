@@ -13,6 +13,7 @@
         "laravel/horizon": "^5.47",
         "laravel/tinker": "^3.0",
         "maatwebsite/excel": "^3.1",
+        "picqer/php-barcode-generator": "^3.2",
         "predis/predis": "^3.5",
         "spatie/laravel-permission": "^8.3"
     },

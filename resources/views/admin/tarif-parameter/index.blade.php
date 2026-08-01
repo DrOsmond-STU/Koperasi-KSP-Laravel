@@ -11,8 +11,8 @@
         .btn-primary { padding: 8px 14px; background: var(--pine); color: #fff; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 12px; }
         .data-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
         .data-table th, .data-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
-        .status-msg { color: #2E7D52; font-size: 13px; margin-bottom: 14px; }
-        .error-text { color: #A8472F; font-size: 12px; margin-bottom: 14px; }
+        .status-msg { color: var(--ok); font-size: 13px; margin-bottom: 14px; }
+        .error-text { color: var(--brick); font-size: 12px; margin-bottom: 14px; }
     </style>
 
     <h2>Tarif & Parameter</h2>

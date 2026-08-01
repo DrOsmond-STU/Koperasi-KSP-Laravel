@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Concerns\GeneratesPrintPdf;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Services\Calendar\CalendarService;
@@ -10,9 +11,12 @@ use App\Services\Dashboard\MainDashboardService;
 use App\Services\Dashboard\RatDashboardService;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 
 class DashboardController extends Controller
 {
+    use GeneratesPrintPdf;
+
     public function __construct(
         private readonly MainDashboardService $mainDashboard,
         private readonly CashBankDashboardService $cashBankDashboard,
@@ -70,6 +74,25 @@ class DashboardController extends Controller
             'selectedBranchId' => $branchId,
             'isConsolidated' => $branchId === null,
         ]);
+    }
+
+    /**
+     * Laporan Harian Kas/Bank — satu tanggal (per PRD user request: "dibuat
+     * pertanggal saja"), ttd Teller + Pengurus dari App\Models\DocumentSignatureSlot.
+     */
+    public function printKasBankHarian(Request $request): Response
+    {
+        $this->authorize('jurnal.read');
+
+        $branchId = $this->resolveBranchId($request);
+        $date = $request->string('tanggal')->value() ?: now()->toDateString();
+
+        $pdf = $this->renderPrintPdf('prints.laporan.kas-bank-harian', [
+            'report' => $this->cashBankDashboard->dailyTransactions($date, $branchId),
+            'branch' => $branchId ? Branch::query()->find($branchId) : null,
+        ]);
+
+        return $pdf->download('laporan-kas-bank-'.$date.'.pdf');
     }
 
     /**

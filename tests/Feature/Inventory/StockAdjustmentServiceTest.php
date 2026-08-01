@@ -127,4 +127,75 @@ class StockAdjustmentServiceTest extends TestCase
         $this->expectException(StockAdjustmentException::class);
         app(StockAdjustmentService::class)->submit($product, $branch->id, '10', $reason, $user->id);
     }
+
+    public function test_reversing_a_posted_surplus_adjustment_restores_stock_and_reverses_journal(): void
+    {
+        $branch = Branch::factory()->create();
+        $product = Product::factory()->create();
+        $user = User::factory()->create();
+        $reason = StockReason::factory()->create();
+
+        app(StockLedgerEngine::class)->receive($product, $branch->id, '10', '1000', 'pembelian', $user->id);
+        $adjustment = app(StockAdjustmentService::class)->submit($product, $branch->id, '15', $reason, $user->id);
+
+        $reversed = app(StockAdjustmentService::class)->reverseAdjustment($adjustment, 'Salah hitung fisik', $user->id);
+
+        $this->assertEquals('dibatalkan', $reversed->status);
+        $this->assertNotNull($reversed->reversal_journal_entry_id);
+
+        $balance = app(StockLedgerEngine::class)->currentBalance($product, $branch->id);
+        $this->assertEquals('10.0000', $balance['qty']);
+
+        $this->assertDatabaseHas('journal_entries', [
+            'id' => $reversed->reversal_journal_entry_id,
+            'reversal_of_entry_id' => $adjustment->journal_entry_id,
+        ]);
+    }
+
+    public function test_reversing_a_posted_shrinkage_adjustment_restores_stock(): void
+    {
+        $branch = Branch::factory()->create();
+        $product = Product::factory()->create();
+        $creator = User::factory()->create();
+        $approver = User::factory()->create();
+        $reason = StockReason::factory()->create();
+
+        app(StockLedgerEngine::class)->receive($product, $branch->id, '10', '1000', 'pembelian', $creator->id);
+        $adjustment = app(StockAdjustmentService::class)->submit($product, $branch->id, '6', $reason, $creator->id);
+        $posted = app(StockAdjustmentService::class)->approve($adjustment, $approver);
+
+        app(StockAdjustmentService::class)->reverseAdjustment($posted, 'Ternyata stok fisik benar', $approver->id);
+
+        $balance = app(StockLedgerEngine::class)->currentBalance($product, $branch->id);
+        $this->assertEquals('10.0000', $balance['qty']);
+    }
+
+    public function test_reversing_a_pending_adjustment_is_rejected(): void
+    {
+        $branch = Branch::factory()->create();
+        $product = Product::factory()->create();
+        $user = User::factory()->create();
+        $reason = StockReason::factory()->create();
+
+        app(StockLedgerEngine::class)->receive($product, $branch->id, '10', '1000', 'pembelian', $user->id);
+        $adjustment = app(StockAdjustmentService::class)->submit($product, $branch->id, '6', $reason, $user->id);
+
+        $this->expectException(StockAdjustmentException::class);
+        app(StockAdjustmentService::class)->reverseAdjustment($adjustment, 'Coba batalkan yang belum diposting', $user->id);
+    }
+
+    public function test_reversing_an_already_cancelled_adjustment_is_rejected(): void
+    {
+        $branch = Branch::factory()->create();
+        $product = Product::factory()->create();
+        $user = User::factory()->create();
+        $reason = StockReason::factory()->create();
+
+        app(StockLedgerEngine::class)->receive($product, $branch->id, '10', '1000', 'pembelian', $user->id);
+        $adjustment = app(StockAdjustmentService::class)->submit($product, $branch->id, '15', $reason, $user->id);
+        $reversed = app(StockAdjustmentService::class)->reverseAdjustment($adjustment, 'Pertama', $user->id);
+
+        $this->expectException(StockAdjustmentException::class);
+        app(StockAdjustmentService::class)->reverseAdjustment($reversed, 'Kedua', $user->id);
+    }
 }

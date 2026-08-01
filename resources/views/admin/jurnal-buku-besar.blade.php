@@ -14,7 +14,7 @@
     <h2>Buku Besar {{ $isConsolidated ? '— Konsolidasi Seluruh Cabang' : '' }}</h2>
 
     <form class="filter-bar" method="GET">
-        <select name="chart_of_account_id" onchange="this.form.submit()">
+        <select name="chart_of_account_id" onchange="this.form.submit()" class="js-searchable">
             <option value="">— Pilih Akun —</option>
             @foreach ($accounts as $account)
                 <option value="{{ $account->id }}" {{ $selectedAccount?->id === $account->id ? 'selected' : '' }}>{{ $account->code }} — {{ $account->name }}</option>

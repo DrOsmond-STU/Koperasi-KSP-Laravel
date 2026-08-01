@@ -9,8 +9,8 @@
         .data-table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
         .data-table th, .data-table td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
         .data-table th { background: var(--paper); font-weight: 700; color: var(--muted); }
-        .gain { color: #2E7D52; font-weight: 700; }
-        .loss { color: #A8472F; font-weight: 700; }
+        .gain { color: var(--ok); font-weight: 700; }
+        .loss { color: var(--brick); font-weight: 700; }
     </style>
 
     <h2>Laporan Pelepasan Aktiva Tetap {{ $isConsolidated ? '— Konsolidasi Seluruh Cabang' : '' }}</h2>

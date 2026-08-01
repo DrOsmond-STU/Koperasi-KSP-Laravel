@@ -17,6 +17,8 @@ class BrandingService
 {
     private const CACHE_KEY = 'app_branding_settings';
 
+    private const LOGO_DATA_URI_CACHE_KEY = 'app_branding_logo_data_uri';
+
     private const LOGO_DISK = 'public';
 
     private const LOGO_DIRECTORY = 'branding';
@@ -50,6 +52,33 @@ class BrandingService
     }
 
     /**
+     * Base64-embedded logo for PDF rendering (prints/layout.blade.php,
+     * MemberCardRenderer). dompdf's `enable_remote` is off by default, so an
+     * http(s) `logoUrl()` silently fails to render inside a PDF — embedding
+     * the bytes directly sidesteps that, matching how GeneratesBarcodePng
+     * already embeds barcodes.
+     */
+    public function logoDataUri(): ?string
+    {
+        $path = $this->current()->logo_path;
+
+        if (! $path) {
+            return null;
+        }
+
+        return Cache::rememberForever(self::LOGO_DATA_URI_CACHE_KEY, function () use ($path) {
+            if (! Storage::disk(self::LOGO_DISK)->exists($path)) {
+                return null;
+            }
+
+            $mime = Storage::disk(self::LOGO_DISK)->mimeType($path);
+            $contents = Storage::disk(self::LOGO_DISK)->get($path);
+
+            return 'data:'.$mime.';base64,'.base64_encode($contents);
+        });
+    }
+
+    /**
      * @param  array{app_name?: string}  $attributes
      */
     public function update(array $attributes, ?UploadedFile $logo, int $userId): AppBrandingSetting
@@ -79,6 +108,7 @@ class BrandingService
         $setting->update($data);
 
         Cache::forget(self::CACHE_KEY);
+        Cache::forget(self::LOGO_DATA_URI_CACHE_KEY);
 
         return $setting->fresh();
     }

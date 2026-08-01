@@ -12,6 +12,17 @@ class ChartOfAccount extends Model
 {
     use Auditable, HasFactory;
 
+    /**
+     * Codes hardcoded by literal string across ~10 core services
+     * (SavingsService, PurchaseService, StockAdjustmentService,
+     * FixedAssetDisposalService, RetributionService, ...) via
+     * `where('code', '1101')`-style lookups rather than a foreign key —
+     * renaming or deleting these breaks cash/adjustment/disposal posting
+     * app-wide with nothing at the DB layer to catch it. The admin CRUD
+     * screen locks `code` edits and blocks deletion for any account here.
+     */
+    public const PROTECTED_CODES = ['1101', '1132', '4903', '4904', '5212', '5904'];
+
     protected $fillable = [
         'code',
         'name',
@@ -39,5 +50,10 @@ class ChartOfAccount extends Model
     public function children(): HasMany
     {
         return $this->hasMany(ChartOfAccount::class, 'parent_code', 'code');
+    }
+
+    public function isProtected(): bool
+    {
+        return in_array($this->code, self::PROTECTED_CODES, true);
     }
 }

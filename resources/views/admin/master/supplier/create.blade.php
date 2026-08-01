@@ -9,7 +9,7 @@
         .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
         .field input, .field select { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; }
         .btn-primary { padding: 10px 18px; background: var(--pine); color: #fff; border: none; border-radius: 9px; font-weight: 700; cursor: pointer; }
-        .error-text { color: #A8472F; font-size: 12px; margin-top: 4px; }
+        .error-text { color: var(--brick); font-size: 12px; margin-top: 4px; }
     </style>
 
     <h2>Tambah Supplier</h2>
@@ -61,7 +61,7 @@
             </div>
             <div class="field">
                 <label>Akun COA — Hutang Usaha</label>
-                <select name="coa_payable_account_id" required>
+                <select name="coa_payable_account_id" required class="js-searchable">
                     <option value="">— Pilih Akun —</option>
                     @foreach ($postableAccounts as $account)
                         <option value="{{ $account->id }}">{{ $account->code }} — {{ $account->name }}</option>

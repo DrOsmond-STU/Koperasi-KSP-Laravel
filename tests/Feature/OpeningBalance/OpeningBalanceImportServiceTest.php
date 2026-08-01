@@ -93,7 +93,7 @@ class OpeningBalanceImportServiceTest extends TestCase
     {
         $batch = $this->batch();
 
-        $csv = "kode_anggota,no_pinjaman_lama,angsuran_ke,tanggal_jatuh_tempo,nominal_pokok,nominal_bunga,nominal_denda,status\n"
+        $csv = "kode_anggota,no_pinjaman_lama,angsuran_ke,tanggal_jatuh_tempo,nominal_pokok,nominal_jasa,nominal_denda,status\n"
             ."AGT-0001,OLD-TIDAK-ADA,6,2026-02-01,900000,50000,0,Belum Bayar\n";
 
         $result = app(OpeningBalanceImportService::class)->validateInstallments($batch, $this->csvFile($csv)->getRealPath());
@@ -124,7 +124,7 @@ class OpeningBalanceImportServiceTest extends TestCase
             'collectibility' => 'lancar',
         ]);
 
-        $csv = "kode_anggota,no_pinjaman_lama,angsuran_ke,tanggal_jatuh_tempo,nominal_pokok,nominal_bunga,nominal_denda,status\n"
+        $csv = "kode_anggota,no_pinjaman_lama,angsuran_ke,tanggal_jatuh_tempo,nominal_pokok,nominal_jasa,nominal_denda,status\n"
             ."AGT-0001,OLD-00234,6,2026-02-01,900000,50000,0,Belum Bayar\n";
 
         $result = app(OpeningBalanceImportService::class)->validateInstallments($batch, $this->csvFile($csv)->getRealPath());

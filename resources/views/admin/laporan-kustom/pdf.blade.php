@@ -1,17 +1,16 @@
-<html>
-<head>
-    <meta charset="utf-8">
+@extends('prints.layout')
+
+@section('title', $title)
+
+@section('print-content')
     <style>
-        body { font-family: sans-serif; font-size: 11px; }
-        h2 { margin-bottom: 4px; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { border: 1px solid #ccc; padding: 5px 8px; text-align: left; }
-        th { background: #f0f0f0; }
+        th, td { border: 1px solid #D7E2DB; padding: 5px 8px; text-align: left; }
+        th { background: #F4F7F4; }
     </style>
-</head>
-<body>
-    <h2>{{ $title }}</h2>
-    <p>{{ config('app.name') }} — dicetak {{ now()->translatedFormat('d M Y H:i') }}</p>
+
+    <h2 style="font-size:13pt; margin:0 0 2px;">{{ $title }}</h2>
+    <p style="font-size:9pt; color:#5C6E64;">Dicetak {{ now()->translatedFormat('d M Y H:i') }}</p>
 
     <table>
         <thead>
@@ -33,5 +32,4 @@
             @endforelse
         </tbody>
     </table>
-</body>
-</html>
+@endsection

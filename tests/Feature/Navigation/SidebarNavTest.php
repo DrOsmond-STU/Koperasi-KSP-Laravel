@@ -45,7 +45,7 @@ class SidebarNavTest extends TestCase
         $response->assertSee('Dashboard Utama');
     }
 
-    public function test_admin_sistem_sees_sistem_group_but_not_akuntansi_group(): void
+    public function test_admin_sistem_sees_every_group_as_superuser(): void
     {
         $user = User::factory()->create(['two_factor_confirmed_at' => now()]);
         $user->assignRole('admin_sistem');
@@ -53,7 +53,7 @@ class SidebarNavTest extends TestCase
         $response = $this->actingAs($user)->get(route('admin.notifikasi.log.index'));
 
         $response->assertSee('Pengaturan Branding');
-        $response->assertDontSee('Saldo Awal');
+        $response->assertSee('Saldo Awal');
     }
 
     public function test_mobile_drawer_toggle_markup_is_present(): void

@@ -13,22 +13,6 @@ class InventoryReportController extends Controller
 {
     public function __construct(private readonly InventoryReportService $reportService) {}
 
-    public function saldo(Request $request): View
-    {
-        $this->authorize('laporan_kustom.read');
-
-        $branchId = $this->resolveBranchId($request);
-        $asOfDate = $request->input('as_of_date', now()->toDateString());
-
-        return view('admin.persediaan.laporan.saldo', [
-            'rows' => $this->reportService->saldoPersediaan($branchId, $asOfDate),
-            'asOfDate' => $asOfDate,
-            'branches' => $this->availableBranches($request),
-            'selectedBranchId' => $branchId,
-            'isConsolidated' => $branchId === null,
-        ]);
-    }
-
     public function kartu(Request $request): View
     {
         $this->authorize('laporan_kustom.read');

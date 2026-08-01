@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\Auditable;
+use App\Models\Concerns\AuthorizesOwner;
 use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class StockAdjustment extends Model
 {
-    use Auditable, BelongsToBranch, HasFactory;
+    use Auditable, AuthorizesOwner, BelongsToBranch, HasFactory;
 
     protected $fillable = [
         'product_id',
@@ -26,6 +27,10 @@ class StockAdjustment extends Model
         'journal_entry_id',
         'created_by',
         'approved_by',
+        'cancelled_at',
+        'cancelled_by',
+        'cancellation_reason',
+        'reversal_journal_entry_id',
     ];
 
     protected function casts(): array
@@ -37,7 +42,13 @@ class StockAdjustment extends Model
             'unit_cost' => 'decimal:4',
             'amount' => 'decimal:2',
             'adjustment_date' => 'date',
+            'cancelled_at' => 'datetime',
         ];
+    }
+
+    public function isCancelled(): bool
+    {
+        return $this->cancelled_at !== null;
     }
 
     public function product(): BelongsTo
@@ -53,6 +64,16 @@ class StockAdjustment extends Model
     public function journalEntry(): BelongsTo
     {
         return $this->belongsTo(JournalEntry::class);
+    }
+
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function approvedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'approved_by');
     }
 
     public function isSurplus(): bool

@@ -13,7 +13,7 @@
             border-radius: 9px; font-weight: 700; font-size: 14px; cursor: pointer;
         }
         .btn-primary:hover { background: var(--pine-deep); }
-        .error-text { color: #A8472F; font-size: 12px; margin-top: 4px; }
+        .error-text { color: var(--brick); font-size: 12px; margin-top: 4px; }
     </style>
 
     @if ($errors->any())

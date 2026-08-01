@@ -10,7 +10,7 @@
         .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
         .field input, .field select { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; }
         .btn-primary { padding: 10px 18px; background: var(--pine); color: #fff; border: none; border-radius: 9px; font-weight: 700; cursor: pointer; }
-        .status-msg { color: #2E7D52; font-size: 13px; margin-bottom: 14px; }
+        .status-msg { color: var(--ok); font-size: 13px; margin-bottom: 14px; }
         .feed-item { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; display: flex; justify-content: space-between; }
         @media (max-width: 980px) { .teller-grid { grid-template-columns: 1fr; } }
     </style>

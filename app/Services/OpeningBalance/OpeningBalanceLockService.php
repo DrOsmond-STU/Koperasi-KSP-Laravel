@@ -8,22 +8,27 @@ use App\Models\OpeningBalanceBatch;
 use App\Models\SavingsAccount;
 use App\Models\User;
 use App\Services\Accounting\JournalEngine;
+use App\Services\Inventory\StockLedgerEngine;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Locks an opening balance batch (PRD §9.2): validates full balance one
  * more time, then in a single DB transaction (1) posts the opening journal
  * via JournalEngine, (2) materializes real SavingsAccount / Loan /
- * LoanSchedule rows so the migrated data behaves like any other record in
- * the system from this point on, and (3) marks the batch `locked` —
- * irreversible (RUNBOOK §5.6: corrections afterwards go through a journal
- * adjustment, never by re-opening the batch).
+ * LoanSchedule / stock_ledger rows so the migrated data behaves like any
+ * other record in the system from this point on, and (3) marks the batch
+ * `locked` — irreversible (RUNBOOK §5.6: corrections afterwards go through a
+ * journal adjustment, never by re-opening the batch). UPF is the one
+ * sub-module that stays reconciliation-only (no materialize step) — it has
+ * no ongoing balance for other modules to read, unlike stock's running
+ * qty/avg-cost.
  */
 class OpeningBalanceLockService
 {
     public function __construct(
         private readonly JournalEngine $journalEngine,
         private readonly OpeningBalanceReconciliationService $reconciliation,
+        private readonly StockLedgerEngine $stockLedgerEngine,
     ) {}
 
     public function lock(OpeningBalanceBatch $batch, User $user): OpeningBalanceBatch
@@ -42,6 +47,7 @@ class OpeningBalanceLockService
             $this->postOpeningJournal($batch, $user);
             $this->materializeSavingsAccounts($batch);
             $this->materializeLoans($batch, $user);
+            $this->materializeStock($batch, $user);
 
             // AUD-05: siapa approve, hasil rekonsiliasi saat lock, batch id
             // (batch id is the AuditLog row's auditable_id, recorded
@@ -55,6 +61,8 @@ class OpeningBalanceLockService
                     'coa_credit_total' => $report->coaCreditTotal,
                     'savings_discrepancies' => $report->savingsDiscrepancies,
                     'loans_discrepancies' => $report->loansDiscrepancies,
+                    'upf_discrepancies' => $report->upfDiscrepancies,
+                    'stock_discrepancies' => $report->stockDiscrepancies,
                 ],
             ]);
 
@@ -126,6 +134,22 @@ class OpeningBalanceLockService
                     'status' => $installment->status,
                 ]);
             }
+        }
+    }
+
+    private function materializeStock(OpeningBalanceBatch $batch, User $user): void
+    {
+        foreach ($batch->stock as $row) {
+            $this->stockLedgerEngine->receive(
+                $row->product,
+                $batch->branch_id,
+                (string) $row->qty,
+                (string) $row->unit_cost,
+                'saldo_awal',
+                $user->id,
+                $batch,
+                $batch->cutoff_date,
+            );
         }
     }
 

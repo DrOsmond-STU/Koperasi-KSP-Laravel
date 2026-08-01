@@ -142,4 +142,49 @@ class LoanApprovalService
     {
         return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
     }
+
+    /**
+     * Membatalkan pencairan pinjaman yang belum ada angsurannya sama sekali
+     * (bukan restrukturisasi/pelunasan dipercepat — di luar cakupan ini).
+     * Jadwal angsuran yang belum dibayar dihapus (murni derivasi hasil
+     * perhitungan, tidak ada dampak kas independen) dan digantikan cukup
+     * oleh jejak jurnal pembalik + kolom pembatalan pada baris pinjaman itu
+     * sendiri, yang tetap ada (tidak pernah dihapus).
+     */
+    public function cancelDisbursement(Loan $loan, string $reason, int $cancelledBy): Loan
+    {
+        if ($loan->isCancelled()) {
+            throw LoanApprovalException::alreadyCancelled();
+        }
+
+        if ($loan->status !== 'dicairkan') {
+            throw LoanApprovalException::notDisbursed($loan->status);
+        }
+
+        if ($loan->schedules()->where('paid_amount', '>', 0)->exists()) {
+            throw LoanApprovalException::hasPayments();
+        }
+
+        $disbursementEntry = $loan->disbursementJournalEntry;
+
+        if ($disbursementEntry === null) {
+            throw LoanApprovalException::noDisbursementJournal();
+        }
+
+        return DB::transaction(function () use ($loan, $reason, $cancelledBy, $disbursementEntry) {
+            $reversalEntry = $this->journalEngine->reverse($disbursementEntry, $reason, $cancelledBy);
+
+            $loan->schedules()->delete();
+
+            $loan->update([
+                'status' => 'dibatalkan',
+                'cancelled_at' => now(),
+                'cancelled_by' => $cancelledBy,
+                'cancellation_reason' => $reason,
+                'reversal_journal_entry_id' => $reversalEntry->id,
+            ]);
+
+            return $loan->fresh();
+        });
+    }
 }

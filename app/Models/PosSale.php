@@ -16,6 +16,7 @@ class PosSale extends Model
     protected $fillable = [
         'branch_id',
         'savings_account_id',
+        'loan_id',
         'sale_number',
         'sale_date',
         'payment_method',
@@ -42,6 +43,11 @@ class PosSale extends Model
     public function savingsAccount(): BelongsTo
     {
         return $this->belongsTo(SavingsAccount::class);
+    }
+
+    public function loan(): BelongsTo
+    {
+        return $this->belongsTo(Loan::class);
     }
 
     public function journalEntry(): BelongsTo

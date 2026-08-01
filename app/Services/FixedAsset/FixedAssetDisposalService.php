@@ -93,6 +93,35 @@ class FixedAssetDisposalService
         });
     }
 
+    /**
+     * Pembatalan pelepasan — memulihkan `fixed_assets.status` ke `aktif`
+     * dan membalik jurnal (JournalEngine::reverse() otomatis membalik SEMUA
+     * baris — nilai perolehan, akumulasi penyusutan, kas, laba/rugi —
+     * sekaligus, tidak ada ledger terpisah seperti stock_ledger yang perlu
+     * dibalik manual di sini).
+     */
+    public function reverseDisposal(FixedAssetDisposal $disposal, string $reason, int $cancelledBy): FixedAssetDisposal
+    {
+        if ($disposal->isCancelled()) {
+            throw FixedAssetDisposalException::alreadyCancelled();
+        }
+
+        return DB::transaction(function () use ($disposal, $reason, $cancelledBy) {
+            $reversalEntry = $this->journalEngine->reverse($disposal->journalEntry, $reason, $cancelledBy);
+
+            $disposal->fixedAsset->update(['status' => 'aktif']);
+
+            $disposal->update([
+                'cancelled_at' => now(),
+                'cancelled_by' => $cancelledBy,
+                'cancellation_reason' => $reason,
+                'reversal_journal_entry_id' => $reversalEntry->id,
+            ]);
+
+            return $disposal->fresh();
+        });
+    }
+
     private function cashAccount(): ChartOfAccount
     {
         return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();

@@ -9,6 +9,7 @@ class MemberCardField extends Model
 {
     public const FIELD_KEYS = [
         'photo',
+        'logo',
         'name',
         'member_number',
         'branch_name',
@@ -51,6 +52,11 @@ class MemberCardField extends Model
     public function isPhoto(): bool
     {
         return $this->field_key === 'photo';
+    }
+
+    public function isLogo(): bool
+    {
+        return $this->field_key === 'logo';
     }
 
     /**

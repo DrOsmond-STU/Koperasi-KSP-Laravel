@@ -3,15 +3,17 @@
 namespace App\Models;
 
 use App\Models\Concerns\Auditable;
+use App\Models\Concerns\AuthorizesOwner;
 use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphOne;
 
 class Loan extends Model
 {
-    use Auditable, BelongsToBranch, HasFactory;
+    use Auditable, AuthorizesOwner, BelongsToBranch, HasFactory;
 
     protected $fillable = [
         'branch_id',
@@ -28,6 +30,10 @@ class Loan extends Model
         'created_by',
         'submitted_at',
         'disbursed_at',
+        'cancelled_at',
+        'cancelled_by',
+        'cancellation_reason',
+        'reversal_journal_entry_id',
     ];
 
     protected function casts(): array
@@ -38,7 +44,13 @@ class Loan extends Model
             'provision_fee_amount' => 'decimal:2',
             'submitted_at' => 'date',
             'disbursed_at' => 'date',
+            'cancelled_at' => 'datetime',
         ];
+    }
+
+    public function isCancelled(): bool
+    {
+        return $this->cancelled_at !== null;
     }
 
     public function member(): BelongsTo
@@ -64,6 +76,22 @@ class Loan extends Model
     public function schedules(): HasMany
     {
         return $this->hasMany(LoanSchedule::class)->orderBy('installment_number');
+    }
+
+    public function repayments(): HasMany
+    {
+        return $this->hasMany(LoanRepayment::class);
+    }
+
+    /**
+     * The disbursement journal entry, found via JournalEntry's polymorphic
+     * `source` (loans have no journal_entry_id column — disbursement is the
+     * ONLY journal a loan itself is the source of; POS "hutang" loans are
+     * instead a line inside the POS sale's own combined journal entry).
+     */
+    public function disbursementJournalEntry(): MorphOne
+    {
+        return $this->morphOne(JournalEntry::class, 'source');
     }
 
     public function approvalCount(): int

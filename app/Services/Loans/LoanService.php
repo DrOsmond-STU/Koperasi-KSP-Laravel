@@ -16,6 +16,8 @@ use Illuminate\Support\Facades\DB;
  */
 class LoanService
 {
+    public function __construct(private readonly LoanScheduleCalculator $scheduleCalculator) {}
+
     public function submitApplication(
         Member $member,
         LoanProduct $product,
@@ -24,13 +26,7 @@ class LoanService
         int $branchId,
         int $createdBy,
     ): Loan {
-        if ($principal < (float) $product->min_plafon || $principal > (float) $product->max_plafon) {
-            throw InvalidLoanApplicationException::plafonOutOfRange($principal, (float) $product->min_plafon, (float) $product->max_plafon);
-        }
-
-        if ($tenorMonths < $product->min_tenor_months || $tenorMonths > $product->max_tenor_months) {
-            throw InvalidLoanApplicationException::tenorOutOfRange($tenorMonths, $product->min_tenor_months, $product->max_tenor_months);
-        }
+        $this->assertWithinProductLimits($product, $principal, $tenorMonths);
 
         $rate = $product->rateAt();
 
@@ -49,6 +45,73 @@ class LoanService
                 'submitted_at' => now()->toDateString(),
             ]);
         });
+    }
+
+    /**
+     * Pinjaman instan dari penjualan POS "hutang" (kasir langsung
+     * mengaktifkan, tanpa alur persetujuan berjenjang — disengaja untuk
+     * fitur ini, level kepercayaan sama seperti Tunai/Potong Simpanan).
+     *
+     * WAJIB dipanggil dari dalam DB::transaction() yang sudah terbuka
+     * (PosSaleService::sell()) — method ini TIDAK membuka transaksi
+     * sendiri, dan TIDAK PERNAH memposting jurnal: kaki piutangnya jadi
+     * bagian dari satu jurnal gabungan penjualan POS yang diposting oleh
+     * pemanggil (beda dengan LoanApprovalService::disburse() yang
+     * memposting jurnal Dr Piutang/Cr Kas terpisah, karena pencairan
+     * pinjaman normal = keluar uang tunai — hutang POS tidak ada
+     * pergerakan kas sama sekali).
+     */
+    public function originateInstantly(
+        Member $member,
+        LoanProduct $product,
+        float $principal,
+        int $tenorMonths,
+        int $branchId,
+        int $createdBy,
+    ): Loan {
+        $this->assertWithinProductLimits($product, $principal, $tenorMonths);
+
+        $ratePercentage = (float) ($product->rateAt()?->rate_percentage ?? 0);
+
+        $loan = Loan::query()->create([
+            'branch_id' => $branchId,
+            'member_id' => $member->id,
+            'loan_product_id' => $product->id,
+            'loan_number' => $this->generateLoanNumber($product),
+            'principal_amount' => $principal,
+            'tenor_months' => $tenorMonths,
+            'interest_rate_percentage' => $ratePercentage,
+            'provision_fee_amount' => 0,
+            'required_approval_count' => $product->requiredApprovalCountFor($principal),
+            'status' => 'dicairkan',
+            'collectibility' => 'lancar',
+            'created_by' => $createdBy,
+            'submitted_at' => now()->toDateString(),
+            'disbursed_at' => now()->toDateString(),
+        ]);
+
+        foreach ($this->scheduleCalculator->calculate($principal, $tenorMonths, $ratePercentage, $product->calculation_method, now()) as $row) {
+            $loan->schedules()->create([
+                'installment_number' => $row['installment_number'],
+                'due_date' => $row['due_date'],
+                'principal_amount' => $row['principal_amount'],
+                'interest_amount' => $row['interest_amount'],
+                'total_amount' => $row['total_amount'],
+            ]);
+        }
+
+        return $loan->fresh('schedules');
+    }
+
+    private function assertWithinProductLimits(LoanProduct $product, float $principal, int $tenorMonths): void
+    {
+        if ($principal < (float) $product->min_plafon || $principal > (float) $product->max_plafon) {
+            throw InvalidLoanApplicationException::plafonOutOfRange($principal, (float) $product->min_plafon, (float) $product->max_plafon);
+        }
+
+        if ($tenorMonths < $product->min_tenor_months || $tenorMonths > $product->max_tenor_months) {
+            throw InvalidLoanApplicationException::tenorOutOfRange($tenorMonths, $product->min_tenor_months, $product->max_tenor_months);
+        }
     }
 
     private function generateLoanNumber(LoanProduct $product): string

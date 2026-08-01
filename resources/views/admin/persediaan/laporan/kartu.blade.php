@@ -27,7 +27,7 @@
                 <option value="{{ $branch->id }}" {{ $selectedBranchId === $branch->id ? 'selected' : '' }}>{{ $branch->name }}</option>
             @endforeach
         </select>
-        <select name="product_id" onchange="this.form.submit()">
+        <select name="product_id" onchange="this.form.submit()" class="js-searchable">
             <option value="">— Pilih Barang —</option>
             @foreach ($products as $product)
                 <option value="{{ $product->id }}" {{ $selectedProductId === $product->id ? 'selected' : '' }}>{{ $product->code }} — {{ $product->name }}</option>

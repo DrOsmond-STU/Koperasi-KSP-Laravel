@@ -43,6 +43,24 @@ class ReportTypeRegistry
                     'closing_book_value' => 'Nilai Buku Akhir',
                 ],
             ],
+            // Kolom statis saja — kolom dinamis "retribusi_line_{id}" (satu per
+            // jenis retribusi aktif saat request) dirakit oleh
+            // RetributionController, bukan di sini (lihat class doc-comment:
+            // registry ini tetap murni whitelist statis).
+            'retribusi_upf' => [
+                'label' => 'Retribusi UPF',
+                'columns' => [
+                    'transaction_date' => 'Tanggal',
+                    'transaction_number' => 'No. Transaksi',
+                    'payer_name' => 'Pembayar',
+                    'member_number' => 'No. Anggota',
+                    'total_amount' => 'Total Iuran',
+                    'payment_method' => 'Metode Bayar',
+                    'branch_name' => 'Cabang',
+                    'created_by_name' => 'Kasir',
+                    'description' => 'Keterangan',
+                ],
+            ],
         ];
     }
 

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Exports\GenericListExport;
+use App\Http\Controllers\Concerns\GeneratesPrintPdf;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreCooperativeEventRequest;
 use App\Models\Branch;
@@ -10,10 +12,15 @@ use App\Models\Member;
 use App\Services\Calendar\CooperativeEventService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
+use Maatwebsite\Excel\Facades\Excel;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response;
 
 class CooperativeEventController extends Controller
 {
+    use GeneratesPrintPdf;
+
     public function __construct(private readonly CooperativeEventService $eventService) {}
 
     public function index(): View
@@ -23,6 +30,36 @@ class CooperativeEventController extends Controller
         return view('admin.kalender.kegiatan.index', [
             'events' => CooperativeEvent::query()->latest('start_at')->get(),
         ]);
+    }
+
+    public function exportPdf(): Response
+    {
+        $this->authorize('kalender.read');
+
+        $pdf = $this->renderPrintPdf('prints.kalender.kegiatan', [
+            'events' => CooperativeEvent::query()->latest('start_at')->get(),
+            'generatedAt' => now(),
+        ]);
+
+        return $pdf->download('daftar-kegiatan-'.now()->format('Ymd-His').'.pdf');
+    }
+
+    public function exportExcel(): BinaryFileResponse
+    {
+        $this->authorize('kalender.read');
+
+        $rows = CooperativeEvent::query()->latest('start_at')->get()->map(fn (CooperativeEvent $event) => [
+            $event->title,
+            $event->start_at->format('Y-m-d H:i'),
+            $event->end_at->format('Y-m-d H:i'),
+            $event->location,
+            ucfirst($event->status),
+        ]);
+
+        return Excel::download(
+            new GenericListExport(['Judul', 'Mulai', 'Selesai', 'Lokasi', 'Status'], $rows),
+            'daftar-kegiatan-'.now()->format('Ymd-His').'.xlsx',
+        );
     }
 
     public function create(): View

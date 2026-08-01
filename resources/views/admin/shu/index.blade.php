@@ -9,13 +9,13 @@
         .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 20px; }
         .data-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
         .data-table th, .data-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-        .badge-ok { color: #2E7D52; font-weight: 700; }
-        .badge-bad { color: #A8472F; font-weight: 700; }
+        .badge-ok { color: var(--ok); font-weight: 700; }
+        .badge-bad { color: var(--brick); font-weight: 700; }
         .field-row { display: flex; gap: 10px; align-items: end; }
         .field-row label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
         .field-row input, .field-row select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; }
         .btn-primary { padding: 8px 14px; background: var(--pine); color: #fff; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 12px; }
-        .status-msg { color: #2E7D52; font-size: 13px; margin-bottom: 14px; }
+        .status-msg { color: var(--ok); font-size: 13px; margin-bottom: 14px; }
     </style>
 
     <h2>Simulasi SHU {{ $isConsolidated ? '— Konsolidasi Seluruh Cabang' : '' }}</h2>

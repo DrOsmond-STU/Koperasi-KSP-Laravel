@@ -14,7 +14,7 @@
     <h2>Kartu Penyusutan per Aset</h2>
 
     <form class="filter-bar" method="GET">
-        <select name="fixed_asset_id" onchange="this.form.submit()">
+        <select name="fixed_asset_id" onchange="this.form.submit()" class="js-searchable">
             <option value="">— Pilih Aset —</option>
             @foreach ($assets as $asset)
                 <option value="{{ $asset->id }}" {{ $selectedAssetId === $asset->id ? 'selected' : '' }}>{{ $asset->code }} — {{ $asset->name }}</option>

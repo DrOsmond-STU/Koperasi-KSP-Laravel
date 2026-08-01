@@ -150,4 +150,42 @@ class FixedAssetDisposalServiceTest extends TestCase
         $this->expectException(FixedAssetDisposalException::class);
         app(FixedAssetDisposalService::class)->dispose($asset, 'dihapusbukukan', '0', $user->id);
     }
+
+    public function test_reversing_a_disposal_restores_asset_status_and_reverses_journal(): void
+    {
+        $category = $this->category();
+        $asset = FixedAsset::factory()->create([
+            'fixed_asset_category_id' => $category->id,
+            'acquisition_cost' => 12000000,
+            'residual_value' => 1200000,
+        ]);
+        $user = User::factory()->create();
+
+        $disposal = app(FixedAssetDisposalService::class)->dispose($asset, 'dihapusbukukan', '0', $user->id);
+        $this->assertEquals('dihapusbukukan', $asset->fresh()->status);
+
+        $reversed = app(FixedAssetDisposalService::class)->reverseDisposal($disposal, 'Aset ternyata masih dipakai', $user->id);
+
+        $this->assertNotNull($reversed->cancelled_at);
+        $this->assertNotNull($reversed->reversal_journal_entry_id);
+        $this->assertEquals('aktif', $asset->fresh()->status);
+
+        $this->assertDatabaseHas('journal_entries', [
+            'id' => $reversed->reversal_journal_entry_id,
+            'reversal_of_entry_id' => $disposal->journal_entry_id,
+        ]);
+    }
+
+    public function test_reversing_an_already_cancelled_disposal_is_rejected(): void
+    {
+        $category = $this->category();
+        $asset = FixedAsset::factory()->create(['fixed_asset_category_id' => $category->id]);
+        $user = User::factory()->create();
+
+        $disposal = app(FixedAssetDisposalService::class)->dispose($asset, 'dihapusbukukan', '0', $user->id);
+        app(FixedAssetDisposalService::class)->reverseDisposal($disposal, 'Pertama', $user->id);
+
+        $this->expectException(FixedAssetDisposalException::class);
+        app(FixedAssetDisposalService::class)->reverseDisposal($disposal->fresh(), 'Kedua', $user->id);
+    }
 }

@@ -51,4 +51,22 @@ return [
         'token' => env('WHATSAPP_API_TOKEN'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Xendit Payment Gateway
+    |--------------------------------------------------------------------------
+    |
+    | Powers Portal Anggota's self-service "Setor Simpanan" and "Bayar
+    | Angsuran" — member is redirected to a Xendit-hosted Invoice checkout
+    | page, and a webhook confirms payment server-to-server. secret_key
+    | empty means the gateway is not configured yet; the portal hides the
+    | payment buttons rather than showing a broken flow.
+    |
+    */
+    'xendit' => [
+        'secret_key' => env('XENDIT_SECRET_KEY'),
+        'webhook_token' => env('XENDIT_WEBHOOK_VERIFICATION_TOKEN'),
+        'base_url' => env('XENDIT_BASE_URL', 'https://api.xendit.co'),
+    ],
+
 ];

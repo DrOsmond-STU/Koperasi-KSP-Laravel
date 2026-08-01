@@ -8,7 +8,7 @@
         .data-table th, .data-table td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
         .data-table th { background: var(--paper); font-weight: 700; color: var(--muted); }
         .btn-primary { display: inline-block; padding: 9px 16px; background: var(--pine); color: #fff; border-radius: 9px; text-decoration: none; font-weight: 700; font-size: 13px; }
-        .status-msg { color: #2E7D52; font-size: 13px; margin-bottom: 14px; }
+        .status-msg { color: var(--ok); font-size: 13px; margin-bottom: 14px; }
     </style>
 
     <h2>Master Produk Simpanan</h2>
@@ -24,7 +24,7 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th>Kode</th><th>Nama</th><th>Kategori</th><th>Metode Bunga</th><th>Status</th>
+                <th>Kode</th><th>Nama</th><th>Kategori</th><th>Metode Jasa</th><th>Status</th>
             </tr>
         </thead>
         <tbody>

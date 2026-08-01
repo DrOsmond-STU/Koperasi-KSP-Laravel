@@ -7,12 +7,16 @@ class ReconciliationReport
     /**
      * @param  array<int, array{chart_of_account_id: int, sub_module_total: float, coa_amount: float}>  $savingsDiscrepancies
      * @param  array<int, array{chart_of_account_id: int, sub_module_total: float, coa_amount: float}>  $loansDiscrepancies
+     * @param  array<int, array{chart_of_account_id: int, sub_module_total: float, coa_amount: float}>  $upfDiscrepancies
+     * @param  array<int, array{chart_of_account_id: int, sub_module_total: float, coa_amount: float}>  $stockDiscrepancies
      */
     public function __construct(
         public readonly float $coaDebitTotal,
         public readonly float $coaCreditTotal,
         public readonly array $savingsDiscrepancies,
         public readonly array $loansDiscrepancies,
+        public readonly array $upfDiscrepancies = [],
+        public readonly array $stockDiscrepancies = [],
     ) {}
 
     public function isCoaBalanced(): bool
@@ -24,6 +28,8 @@ class ReconciliationReport
     {
         return $this->isCoaBalanced()
             && $this->savingsDiscrepancies === []
-            && $this->loansDiscrepancies === [];
+            && $this->loansDiscrepancies === []
+            && $this->upfDiscrepancies === []
+            && $this->stockDiscrepancies === [];
     }
 }

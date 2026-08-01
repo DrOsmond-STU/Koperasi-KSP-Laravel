@@ -5,8 +5,11 @@ namespace Tests\Feature\Loans;
 use App\Exceptions\Loans\LoanApprovalException;
 use App\Models\JournalEntry;
 use App\Models\Loan;
+use App\Models\LoanProduct;
+use App\Models\Member;
 use App\Models\User;
 use App\Services\Loans\LoanApprovalService;
+use App\Services\Loans\LoanService;
 use Database\Seeders\ChartOfAccountsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -113,5 +116,79 @@ class LoanApprovalServiceTest extends TestCase
 
         $this->expectException(LoanApprovalException::class);
         app(LoanApprovalService::class)->approve($loan, $approver);
+    }
+
+    private function disburseLoan(int $createdBy): Loan
+    {
+        $creator = User::query()->findOrFail($createdBy);
+        $approver = User::factory()->create();
+        $loan = Loan::factory()->create([
+            'created_by' => $creator->id,
+            'required_approval_count' => 1,
+            'principal_amount' => 5_000_000,
+            'tenor_months' => 12,
+        ]);
+
+        return app(LoanApprovalService::class)->approve($loan, $approver);
+    }
+
+    public function test_cancelling_a_disbursed_loan_reverses_journal_and_deletes_schedule(): void
+    {
+        $creator = User::factory()->create();
+        $loan = $this->disburseLoan($creator->id);
+        $disbursementEntry = JournalEntry::query()->where('source_type', Loan::class)->where('source_id', $loan->id)->firstOrFail();
+
+        $result = app(LoanApprovalService::class)->cancelDisbursement($loan, 'Salah input plafon', $creator->id);
+
+        $this->assertEquals('dibatalkan', $result->status);
+        $this->assertNotNull($result->cancelled_at);
+        $this->assertNotNull($result->reversal_journal_entry_id);
+        $this->assertDatabaseCount('loan_schedules', 0);
+
+        $this->assertDatabaseHas('journal_entries', [
+            'id' => $result->reversal_journal_entry_id,
+            'reversal_of_entry_id' => $disbursementEntry->id,
+        ]);
+    }
+
+    public function test_cancelling_a_loan_with_a_paid_installment_is_rejected(): void
+    {
+        $creator = User::factory()->create();
+        $loan = $this->disburseLoan($creator->id);
+        $loan->schedules()->first()->update(['paid_amount' => 100000]);
+
+        $this->expectException(LoanApprovalException::class);
+        app(LoanApprovalService::class)->cancelDisbursement($loan, 'Coba batalkan', $creator->id);
+    }
+
+    public function test_cancelling_a_non_disbursed_loan_is_rejected(): void
+    {
+        $creator = User::factory()->create();
+        $loan = Loan::factory()->create(['created_by' => $creator->id, 'status' => 'diajukan']);
+
+        $this->expectException(LoanApprovalException::class);
+        app(LoanApprovalService::class)->cancelDisbursement($loan, 'Coba batalkan', $creator->id);
+    }
+
+    public function test_cancelling_an_already_cancelled_loan_is_rejected(): void
+    {
+        $creator = User::factory()->create();
+        $loan = $this->disburseLoan($creator->id);
+        app(LoanApprovalService::class)->cancelDisbursement($loan, 'Pertama', $creator->id);
+
+        $this->expectException(LoanApprovalException::class);
+        app(LoanApprovalService::class)->cancelDisbursement($loan->fresh(), 'Kedua', $creator->id);
+    }
+
+    public function test_cancelling_a_pos_originated_loan_without_its_own_journal_is_rejected(): void
+    {
+        $product = LoanProduct::factory()->create(['min_plafon' => 0]);
+        $member = Member::factory()->create();
+        $user = User::factory()->create();
+
+        $loan = app(LoanService::class)->originateInstantly($member, $product, 1_000_000, 6, $member->branch_id, $user->id);
+
+        $this->expectException(LoanApprovalException::class);
+        app(LoanApprovalService::class)->cancelDisbursement($loan, 'Coba batalkan', $user->id);
     }
 }

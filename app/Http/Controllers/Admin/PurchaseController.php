@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Exceptions\Inventory\PurchaseApprovalException;
 use App\Exceptions\Inventory\PurchasePaymentException;
+use App\Http\Controllers\Concerns\GeneratesPrintPdf;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DecidePurchaseApprovalRequest;
 use App\Http\Requests\RecordPurchasePaymentRequest;
@@ -15,9 +16,12 @@ use App\Models\Supplier;
 use App\Services\Inventory\PurchaseService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 
 class PurchaseController extends Controller
 {
+    use GeneratesPrintPdf;
+
     public function __construct(private readonly PurchaseService $purchaseService) {}
 
     public function index(): View
@@ -99,5 +103,16 @@ class PurchaseController extends Controller
         }
 
         return redirect()->route('admin.pembelian.index')->with('status', "Pembayaran hutang untuk {$purchase->purchase_number} berhasil dicatat.");
+    }
+
+    public function print(PurchaseTransaction $purchase): Response
+    {
+        $this->authorize('pembelian.read');
+
+        $pdf = $this->renderPrintPdf('prints.pembelian.show', [
+            'purchase' => $purchase->load('supplier', 'items.product', 'createdBy', 'approvedBy'),
+        ]);
+
+        return $pdf->download('pembelian-'.$purchase->purchase_number.'.pdf');
     }
 }

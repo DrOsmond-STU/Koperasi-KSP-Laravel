@@ -10,6 +10,10 @@ use App\Models\OpeningBalanceCoa;
 use App\Models\OpeningBalanceInstallment;
 use App\Models\OpeningBalanceLoan;
 use App\Models\OpeningBalanceSaving;
+use App\Models\OpeningBalanceStock;
+use App\Models\OpeningBalanceUpf;
+use App\Models\Product;
+use App\Models\RetributionType;
 use App\Models\SavingsProduct;
 
 /**
@@ -90,7 +94,7 @@ class OpeningBalanceImportService
                 $rowErrors[] = "kode_produk_pinjaman \"{$row['kode_produk_pinjaman']}\" tidak ditemukan di Master Produk Pinjaman";
             }
 
-            foreach (['plafon_awal', 'sisa_pokok', 'sisa_bunga_berjalan', 'tenor_bulan', 'sisa_tenor', 'angsuran_ke'] as $numericField) {
+            foreach (['plafon_awal', 'sisa_pokok', 'sisa_jasa_berjalan', 'tenor_bulan', 'sisa_tenor', 'angsuran_ke'] as $numericField) {
                 if (! is_numeric($row[$numericField] ?? null)) {
                     $rowErrors[] = "{$numericField} harus berupa angka";
                 }
@@ -112,7 +116,7 @@ class OpeningBalanceImportService
                 'disbursement_date' => $row['tanggal_akad'],
                 'original_principal' => (float) $row['plafon_awal'],
                 'outstanding_principal' => (float) $row['sisa_pokok'],
-                'outstanding_interest' => (float) $row['sisa_bunga_berjalan'],
+                'outstanding_interest' => (float) $row['sisa_jasa_berjalan'],
                 'tenor_months' => (int) $row['tenor_bulan'],
                 'remaining_tenor_months' => (int) $row['sisa_tenor'],
                 'next_installment_number' => (int) $row['angsuran_ke'],
@@ -151,7 +155,7 @@ class OpeningBalanceImportService
                 $rowErrors[] = "no_pinjaman_lama \"{$row['no_pinjaman_lama']}\" tidak ditemukan di Saldo Awal Pinjaman pada batch ini";
             }
 
-            foreach (['angsuran_ke', 'nominal_pokok', 'nominal_bunga'] as $numericField) {
+            foreach (['angsuran_ke', 'nominal_pokok', 'nominal_jasa'] as $numericField) {
                 if (! is_numeric($row[$numericField] ?? null)) {
                     $rowErrors[] = "{$numericField} harus berupa angka";
                 }
@@ -171,7 +175,7 @@ class OpeningBalanceImportService
                 'installment_number' => (int) $row['angsuran_ke'],
                 'due_date' => $row['tanggal_jatuh_tempo'],
                 'principal_amount' => (float) $row['nominal_pokok'],
-                'interest_amount' => (float) $row['nominal_bunga'],
+                'interest_amount' => (float) $row['nominal_jasa'],
                 'penalty_amount' => (float) ($row['nominal_denda'] ?? 0),
                 'status' => $status === 'Sebagian' ? 'sebagian' : 'belum_bayar',
             ], []];
@@ -236,12 +240,113 @@ class OpeningBalanceImportService
     }
 
     /**
+     * Saldo Awal UPF v2 (pasca-Retribusi) — saldo pendapatan awal per jenis
+     * retribusi, bukan piutang per-kios (model lama, sudah dihapus).
+     */
+    public function validateUpf(OpeningBalanceBatch $batch, string $path): ImportResult
+    {
+        [$valid, $errors] = $this->processRows($this->readCsv($path), function (array $row) {
+            $rowErrors = [];
+
+            $type = RetributionType::query()->where('code', trim((string) ($row['kode_jenis_retribusi'] ?? '')))->first();
+            if (! $type) {
+                $rowErrors[] = "kode_jenis_retribusi \"{$row['kode_jenis_retribusi']}\" tidak ditemukan di Master Jenis Retribusi";
+            }
+
+            if (! is_numeric($row['saldo_awal'] ?? null)) {
+                $rowErrors[] = 'saldo_awal harus berupa angka';
+            }
+
+            if ($rowErrors !== []) {
+                return [null, $rowErrors];
+            }
+
+            return [[
+                'retribution_type_id' => $type->id,
+                'amount' => (float) $row['saldo_awal'],
+                'notes' => ($row['keterangan'] ?? '') !== '' ? $row['keterangan'] : null,
+            ], []];
+        });
+
+        return new ImportResult($valid, $errors);
+    }
+
+    public function commitUpf(OpeningBalanceBatch $batch, array $validRows): int
+    {
+        foreach ($validRows as $row) {
+            OpeningBalanceUpf::query()->create([...$row['data'], 'opening_balance_batch_id' => $batch->id]);
+        }
+
+        return count($validRows);
+    }
+
+    /**
+     * Saldo Awal Persediaan — qty & harga per barang dibawa dari sistem
+     * lama, dimaterialisasi ke stock_ledger saat batch dikunci (lihat
+     * OpeningBalanceLockService::materializeStock()).
+     */
+    public function validateStock(OpeningBalanceBatch $batch, string $path): ImportResult
+    {
+        [$valid, $errors] = $this->processRows($this->readCsv($path), function (array $row) {
+            $rowErrors = [];
+
+            $product = Product::query()->where('code', trim((string) ($row['kode_barang'] ?? '')))->first();
+            if (! $product) {
+                $rowErrors[] = "kode_barang \"{$row['kode_barang']}\" tidak ditemukan di Master Barang";
+            }
+
+            if (! is_numeric($row['qty'] ?? null)) {
+                $rowErrors[] = 'qty harus berupa angka';
+            }
+
+            if (! is_numeric($row['harga_satuan'] ?? null)) {
+                $rowErrors[] = 'harga_satuan harus berupa angka';
+            }
+
+            if ($rowErrors !== []) {
+                return [null, $rowErrors];
+            }
+
+            return [[
+                'product_id' => $product->id,
+                'qty' => (float) $row['qty'],
+                'unit_cost' => (float) $row['harga_satuan'],
+                'notes' => ($row['keterangan'] ?? '') !== '' ? $row['keterangan'] : null,
+            ], []];
+        });
+
+        return new ImportResult($valid, $errors);
+    }
+
+    public function commitStock(OpeningBalanceBatch $batch, array $validRows): int
+    {
+        foreach ($validRows as $row) {
+            OpeningBalanceStock::query()->create([...$row['data'], 'opening_balance_batch_id' => $batch->id]);
+        }
+
+        return count($validRows);
+    }
+
+    /**
+     * Header CSV lama yang memakai istilah "bunga" tetap diterima dan
+     * dipetakan ke nama kolom "jasa" yang berlaku sekarang, supaya template
+     * yang sudah beredar di koperasi tidak perlu dibuat ulang.
+     */
+    private const HEADER_ALIASES = [
+        'nominal_bunga' => 'nominal_jasa',
+        'sisa_bunga_berjalan' => 'sisa_jasa_berjalan',
+    ];
+
+    /**
      * @return array<int, array<string, string>>
      */
     private function readCsv(string $path): array
     {
         $handle = fopen($path, 'r');
-        $header = array_map('trim', fgetcsv($handle));
+        $header = array_map(
+            fn (string $column) => self::HEADER_ALIASES[$column] ?? $column,
+            array_map('trim', fgetcsv($handle))
+        );
         $rows = [];
 
         while (($line = fgetcsv($handle)) !== false) {

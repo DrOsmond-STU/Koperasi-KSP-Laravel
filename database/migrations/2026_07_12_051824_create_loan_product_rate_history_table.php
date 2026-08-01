@@ -9,7 +9,7 @@ return new class extends Migration
     /**
      * Run the migrations.
      *
-     * Tarif bunga tahunan per rentang tanggal berlaku — tidak retroaktif
+     * Tarif jasa tahunan per rentang tanggal berlaku — tidak retroaktif
      * (PRD §2.4). Setiap pengajuan pinjaman men-snapshot `interest_rate_percentage`
      * ke tabel `loans` saat diajukan, jadi pinjaman berjalan tidak berubah
      * walau tarif produk berubah kemudian.

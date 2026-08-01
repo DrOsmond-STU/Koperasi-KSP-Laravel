@@ -3,16 +3,21 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Exceptions\Inventory\ReturnException;
+use App\Http\Controllers\Concerns\GeneratesPrintPdf;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StorePurchaseReturnRequest;
 use App\Models\PurchaseItem;
+use App\Models\PurchaseReturn;
 use App\Models\StockReason;
 use App\Services\Inventory\ReturnService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 
 class PurchaseReturnController extends Controller
 {
+    use GeneratesPrintPdf;
+
     public function __construct(private readonly ReturnService $returnService) {}
 
     public function create(): View
@@ -49,5 +54,16 @@ class PurchaseReturnController extends Controller
         return redirect()
             ->route('admin.pembelian.retur.create')
             ->with('status', "Retur pembelian untuk {$item->product->name} sebesar Rp ".number_format((float) $return->amount, 0, ',', '.').' berhasil dicatat.');
+    }
+
+    public function print(PurchaseReturn $return): Response
+    {
+        $this->authorize('pembelian.read');
+
+        $pdf = $this->renderPrintPdf('prints.pembelian.retur', [
+            'return' => $return->load('purchaseItem.product', 'purchaseItem.purchaseTransaction.supplier', 'stockReason', 'createdBy'),
+        ]);
+
+        return $pdf->download('retur-pembelian-'.$return->id.'.pdf');
     }
 }

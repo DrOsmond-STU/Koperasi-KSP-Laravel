@@ -24,4 +24,14 @@ class StockAdjustmentException extends RuntimeException
     {
         return new self("Koreksi persediaan berstatus \"{$status}\" tidak dapat diproses lagi.");
     }
+
+    public static function notPosted(string $status): self
+    {
+        return new self("Hanya koreksi persediaan yang sudah diposting yang bisa dibatalkan (status saat ini: \"{$status}\").");
+    }
+
+    public static function alreadyCancelled(): self
+    {
+        return new self('Koreksi persediaan ini sudah pernah dibatalkan sebelumnya.');
+    }
 }

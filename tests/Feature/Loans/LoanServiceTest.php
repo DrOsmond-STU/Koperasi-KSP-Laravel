@@ -59,4 +59,41 @@ class LoanServiceTest extends TestCase
 
         $this->assertEquals(1, $loan->required_approval_count);
     }
+
+    public function test_originate_instantly_creates_a_dicairkan_loan_with_schedule(): void
+    {
+        $product = LoanProduct::factory()->create(['min_plafon' => 0]);
+        $member = Member::factory()->create();
+        $user = User::factory()->create();
+
+        $loan = app(LoanService::class)->originateInstantly($member, $product, 3_000_000, 6, $member->branch_id, $user->id);
+
+        $this->assertEquals('dicairkan', $loan->status);
+        $this->assertEquals('lancar', $loan->collectibility);
+        $this->assertNotNull($loan->disbursed_at);
+        $this->assertEquals('0.00', $loan->provision_fee_amount);
+        $this->assertCount(6, $loan->schedules);
+    }
+
+    public function test_originate_instantly_rejects_out_of_range_plafon(): void
+    {
+        $product = LoanProduct::factory()->create(['min_plafon' => 1000000, 'max_plafon' => 5000000]);
+        $member = Member::factory()->create();
+        $user = User::factory()->create();
+
+        $this->expectException(InvalidLoanApplicationException::class);
+
+        app(LoanService::class)->originateInstantly($member, $product, 10_000_000, 6, $member->branch_id, $user->id);
+    }
+
+    public function test_originate_instantly_rejects_out_of_range_tenor(): void
+    {
+        $product = LoanProduct::factory()->create(['min_plafon' => 0, 'min_tenor_months' => 6, 'max_tenor_months' => 12]);
+        $member = Member::factory()->create();
+        $user = User::factory()->create();
+
+        $this->expectException(InvalidLoanApplicationException::class);
+
+        app(LoanService::class)->originateInstantly($member, $product, 1_000_000, 36, $member->branch_id, $user->id);
+    }
 }

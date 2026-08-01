@@ -101,6 +101,55 @@ class StockAdjustmentService
         }
     }
 
+    /**
+     * Pembatalan koreksi yang sudah diposting — hanya diizinkan pada status
+     * `diposting` (menunggu_approval/ditolak tidak punya efek ledger/jurnal
+     * untuk dibalik). Arah stock ledger pembalik SELALU kebalikan dari
+     * posting asli: koreksi_plus (dulu receive()) dibalik lewat issue()
+     * beralasan koreksi_minus, dan sebaliknya — bukan mengulang submit(),
+     * yang akan menghitung ulang system_qty dari kondisi SEKARANG (salah,
+     * karena harus membalik posting yang SUDAH terjadi apa adanya).
+     */
+    public function reverseAdjustment(StockAdjustment $adjustment, string $reason, int $cancelledBy): StockAdjustment
+    {
+        if ($adjustment->status !== 'diposting') {
+            throw StockAdjustmentException::notPosted($adjustment->status);
+        }
+
+        if ($adjustment->isCancelled()) {
+            throw StockAdjustmentException::alreadyCancelled();
+        }
+
+        return DB::transaction(function () use ($adjustment, $reason, $cancelledBy) {
+            $product = $adjustment->product;
+            $absQty = bccomp((string) $adjustment->variance_qty, '0', 4) < 0
+                ? bcmul((string) $adjustment->variance_qty, '-1', 4)
+                : (string) $adjustment->variance_qty;
+
+            if ($adjustment->isSurplus()) {
+                $this->stockLedgerEngine->issue(
+                    $product, $adjustment->branch_id, $absQty, 'koreksi_minus', $cancelledBy, $adjustment,
+                );
+            } else {
+                $this->stockLedgerEngine->receive(
+                    $product, $adjustment->branch_id, $absQty, (string) $adjustment->unit_cost, 'koreksi_plus', $cancelledBy, $adjustment,
+                );
+            }
+
+            $reversalEntry = $this->journalEngine->reverse($adjustment->journalEntry, $reason, $cancelledBy);
+
+            $adjustment->update([
+                'status' => 'dibatalkan',
+                'cancelled_at' => now(),
+                'cancelled_by' => $cancelledBy,
+                'cancellation_reason' => $reason,
+                'reversal_journal_entry_id' => $reversalEntry->id,
+            ]);
+
+            return $adjustment->fresh();
+        });
+    }
+
     private function post(StockAdjustment $adjustment, int $userId): void
     {
         $product = $adjustment->product;

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Exceptions\FixedAsset\FixedAssetApprovalException;
+use App\Exports\GenericListExport;
+use App\Http\Controllers\Concerns\GeneratesPrintPdf;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DecideFixedAssetApprovalRequest;
 use App\Http\Requests\StoreFixedAssetRequest;
@@ -13,9 +15,14 @@ use App\Models\Supplier;
 use App\Services\FixedAsset\FixedAssetPurchaseService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response;
 
 class FixedAssetController extends Controller
 {
+    use GeneratesPrintPdf;
+
     public function __construct(private readonly FixedAssetPurchaseService $purchaseService) {}
 
     public function index(): View
@@ -78,5 +85,47 @@ class FixedAssetController extends Controller
         }
 
         return redirect()->route('admin.aktiva-tetap.index')->with('status', $message);
+    }
+
+    public function print(FixedAsset $asset): Response
+    {
+        $this->authorize('aktiva_tetap.read');
+
+        $pdf = $this->renderPrintPdf('prints.aktiva-tetap.show', [
+            'asset' => $asset->load('category', 'supplier', 'createdBy', 'approvedBy'),
+        ]);
+
+        return $pdf->download('aktiva-tetap-'.$asset->code.'.pdf');
+    }
+
+    public function exportPdf(): Response
+    {
+        $this->authorize('aktiva_tetap.read');
+
+        $pdf = $this->renderPrintPdf('prints.aktiva-tetap.daftar', [
+            'assets' => FixedAsset::query()->with('category')->orderBy('code')->get(),
+            'generatedAt' => now(),
+        ]);
+
+        return $pdf->download('daftar-aktiva-tetap-'.now()->format('Ymd-His').'.pdf');
+    }
+
+    public function exportExcel(): BinaryFileResponse
+    {
+        $this->authorize('aktiva_tetap.read');
+
+        $rows = FixedAsset::query()->with('category')->orderBy('code')->get()->map(fn (FixedAsset $asset) => [
+            $asset->code,
+            $asset->name,
+            $asset->category->name,
+            (float) $asset->acquisition_cost,
+            $asset->acquisition_date->format('Y-m-d'),
+            ucfirst($asset->status),
+        ]);
+
+        return Excel::download(
+            new GenericListExport(['Kode', 'Nama', 'Kategori', 'Nilai Perolehan', 'Tanggal Perolehan', 'Status'], $rows),
+            'daftar-aktiva-tetap-'.now()->format('Ymd-His').'.xlsx',
+        );
     }
 }

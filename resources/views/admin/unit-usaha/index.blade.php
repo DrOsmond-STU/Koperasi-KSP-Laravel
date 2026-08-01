@@ -10,7 +10,7 @@
         .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
         .field input, .field select { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; }
         .btn-primary { padding: 9px 16px; background: var(--pine); color: #fff; border: none; border-radius: 9px; font-weight: 700; cursor: pointer; font-size: 13px; }
-        .status-msg { color: #2E7D52; font-size: 13px; margin-bottom: 14px; }
+        .status-msg { color: var(--ok); font-size: 13px; margin-bottom: 14px; }
         .data-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
         .data-table th, .data-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
         @media (max-width: 980px) { .grid-2 { grid-template-columns: 1fr; } }
@@ -25,7 +25,7 @@
     <div class="panel" style="margin-bottom: 20px;">
         <h3>Laba/Rugi per Unit Usaha</h3>
         <table class="data-table">
-            <thead><tr><th>Unit Usaha</th><th>Pendapatan</th><th>Beban</th><th>Laba/Rugi</th></tr></thead>
+            <thead><tr><th>Unit Usaha</th><th>Pendapatan</th><th>Beban</th><th>Laba/Rugi</th><th>Aksi</th></tr></thead>
             <tbody>
                 @forelse ($units as $row)
                     <tr>
@@ -33,9 +33,10 @@
                         <td>Rp {{ number_format($row['pendapatan'], 0, ',', '.') }}</td>
                         <td>Rp {{ number_format($row['beban'], 0, ',', '.') }}</td>
                         <td>Rp {{ number_format($row['laba_rugi'], 0, ',', '.') }}</td>
+                        <td><a href="{{ route('admin.unit-usaha.print', $row['unit']) }}" target="_blank">Cetak</a></td>
                     </tr>
                 @empty
-                    <tr><td colspan="4">Belum ada unit usaha aktif.</td></tr>
+                    <tr><td colspan="5">Belum ada unit usaha aktif.</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -50,13 +51,13 @@
                 <div class="field"><label>Nama</label><input type="text" name="name" required></div>
                 <div class="field">
                     <label>Akun COA — Pendapatan</label>
-                    <select name="coa_revenue_account_id" required>
+                    <select name="coa_revenue_account_id" required class="js-searchable">
                         @foreach ($postableAccounts as $account)<option value="{{ $account->id }}">{{ $account->code }} — {{ $account->name }}</option>@endforeach
                     </select>
                 </div>
                 <div class="field">
                     <label>Akun COA — Beban</label>
-                    <select name="coa_expense_account_id" required>
+                    <select name="coa_expense_account_id" required class="js-searchable">
                         @foreach ($postableAccounts as $account)<option value="{{ $account->id }}">{{ $account->code }} — {{ $account->name }}</option>@endforeach
                     </select>
                 </div>

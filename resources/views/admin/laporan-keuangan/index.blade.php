@@ -11,10 +11,11 @@
         .data-table th, .data-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
         .total-row td { font-weight: 700; border-top: 2px solid var(--line); }
         .empty-note { color: var(--muted); font-size: 13px; padding: 14px; text-align: center; border: 1px dashed var(--line); border-radius: 8px; }
-        .badge-ok { color: #2E7D52; font-weight: 700; }
-        .badge-bad { color: #A8472F; font-weight: 700; }
+        .badge-ok { color: var(--ok); font-weight: 700; }
+        .badge-bad { color: var(--brick); font-weight: 700; }
+        .section-row td { font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); background: var(--paper); border-bottom: 1px solid var(--line); padding-top: 10px; }
         .btn-primary { padding: 8px 14px; background: var(--pine); color: #fff; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 12px; }
-        .status-msg { color: #2E7D52; font-size: 13px; margin-bottom: 14px; }
+        .status-msg { color: var(--ok); font-size: 13px; margin-bottom: 14px; }
     </style>
 
     <h2>Laporan Keuangan {{ $isConsolidated ? '— Konsolidasi Seluruh Cabang' : '' }}</h2>
@@ -48,17 +49,30 @@
         @if (! $neraca['has_data'])
             <p class="empty-note">Tidak ada data neraca untuk tanggal ini.</p>
         @else
+            @php
+                $aktivaRows = $neraca['rows']->filter(fn ($row) => $row['account']->type === 'ASET');
+                $pasivaRows = $neraca['rows']->filter(fn ($row) => $row['account']->type !== 'ASET');
+            @endphp
             <table class="data-table">
                 <thead><tr><th>Akun</th><th>Saldo</th></tr></thead>
                 <tbody>
-                    @foreach ($neraca['rows'] as $row)
+                    <tr class="section-row"><td colspan="2">Aktiva</td></tr>
+                    @foreach ($aktivaRows as $row)
                         <tr>
                             <td>{{ $row['account']->code }} — {{ $row['account']->name }} {{ $row['eliminated'] ? '(dieliminasi)' : '' }}</td>
                             <td>Rp {{ number_format((float) $row['balance'], 0, ',', '.') }}</td>
                         </tr>
                     @endforeach
-                    <tr class="total-row"><td>Total Aset</td><td>Rp {{ number_format((float) $neraca['total_aset'], 0, ',', '.') }}</td></tr>
-                    <tr class="total-row"><td>Total Liabilitas + Ekuitas</td><td>Rp {{ number_format((float) bcadd($neraca['total_liabilitas'], $neraca['total_ekuitas'], 2), 0, ',', '.') }}</td></tr>
+                    <tr class="total-row"><td>Total Aktiva</td><td>Rp {{ number_format((float) $neraca['total_aset'], 0, ',', '.') }}</td></tr>
+
+                    <tr class="section-row"><td colspan="2">Pasiva</td></tr>
+                    @foreach ($pasivaRows as $row)
+                        <tr>
+                            <td>{{ $row['account']->code }} — {{ $row['account']->name }} {{ $row['eliminated'] ? '(dieliminasi)' : '' }}</td>
+                            <td>Rp {{ number_format((float) $row['balance'], 0, ',', '.') }}</td>
+                        </tr>
+                    @endforeach
+                    <tr class="total-row"><td>Total Pasiva (Liabilitas + Ekuitas)</td><td>Rp {{ number_format((float) bcadd($neraca['total_liabilitas'], $neraca['total_ekuitas'], 2), 0, ',', '.') }}</td></tr>
                 </tbody>
             </table>
             <p class="{{ $neraca['is_balanced'] ? 'badge-ok' : 'badge-bad' }}">{{ $neraca['is_balanced'] ? 'Seimbang' : 'TIDAK SEIMBANG' }}</p>
@@ -79,18 +93,32 @@
         @if (! $labaRugi['has_data'])
             <p class="empty-note">Tidak ada aktivitas pendapatan/beban pada periode ini.</p>
         @else
+            @php
+                $pendapatanRows = $labaRugi['rows']->filter(fn ($row) => $row['account']->type === 'PENDAPATAN');
+                $bebanRows = $labaRugi['rows']->filter(fn ($row) => $row['account']->type === 'BEBAN');
+            @endphp
             <table class="data-table">
                 <thead><tr><th>Akun</th><th>Jumlah</th></tr></thead>
                 <tbody>
-                    @foreach ($labaRugi['rows'] as $row)
+                    <tr class="section-row"><td colspan="2">Pendapatan</td></tr>
+                    @foreach ($pendapatanRows as $row)
                         <tr>
                             <td>{{ $row['account']->code }} — {{ $row['account']->name }}</td>
                             <td>Rp {{ number_format((float) $row['amount'], 0, ',', '.') }}</td>
                         </tr>
                     @endforeach
                     <tr class="total-row"><td>Total Pendapatan</td><td>Rp {{ number_format((float) $labaRugi['total_pendapatan'], 0, ',', '.') }}</td></tr>
+
+                    <tr class="section-row"><td colspan="2">Beban</td></tr>
+                    @foreach ($bebanRows as $row)
+                        <tr>
+                            <td>{{ $row['account']->code }} — {{ $row['account']->name }}</td>
+                            <td>Rp {{ number_format((float) $row['amount'], 0, ',', '.') }}</td>
+                        </tr>
+                    @endforeach
                     <tr class="total-row"><td>Total Beban</td><td>Rp {{ number_format((float) $labaRugi['total_beban'], 0, ',', '.') }}</td></tr>
-                    <tr class="total-row"><td>SHU</td><td>Rp {{ number_format((float) $labaRugi['shu'], 0, ',', '.') }}</td></tr>
+
+                    <tr class="total-row"><td>SHU (Pendapatan − Beban)</td><td>Rp {{ number_format((float) $labaRugi['shu'], 0, ',', '.') }}</td></tr>
                 </tbody>
             </table>
         @endif

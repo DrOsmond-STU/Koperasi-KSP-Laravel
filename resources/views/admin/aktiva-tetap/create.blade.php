@@ -9,7 +9,7 @@
         .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
         .field input, .field select, .field textarea { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; }
         .btn-primary { padding: 10px 18px; background: var(--pine); color: #fff; border: none; border-radius: 9px; font-weight: 700; cursor: pointer; }
-        .error-text { color: #A8472F; font-size: 12px; margin-top: 4px; }
+        .error-text { color: var(--brick); font-size: 12px; margin-top: 4px; }
     </style>
 
     <h2>Aktiva Tetap Baru</h2>
@@ -93,7 +93,7 @@
             </div>
             <div class="field">
                 <label>Supplier (jika kredit)</label>
-                <select name="supplier_id">
+                <select name="supplier_id" class="js-searchable">
                     <option value="">— Tidak Berlaku —</option>
                     @foreach ($suppliers as $supplier)
                         <option value="{{ $supplier->id }}">{{ $supplier->code }} — {{ $supplier->name }}</option>

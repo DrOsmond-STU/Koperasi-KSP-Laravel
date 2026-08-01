@@ -10,7 +10,7 @@
         .field input, .field select, .field textarea { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; }
         .field select[multiple] { height: 120px; }
         .btn-primary { padding: 10px 18px; background: var(--pine); color: #fff; border: none; border-radius: 9px; font-weight: 700; cursor: pointer; }
-        .error-text { color: #A8472F; font-size: 12px; margin-top: 4px; }
+        .error-text { color: var(--brick); font-size: 12px; margin-top: 4px; }
         .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
     </style>
 
@@ -79,7 +79,7 @@
             </div>
             <div class="field">
                 <label>Anggota Tertentu (jika dipilih di atas)</label>
-                <select name="member_ids[]" multiple>
+                <select name="member_ids[]" multiple class="js-searchable">
                     @foreach ($members as $member)
                         <option value="{{ $member->id }}">{{ $member->name }}</option>
                     @endforeach

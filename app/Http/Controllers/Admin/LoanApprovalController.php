@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Exceptions\Loans\LoanApprovalException;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\CancelLoanDisbursementRequest;
 use App\Http\Requests\DecideLoanApprovalRequest;
 use App\Models\Loan;
 use App\Services\Loans\LoanApprovalService;
@@ -25,7 +26,7 @@ class LoanApprovalController extends Controller
                 ->latest()
                 ->get(),
             'disbursedLoans' => Loan::query()
-                ->where('status', 'dicairkan')
+                ->whereIn('status', ['dicairkan', 'dibatalkan'])
                 ->with(['member', 'loanProduct'])
                 ->latest()
                 ->limit(20)
@@ -51,5 +52,18 @@ class LoanApprovalController extends Controller
         }
 
         return redirect()->route('admin.pinjaman.index')->with('status', $message);
+    }
+
+    public function cancel(CancelLoanDisbursementRequest $request, Loan $loan): RedirectResponse
+    {
+        abort_unless($loan->canBeCancelledBy($request->user()), 403, 'Anda hanya bisa membatalkan pencairan pinjaman yang Anda buat sendiri.');
+
+        try {
+            $this->approvalService->cancelDisbursement($loan, $request->validated('reason'), $request->user()->id);
+        } catch (LoanApprovalException $exception) {
+            return redirect()->route('admin.pinjaman.index')->with('error', $exception->getMessage());
+        }
+
+        return redirect()->route('admin.pinjaman.index')->with('status', "Pencairan pinjaman {$loan->loan_number} berhasil dibatalkan.");
     }
 }

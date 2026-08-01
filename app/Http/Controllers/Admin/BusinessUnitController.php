@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Concerns\GeneratesPrintPdf;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\BusinessUnitTransactionRequest;
 use App\Http\Requests\StoreBusinessUnitRequest;
@@ -10,10 +11,14 @@ use App\Models\BusinessUnit;
 use App\Models\ChartOfAccount;
 use App\Services\BusinessUnit\BusinessUnitService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 
 class BusinessUnitController extends Controller
 {
+    use GeneratesPrintPdf;
+
     public function __construct(private readonly BusinessUnitService $businessUnitService) {}
 
     public function index(): View
@@ -63,5 +68,29 @@ class BusinessUnitController extends Controller
 
         return redirect()->route('admin.unit-usaha.index')
             ->with('status', "Transaksi {$request->validated('type')} unit usaha berhasil dicatat.");
+    }
+
+    public function print(Request $request, BusinessUnit $unit): Response
+    {
+        $this->authorize('unit_usaha.read');
+
+        $from = $request->string('dari')->value();
+        $to = $request->string('sampai')->value();
+
+        $transactions = $unit->transactions()
+            ->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
+            ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to))
+            ->with('createdBy')
+            ->orderBy('created_at')
+            ->get();
+
+        $pdf = $this->renderPrintPdf('prints.unit-usaha.show', [
+            'unit' => $unit,
+            'transactions' => $transactions,
+            'from' => $from,
+            'to' => $to,
+        ]);
+
+        return $pdf->download('unit-usaha-'.$unit->id.'.pdf');
     }
 }

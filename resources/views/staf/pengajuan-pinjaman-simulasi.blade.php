@@ -15,10 +15,10 @@
     <h2>Simulasi Angsuran — {{ $product->name }} ({{ ucfirst($product->calculation_method) }})</h2>
 
     <div class="panel">
-        <p>Anggota: <strong>{{ $member->name }}</strong> — Plafon Rp {{ number_format($principal, 0, ',', '.') }} — Tenor {{ $tenor }} bulan — Bunga {{ $ratePercentage }}%/tahun</p>
+        <p>Anggota: <strong>{{ $member->name }}</strong> — Plafon Rp {{ number_format($principal, 0, ',', '.') }} — Tenor {{ $tenor }} bulan — Jasa {{ $ratePercentage }}%/tahun</p>
 
         <table class="schedule-table">
-            <thead><tr><th>#</th><th>Jatuh Tempo</th><th>Pokok</th><th>Bunga</th><th>Total</th></tr></thead>
+            <thead><tr><th>#</th><th>Jatuh Tempo</th><th>Pokok</th><th>Jasa</th><th>Total</th></tr></thead>
             <tbody>
                 @foreach ($schedule as $row)
                     <tr>

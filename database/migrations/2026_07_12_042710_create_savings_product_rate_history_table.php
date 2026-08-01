@@ -11,7 +11,7 @@ return new class extends Migration
      *
      * Tarif per rentang tanggal berlaku (PRD §2.4 — "histori tarif tidak
      * retroaktif"): menambah baris baru dengan effective_from di masa depan
-     * tidak mengubah perhitungan bunga transaksi yang sudah lewat, karena
+     * tidak mengubah perhitungan jasa transaksi yang sudah lewat, karena
      * perhitungan selalu memilih baris yang effective_from-nya <= tanggal
      * transaksi. `tiers` (JSON, dipakai bila interest_method = tiered) berisi
      * array {min_balance, max_balance, rate_percentage}; untuk metode lain

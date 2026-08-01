@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\SavingsAccount;
 use App\Services\Accounting\JournalEngine;
 use App\Services\Inventory\StockLedgerEngine;
+use App\Services\Loans\LoanService;
 use App\Services\Savings\SavingsService;
 use Illuminate\Support\Facades\DB;
 
@@ -25,10 +26,12 @@ class PosSaleService
         private readonly StockLedgerEngine $stockLedgerEngine,
         private readonly JournalEngine $journalEngine,
         private readonly SavingsService $savingsService,
+        private readonly LoanService $loanService,
     ) {}
 
     /**
      * @param  array<int, array{product_id: int, qty: string}>  $items
+     * @param  array{member: \App\Models\Member, loan_product: \App\Models\LoanProduct, tenor_months: int}|null  $hutang
      */
     public function sell(
         int $branchId,
@@ -37,8 +40,9 @@ class PosSaleService
         int $createdBy,
         ?SavingsAccount $savingsAccount = null,
         ?\DateTimeInterface $date = null,
+        ?array $hutang = null,
     ): PosSale {
-        return DB::transaction(function () use ($branchId, $paymentMethod, $items, $createdBy, $savingsAccount, $date) {
+        return DB::transaction(function () use ($branchId, $paymentMethod, $items, $createdBy, $savingsAccount, $date, $hutang) {
             $sale = PosSale::query()->create([
                 'branch_id' => $branchId,
                 'savings_account_id' => $savingsAccount?->id,
@@ -90,9 +94,26 @@ class PosSaleService
                 $journalLines[] = ['chart_of_account_id' => $product->coa_inventory_account_id, 'debit' => 0, 'credit' => $cogsAmount];
             }
 
-            $debitAccountId = $paymentMethod === 'potong_simpanan'
-                ? $savingsAccount->savingsProduct->coa_liability_account_id
-                : $this->cashAccount()->id;
+            $loan = null;
+            if ($paymentMethod === 'hutang') {
+                // Fails fast, before any journal line is built — throwing here
+                // rolls back the whole DB::transaction, including the
+                // stock-ledger issue() rows already written by the items loop.
+                $loan = $this->loanService->originateInstantly(
+                    $hutang['member'],
+                    $hutang['loan_product'],
+                    (float) $totalAmount,
+                    $hutang['tenor_months'],
+                    $branchId,
+                    $createdBy,
+                );
+            }
+
+            $debitAccountId = match ($paymentMethod) {
+                'potong_simpanan' => $savingsAccount->savingsProduct->coa_liability_account_id,
+                'hutang' => $hutang['loan_product']->coa_receivable_account_id,
+                default => $this->cashAccount()->id,
+            };
 
             $journalLines[] = ['chart_of_account_id' => $debitAccountId, 'debit' => $totalAmount, 'credit' => 0];
 
@@ -123,6 +144,7 @@ class PosSaleService
                 'total_amount' => $totalAmount,
                 'total_cogs' => $totalCogs,
                 'journal_entry_id' => $entry->id,
+                'loan_id' => $loan?->id,
             ]);
 
             return $sale->fresh('items');

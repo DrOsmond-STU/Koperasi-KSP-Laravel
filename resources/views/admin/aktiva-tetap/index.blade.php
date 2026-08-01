@@ -8,12 +8,18 @@
         .data-table th, .data-table td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
         .data-table th { background: var(--paper); font-weight: 700; color: var(--muted); }
         .btn-primary { display: inline-block; padding: 6px 12px; background: var(--pine); color: #fff; border: none; border-radius: 7px; font-weight: 700; cursor: pointer; font-size: 12px; text-decoration: none; }
-        .btn-danger { padding: 6px 12px; background: transparent; color: #A8472F; border: 1px solid #A8472F; border-radius: 7px; font-weight: 700; cursor: pointer; font-size: 12px; }
-        .status-msg { color: #2E7D52; font-size: 13px; margin-bottom: 14px; }
-        .error-msg { color: #A8472F; font-size: 13px; margin-bottom: 14px; }
+        .btn-danger { padding: 6px 12px; background: transparent; color: var(--brick); border: 1px solid var(--brick); border-radius: 7px; font-weight: 700; cursor: pointer; font-size: 12px; }
+        .status-msg { color: var(--ok); font-size: 13px; margin-bottom: 14px; }
+        .error-msg { color: var(--brick); font-size: 13px; margin-bottom: 14px; }
     </style>
 
     <h2>Aktiva Tetap</h2>
+
+    <p style="margin-bottom: 14px;">
+        <a href="{{ route('admin.aktiva-tetap.print-barcode') }}" target="_blank">🏷 Cetak Barcode Semua Aktiva Tetap</a>
+        <a href="{{ route('admin.aktiva-tetap.export-pdf') }}" target="_blank" style="margin-left:10px;">Export PDF</a>
+        <a href="{{ route('admin.aktiva-tetap.export-excel') }}" style="margin-left:10px;">Export Excel</a>
+    </p>
 
     @if (session('status'))
         <p class="status-msg">{{ session('status') }}</p>
@@ -57,7 +63,7 @@
 
     <h3>Aktif</h3>
     <table class="data-table">
-        <thead><tr><th>Kode</th><th>Nama</th><th>Kategori</th><th>Nilai Perolehan</th><th>Tanggal Perolehan</th></tr></thead>
+        <thead><tr><th>Kode</th><th>Nama</th><th>Kategori</th><th>Nilai Perolehan</th><th>Tanggal Perolehan</th><th>Aksi</th></tr></thead>
         <tbody>
             @forelse ($activeAssets as $asset)
                 <tr>
@@ -66,9 +72,10 @@
                     <td>{{ $asset->category->name }}</td>
                     <td>Rp {{ number_format((float) $asset->acquisition_cost, 0, ',', '.') }}</td>
                     <td>{{ $asset->acquisition_date->translatedFormat('d M Y') }}</td>
+                    <td><a href="{{ route('admin.aktiva-tetap.print', $asset) }}" target="_blank">Cetak</a></td>
                 </tr>
             @empty
-                <tr><td colspan="5">Belum ada aktiva tetap aktif.</td></tr>
+                <tr><td colspan="6">Belum ada aktiva tetap aktif.</td></tr>
             @endforelse
         </tbody>
     </table>

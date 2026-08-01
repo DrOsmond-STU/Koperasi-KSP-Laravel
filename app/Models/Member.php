@@ -68,6 +68,11 @@ class Member extends Model
         return $this->hasMany(SavingsAccount::class);
     }
 
+    public function loans(): HasMany
+    {
+        return $this->hasMany(Loan::class);
+    }
+
     public function hasConsent(string $channel): bool
     {
         return (bool) $this->consents()

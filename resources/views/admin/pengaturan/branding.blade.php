@@ -13,7 +13,7 @@
         .field input[type=text] { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; }
         .current-logo { max-height: 48px; display: block; margin-bottom: 10px; }
         .btn-primary { padding: 10px 18px; background: var(--pine); color: #fff; border: none; border-radius: 9px; font-weight: 700; cursor: pointer; }
-        .status-msg { color: #2E7D52; font-size: 13px; margin-bottom: 14px; }
+        .status-msg { color: var(--ok); font-size: 13px; margin-bottom: 14px; }
     </style>
 
     <h2>Nama &amp; Logo Aplikasi</h2>

@@ -40,10 +40,14 @@ class SecurityAuditController extends Controller
                 ->with('actor')
                 ->when($request->filled('auditable_type'), fn ($query) => $query->where('auditable_type', $request->input('auditable_type')))
                 ->when($request->filled('action'), fn ($query) => $query->where('action', $request->input('action')))
+                ->when($request->filled('actor_id'), fn ($query) => $query->where('actor_id', $request->input('actor_id')))
+                ->when($request->filled('date_from'), fn ($query) => $query->whereDate('created_at', '>=', $request->input('date_from')))
+                ->when($request->filled('date_to'), fn ($query) => $query->whereDate('created_at', '<=', $request->input('date_to')))
                 ->latest()
                 ->limit(100)
                 ->get(),
-            'filters' => $request->only(['auditable_type', 'action']),
+            'filters' => $request->only(['auditable_type', 'action', 'actor_id', 'date_from', 'date_to']),
+            'actors' => User::query()->orderBy('name')->get(['id', 'name']),
         ]);
     }
 

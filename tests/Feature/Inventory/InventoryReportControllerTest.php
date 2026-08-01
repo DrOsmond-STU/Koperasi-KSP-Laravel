@@ -12,14 +12,13 @@ class InventoryReportControllerTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_manajer_can_view_saldo_and_kartu_reports(): void
+    public function test_manajer_can_view_kartu_report(): void
     {
         $this->seed(RolePermissionSeeder::class);
         $user = User::factory()->create(['two_factor_confirmed_at' => now()]);
         $user->assignRole('manajer');
         UserBranchScope::query()->create(['user_id' => $user->id, 'scope_type' => 'all']);
 
-        $this->actingAs($user)->get(route('admin.persediaan.laporan.saldo'))->assertOk();
         $this->actingAs($user)->get(route('admin.persediaan.laporan.kartu'))->assertOk();
     }
 
@@ -30,6 +29,6 @@ class InventoryReportControllerTest extends TestCase
         $user->assignRole('teller');
         UserBranchScope::query()->create(['user_id' => $user->id, 'scope_type' => 'all']);
 
-        $this->actingAs($user)->get(route('admin.persediaan.laporan.saldo'))->assertForbidden();
+        $this->actingAs($user)->get(route('admin.persediaan.laporan.kartu'))->assertForbidden();
     }
 }

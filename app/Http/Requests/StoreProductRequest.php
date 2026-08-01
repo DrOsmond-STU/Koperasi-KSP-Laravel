@@ -39,6 +39,7 @@ class StoreProductRequest extends FormRequest
             'coa_inventory_account_id' => ['required', $postableAccount()],
             'coa_cogs_account_id' => ['required', $postableAccount()],
             'coa_sales_revenue_account_id' => ['required', $postableAccount()],
+            'image' => ['nullable', 'image', 'mimes:png,jpg,jpeg', 'max:2048'],
         ];
     }
 }

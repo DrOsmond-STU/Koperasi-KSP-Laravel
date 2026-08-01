@@ -9,7 +9,7 @@
         .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
         .field input, .field select { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; }
         .btn-primary { padding: 10px 18px; background: var(--pine); color: #fff; border: none; border-radius: 9px; font-weight: 700; cursor: pointer; }
-        .error-text { color: #A8472F; font-size: 12px; margin-top: 4px; }
+        .error-text { color: var(--brick); font-size: 12px; margin-top: 4px; }
         .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     </style>
@@ -46,7 +46,7 @@
                     <option value="anuitas">Anuitas</option>
                 </select>
             </div>
-            <div class="field"><label>Tarif Bunga Awal (%/tahun)</label><input type="number" step="0.001" name="initial_rate_percentage" value="{{ old('initial_rate_percentage', 12) }}" required></div>
+            <div class="field"><label>Tarif Jasa Awal (%/tahun)</label><input type="number" step="0.001" name="initial_rate_percentage" value="{{ old('initial_rate_percentage', 12) }}" required></div>
             <div class="field"><label>Biaya Provisi (%)</label><input type="number" step="0.01" name="provision_fee_percentage" value="{{ old('provision_fee_percentage', 1) }}"></div>
             <div class="field"><label>Denda Keterlambatan (%/hari)</label><input type="number" step="0.001" name="penalty_percentage_per_day" value="{{ old('penalty_percentage_per_day', 0.1) }}"></div>
             <div class="field">
@@ -57,28 +57,28 @@
 
             <div class="field">
                 <label>Akun COA — Piutang Pinjaman</label>
-                <select name="coa_receivable_account_id" required>
+                <select name="coa_receivable_account_id" required class="js-searchable">
                     <option value="">— Pilih Akun —</option>
                     @foreach ($postableAccounts as $account)<option value="{{ $account->id }}">{{ $account->code }} — {{ $account->name }}</option>@endforeach
                 </select>
             </div>
             <div class="field">
-                <label>Akun COA — Pendapatan Bunga</label>
-                <select name="coa_interest_income_account_id" required>
+                <label>Akun COA — Pendapatan Jasa</label>
+                <select name="coa_interest_income_account_id" required class="js-searchable">
                     <option value="">— Pilih Akun —</option>
                     @foreach ($postableAccounts as $account)<option value="{{ $account->id }}">{{ $account->code }} — {{ $account->name }}</option>@endforeach
                 </select>
             </div>
             <div class="field">
                 <label>Akun COA — Pendapatan Provisi</label>
-                <select name="coa_provision_income_account_id" required>
+                <select name="coa_provision_income_account_id" required class="js-searchable">
                     <option value="">— Pilih Akun —</option>
                     @foreach ($postableAccounts as $account)<option value="{{ $account->id }}">{{ $account->code }} — {{ $account->name }}</option>@endforeach
                 </select>
             </div>
             <div class="field">
                 <label>Akun COA — Piutang Denda</label>
-                <select name="coa_penalty_receivable_account_id" required>
+                <select name="coa_penalty_receivable_account_id" required class="js-searchable">
                     <option value="">— Pilih Akun —</option>
                     @foreach ($postableAccounts as $account)<option value="{{ $account->id }}">{{ $account->code }} — {{ $account->name }}</option>@endforeach
                 </select>

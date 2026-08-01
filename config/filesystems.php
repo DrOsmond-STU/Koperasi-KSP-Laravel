@@ -33,7 +33,11 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+            // Not URL-served (app only touches this disk via direct
+            // put()/download() for report exports — see
+            // FinancialReportController/CustomReportController) — kept off
+            // so the 'public' disk below can own the shared /storage URI.
+            'serve' => false,
             'throw' => false,
             'report' => false,
         ],
@@ -43,6 +47,12 @@ return [
             'root' => storage_path('app/public'),
             'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
             'visibility' => 'public',
+            // Framework-native fallback for shared hosting that blocks
+            // symlink() (PANDUAN_INSTALASI_SHARED_HOSTING.md §8): harmless
+            // when public/storage IS a real symlink, since the web server
+            // then always serves the static file directly and this route
+            // (Illuminate\Filesystem\ServeFile) never gets hit.
+            'serve' => true,
             'throw' => false,
             'report' => false,
         ],

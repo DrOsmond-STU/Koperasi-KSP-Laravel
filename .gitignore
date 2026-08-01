@@ -19,9 +19,16 @@
 /public/hot
 /public/storage
 /storage/*.key
+/storage/installed
 /storage/pail
 /vendor
 _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Artefak build & runtime lokal — bukan bagian dari kode sumber
+/.claude/settings.local.json
+/dump.rdb
+/koperasi-app-deploy.zip
+/koperasi-app-deploy.zip.bak-*

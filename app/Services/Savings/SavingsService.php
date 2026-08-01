@@ -3,6 +3,7 @@
 namespace App\Services\Savings;
 
 use App\Exceptions\Savings\InsufficientBalanceException;
+use App\Exceptions\Savings\TransactionAlreadyCancelledException;
 use App\Models\ChartOfAccount;
 use App\Models\Member;
 use App\Models\SavingsAccount;
@@ -192,6 +193,50 @@ class SavingsService
             'created_by' => $createdBy,
             'description' => $description,
         ]);
+    }
+
+    /**
+     * Pembatalan (void) transaksi yang sudah diposting — baris asli TIDAK
+     * pernah dihapus/diubah nilainya, hanya ditandai dibatalkan. Membalik
+     * jurnal via JournalEngine::reverse() (mengembalikan reversal_of_entry_id
+     * yang tertaut) dan mengembalikan efek saldo (setor dibalik jadi
+     * pengurangan, tarik dibalik jadi penambahan) — arah kebalikan dari
+     * `type` transaksi aslinya, bukan mengulang deposit()/withdraw() (yang
+     * masing-masing akan memposting jurnal BARU, bukan membalik jurnal
+     * asli).
+     */
+    public function reverseTransaction(SavingsTransaction $transaction, string $reason, int $cancelledBy): SavingsTransaction
+    {
+        if ($transaction->isCancelled()) {
+            throw new TransactionAlreadyCancelledException();
+        }
+
+        return DB::transaction(function () use ($transaction, $reason, $cancelledBy) {
+            $account = $transaction->savingsAccount;
+            $amount = (string) $transaction->amount;
+
+            if ($transaction->type === 'setor') {
+                if (bccomp((string) $account->balance, $amount, 2) < 0) {
+                    throw new InsufficientBalanceException($account->account_number, (string) $account->balance, $amount);
+                }
+                $newBalance = bcsub((string) $account->balance, $amount, 2);
+            } else {
+                $newBalance = bcadd((string) $account->balance, $amount, 2);
+            }
+
+            $reversalEntry = $this->journalEngine->reverse($transaction->journalEntry, $reason, $cancelledBy);
+
+            $account->update(['balance' => $newBalance]);
+
+            $transaction->update([
+                'cancelled_at' => now(),
+                'cancelled_by' => $cancelledBy,
+                'cancellation_reason' => $reason,
+                'reversal_journal_entry_id' => $reversalEntry->id,
+            ]);
+
+            return $transaction->fresh();
+        });
     }
 
     /**

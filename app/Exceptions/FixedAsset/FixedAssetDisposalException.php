@@ -10,4 +10,9 @@ class FixedAssetDisposalException extends RuntimeException
     {
         return new self("Aktiva tetap berstatus \"{$status}\" tidak dapat dilepas — hanya aset Aktif yang bisa diproses.");
     }
+
+    public static function alreadyCancelled(): self
+    {
+        return new self('Pelepasan aktiva tetap ini sudah pernah dibatalkan sebelumnya.');
+    }
 }

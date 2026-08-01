@@ -56,6 +56,7 @@ class RatDashboardService
             'shu' => round($pendapatan - $beban, 2),
             'member_growth' => $memberGrowth,
             'total_members' => $totalMembers,
+            'monthly_income_expense' => $this->monthlyIncomeExpense($branchId, $year),
             'readiness_checklist' => [
                 'Neraca & Laba Rugi siap disusun' => $hasJournalActivity,
                 'Data anggota tersedia' => $totalMembers > 0,
@@ -63,5 +64,43 @@ class RatDashboardService
                 'Produk pinjaman aktif tersedia' => LoanProduct::query()->where('is_active', true)->exists(),
             ],
         ];
+    }
+
+    /**
+     * Pendapatan & beban per bulan sepanjang tahun buku (untuk grafik
+     * batang+garis) — pola sama seperti member_growth di atas, 2 query
+     * agregat (bukan 12 query per bulan).
+     *
+     * @return array<int, array{month: int, pendapatan: float, beban: float}>
+     */
+    private function monthlyIncomeExpense(?int $branchId, int $year): array
+    {
+        $base = fn (string $type) => JournalLine::query()
+            ->join('journal_entries', 'journal_lines.journal_entry_id', '=', 'journal_entries.id')
+            ->join('chart_of_accounts', 'journal_lines.chart_of_account_id', '=', 'chart_of_accounts.id')
+            ->whereYear('journal_entries.entry_date', $year)
+            ->where('chart_of_accounts.type', $type)
+            ->when($branchId, fn ($q) => $q->where('journal_entries.branch_id', $branchId));
+
+        $pendapatanByMonth = $base('PENDAPATAN')
+            ->selectRaw('MONTH(journal_entries.entry_date) as month, SUM(journal_lines.credit - journal_lines.debit) as net')
+            ->groupBy('month')
+            ->pluck('net', 'month');
+
+        $bebanByMonth = $base('BEBAN')
+            ->selectRaw('MONTH(journal_entries.entry_date) as month, SUM(journal_lines.debit - journal_lines.credit) as net')
+            ->groupBy('month')
+            ->pluck('net', 'month');
+
+        $rows = [];
+        for ($m = 1; $m <= 12; $m++) {
+            $rows[] = [
+                'month' => $m,
+                'pendapatan' => (float) ($pendapatanByMonth[$m] ?? 0),
+                'beban' => (float) ($bebanByMonth[$m] ?? 0),
+            ];
+        }
+
+        return $rows;
     }
 }
