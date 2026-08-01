@@ -45,6 +45,25 @@ rm -f bootstrap/cache/*.php
 echo "==> Membuang .git bawaan dependensi di vendor/"
 find vendor -name '.git' -type d -prune -exec rm -rf {} + 2>/dev/null || true
 
+# Suite tes, dokumentasi, dan sample bawaan dependensi tidak pernah dieksekusi
+# di produksi tapi memakan ~90 MB dari 191 MB isi vendor/ — memperlambat upload
+# ke shared hosting yang koneksinya terbatas. Set KEEP_VENDOR_TESTS=1 untuk
+# melewati langkah ini.
+if [ "${KEEP_VENDOR_TESTS:-0}" != "1" ]; then
+    echo "==> Membuang tes & dokumentasi dependensi"
+    find vendor -maxdepth 3 -type d \
+        \( -name tests -o -name Tests -o -name test \
+        -o -name docs -o -name doc \
+        -o -name samples -o -name examples -o -name benchmarks \) \
+        -prune -exec rm -rf {} + 2>/dev/null || true
+
+    # Autoloader hasil --optimize-autoloader memuat classmap statis, jadi
+    # penghapusan di atas harus dipastikan tidak memutus kelas yang dipakai.
+    echo "==> Memverifikasi autoloader setelah pemangkasan"
+    php -r 'require "vendor/autoload.php"; require "bootstrap/app.php";' \
+        || { echo "GAGAL: autoloader rusak setelah pemangkasan."; exit 1; }
+fi
+
 if [ -f "$OUT" ]; then
     mv -f "$OUT" "$OUT.bak-$(date +%Y%m%d%H%M%S)"
     echo "    ZIP lama dipindah ke backup"
