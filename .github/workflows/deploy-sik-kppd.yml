@@ -1,0 +1,69 @@
+name: Deploy ke sik-kppd.com
+
+# Workflow sementara: mengirim source ke shared hosting lalu menjalankan
+# migrasi + membangun ulang cache di sana. Repo privat sehingga server tidak
+# bisa clone sendiri. Dihapus lagi setelah deploy selesai.
+
+on:
+  push:
+    branches:
+      - claude/deploy-koperasi-ksp-laravel-73960e
+
+jobs:
+  deploy:
+    name: Kirim source & finalisasi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bundle source
+        run: |
+          tar -czf /tmp/src.tar.gz \
+            --exclude=./.git \
+            --exclude=./.github \
+            --exclude=./database-dumps \
+            --exclude=./tests \
+            --exclude=./node_modules \
+            --exclude=./vendor \
+            -C . .
+          ls -l /tmp/src.tar.gz
+
+      - name: Kirim & ekstrak di server
+        run: |
+          code=$(curl -sS --retry 2 --retry-delay 5 -m 180 \
+            -o /tmp/up.txt -w '%{http_code}' \
+            -X POST -H 'Content-Type: application/octet-stream' \
+            --data-binary @/tmp/src.tar.gz \
+            "https://sik-kppd.com/_deploy_8F6xLzzv6JCiaoQsJspJ8yCejtyD.php?t=8F6xLzzv6JCiaoQsJspJ8yCejtyD&step=upload")
+          echo "HTTP $code"; cat /tmp/up.txt
+          test "$code" = "200"
+          grep -q 'OK-UPLOAD' /tmp/up.txt
+
+      - name: Migrasi & bangun ulang cache
+        run: |
+          code=$(curl -sS -m 180 -o /tmp/fin.txt -w '%{http_code}' \
+            "https://sik-kppd.com/_deploy_8F6xLzzv6JCiaoQsJspJ8yCejtyD.php?t=8F6xLzzv6JCiaoQsJspJ8yCejtyD&step=finalize")
+          echo "HTTP $code"; cat /tmp/fin.txt
+          test "$code" = "200"
+          grep -q 'OK-FINALIZE' /tmp/fin.txt
+
+      - name: Verifikasi halaman
+        run: |
+          curl -sS -m 30 -o /dev/null -w '/up -> %{http_code}\n' https://sik-kppd.com/up
+          curl -sS -m 30 -o /tmp/login.html -w '/login -> %{http_code}\n' https://sik-kppd.com/login
+          grep -o '<title>[^<]*</title>' /tmp/login.html | head -1
+
+          J=/tmp/cj.txt
+          curl -sS -c "$J" -o /tmp/lf.html https://sik-kppd.com/login
+          TOKEN=$(grep -o 'name="_token"[^>]*value="[^"]*"' /tmp/lf.html | head -1 | sed 's/.*value="//; s/"$//')
+          curl -sS -b "$J" -c "$J" -o /dev/null \
+            -w 'POST /login -> %{http_code} redirect=%{redirect_url}\n' \
+            --data-urlencode "_token=$TOKEN" \
+            --data-urlencode "email=admin.sistem@ksp.test" \
+            --data-urlencode "password=IQ4Vjl-mY1zE6-FVDn5Y" \
+            https://sik-kppd.com/login
+          curl -sSL -b "$J" -c "$J" -o /tmp/set.html \
+            -w 'GET /admin/pengaturan/branding -> %{http_code} bytes=%{size_download}\n' \
+            https://sik-kppd.com/admin/pengaturan/branding
+          echo "--- kontrol baru yang harus ada di halaman pengaturan:"
+          grep -o 'name="login_background[a-z_]*"' /tmp/set.html | sort -u
