@@ -1,0 +1,40 @@
+name: Pemicu satu kali di sik-kppd.com
+
+# Workflow sementara: cron di akun hosting sedang tidak berjalan, jadi
+# skrip sekali-pakai di server dipicu lewat HTTPS dari sini. Dihapus lagi
+# setelah dipakai.
+
+on:
+  push:
+    branches:
+      - claude/deploy-koperasi-ksp-laravel-73960e
+
+jobs:
+  trigger:
+    name: Panggil endpoint sekali pakai
+    runs-on: ubuntu-latest
+    steps:
+      - name: Buat akun admin.sistem@ksp.test
+        run: |
+          code=$(curl -sS --retry 2 --retry-delay 5 -m 120 \
+            -o /tmp/resp.txt -w '%{http_code}' \
+            "https://sik-kppd.com/_mk_kAjut2ajN4tYT7xLzLfrhK93UZ8F.php?t=kAjut2ajN4tYT7xLzLfrhK93UZ8F")
+          echo "HTTP $code"
+          cat /tmp/resp.txt
+          test "$code" = "200"
+
+      - name: Uji login end-to-end
+        run: |
+          J=/tmp/cj.txt
+          curl -sS -c "$J" -o /tmp/lf.html -w 'GET /login -> %{http_code}\n' https://sik-kppd.com/login
+          TOKEN=$(grep -o 'name="_token"[^>]*value="[^"]*"' /tmp/lf.html | head -1 | sed 's/.*value="//; s/"$//')
+          curl -sS -b "$J" -c "$J" -o /dev/null \
+            -w 'POST /login -> %{http_code} redirect=%{redirect_url}\n' \
+            --data-urlencode "_token=$TOKEN" \
+            --data-urlencode "email=admin.sistem@ksp.test" \
+            --data-urlencode "password=IQ4Vjl-mY1zE6-FVDn5Y" \
+            https://sik-kppd.com/login
+          curl -sSL -b "$J" -c "$J" -o /tmp/dash.html \
+            -w 'GET /admin/dashboard -> %{http_code} url=%{url_effective} bytes=%{size_download}\n' \
+            https://sik-kppd.com/admin/dashboard
+          grep -o '<title>[^<]*</title>' /tmp/dash.html | head -1
