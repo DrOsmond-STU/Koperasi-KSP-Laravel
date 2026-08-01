@@ -98,12 +98,33 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(function (DiagnosingHealth $event): void {
             DB::connection()->getPdo();
 
-            Redis::connection()->ping();
+            // Redis hanya diperiksa kalau memang dipakai. Shared hosting
+            // tanpa Redis adalah jalur deployment yang didukung resmi
+            // (PANDUAN_INSTALASI_SHARED_HOSTING.md §5: session/cache/queue
+            // jatuh ke driver database) — di sana ping tanpa syarat membuat
+            // /up selalu 500 padahal aplikasinya sehat, yaitu kebalikan dari
+            // gunanya health check.
+            if ($this->usesRedis()) {
+                Redis::connection()->ping();
+            }
 
             $probe = 'health-check/.probe';
             Storage::disk('local')->put($probe, (string) now()->timestamp);
             Storage::disk('local')->delete($probe);
         });
+    }
+
+    /**
+     * Apakah ada komponen aplikasi yang benar-benar disandarkan ke Redis?
+     */
+    private function usesRedis(): bool
+    {
+        return in_array('redis', [
+            config('cache.default'),
+            config('session.driver'),
+            config('queue.default'),
+            config('broadcasting.default'),
+        ], true);
     }
 
     private function recordAuthEvent(User $user, string $action): void
