@@ -16,17 +16,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Entri didaftarkan eksplisit, bukan "-C . ." — arsip dengan entri "./"
+      # ditolak PharData ("Cannot extract '.', internal error"), yang jadi
+      # jalur cadangan bila `tar` tidak tersedia dari proses web hosting.
       - name: Bundle source
         run: |
-          tar -czf /tmp/src.tar.gz \
-            --exclude=./.git \
-            --exclude=./.github \
-            --exclude=./database-dumps \
-            --exclude=./tests \
-            --exclude=./node_modules \
-            --exclude=./vendor \
-            -C . .
+          mapfile -t entries < <(ls -A | grep -vxE '\.git|\.github|database-dumps|tests|node_modules|vendor')
+          printf 'menyertakan: %s\n' "${entries[@]}"
+          tar -czf /tmp/src.tar.gz -- "${entries[@]}"
           ls -l /tmp/src.tar.gz
+          echo "--- entri teratas dalam arsip:"
+          tar -tzf /tmp/src.tar.gz | head -5
 
       - name: Kirim & ekstrak di server
         run: |
