@@ -62,6 +62,10 @@ class AppServiceProvider extends ServiceProvider
             $view->with('branding', [
                 'app_name' => $branding->app_name,
                 'logo_url' => app(BrandingService::class)->logoUrl(),
+                // Dipakai layouts/guest.blade.php (halaman login & turunannya).
+                // Ikut di-share dari sini — bukan dari composer terpisah —
+                // supaya sumbernya tetap satu baris cache branding yang sama.
+                'login_background' => app(BrandingService::class)->loginBackground(),
             ]);
 
             // Shared letterhead/paper layout for every cetakan (PDF views

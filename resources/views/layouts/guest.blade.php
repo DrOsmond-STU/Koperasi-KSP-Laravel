@@ -16,6 +16,10 @@
             --body-bg-image: radial-gradient(at 15% 10%, rgba(37,99,235,.10) 0%, transparent 55%), radial-gradient(at 85% 90%, rgba(59,130,246,.08) 0%, transparent 50%);
             --heading-font: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
             --chrome-glass: rgba(255,255,255,.72);
+            /* Warna "kerudung" transparansi gambar latar login — sengaja
+               dalam komponen RGB terpisah supaya bisa dipakai di rgba()
+               dengan alpha dinamis dari pengaturan admin. */
+            --veil-rgb: 244,247,244;
             color-scheme: light;
             accent-color: var(--pine);
         }
@@ -29,6 +33,7 @@
             --body-bg-image: radial-gradient(at 15% 10%, rgba(52,196,141,.16) 0%, transparent 55%), radial-gradient(at 85% 90%, rgba(228,177,92,.12) 0%, transparent 50%);
             --heading-font: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
             --chrome-glass: rgba(19,31,26,.72);
+            --veil-rgb: 10,21,18;
             color-scheme: dark;
             accent-color: var(--pine);
         }
@@ -40,6 +45,18 @@
             background-image: var(--body-bg-image);
             background-color: var(--paper);
             display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; min-height: 100vh;
+        }
+        /* Gambar latar unggahan admin menggantikan gradient hias bawaan
+           (bukan menumpuk di atasnya): jumlah layer background-image harus
+           tetap sinkron dengan daftar background-size/-repeat di bawah, dan
+           --body-bg-image sendiri sudah berisi dua gradient. */
+        body.has-login-bg {
+            background-image:
+                linear-gradient(var(--login-veil), var(--login-veil)),
+                var(--login-bg-image);
+            background-size: cover, var(--login-bg-size);
+            background-position: center, center;
+            background-repeat: no-repeat, var(--login-bg-repeat);
         }
         h1 { font-family: var(--heading-font); }
 
@@ -81,7 +98,15 @@
         .guest-footer .brand-footer-name { font-weight: 800; letter-spacing: 0.06em; color: var(--pine); }
     </style>
 </head>
-<body>
+@php($loginBg = $branding['login_background'] ?? ['enabled' => false])
+<body @class(['has-login-bg' => $loginBg['enabled']])
+    @if ($loginBg['enabled'])
+        style="--login-bg-image: url('{{ $loginBg['url'] }}');
+               --login-bg-size: {{ $loginBg['css_size'] }};
+               --login-bg-repeat: {{ $loginBg['css_repeat'] }};
+               --login-veil: rgba(var(--veil-rgb), {{ $loginBg['veil_alpha'] }});"
+    @endif
+>
     <div class="theme-toggle-wrap">
         @include('partials.theme-toggle')
     </div>

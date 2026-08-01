@@ -22,6 +22,10 @@ class AppBrandingSetting extends Model
         'id',
         'app_name',
         'logo_path',
+        'login_background_path',
+        'login_background_size',
+        'login_background_scale',
+        'login_background_opacity',
         'updated_by',
     ];
 

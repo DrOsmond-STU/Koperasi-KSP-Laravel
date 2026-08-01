@@ -68,6 +68,7 @@ Cek/aktifkan di cPanel sebelum mulai:
 | Ekstensi PHP: `openssl, pdo_mysql, mbstring, tokenizer, xml, ctype, json, bcmath, fileinfo, gd, zip, curl` | Menu **MultiPHP INI Editor** → tab *Extensions*, centang yang belum aktif |
 | **MySQL 8** (atau MariaDB 10.6+) | Menu **MySQL Databases** |
 | **SSH access** (sangat disarankan) | Menu **SSH Access** — tanyakan ke provider hosting jika tidak terlihat, beberapa paket shared hosting menyediakannya walau tidak dipromosikan |
+| `upload_max_filesize` ≥ 8M dan `post_max_size` ≥ 12M | Menu **MultiPHP INI Editor** (atau file `.user.ini` di document root). Default banyak hosting hanya 2M — terlalu kecil untuk unggah gambar latar halaman login (batas aplikasi 4MB); unggahan akan ditolak diam-diam sebelum Laravel sempat memvalidasi |
 | **Cron Jobs** | Menu **Cron Jobs** — hampir semua paket shared hosting punya ini |
 | **Composer** | Biasanya sudah tersedia via SSH (`composer --version`). Jika tidak ada, build `vendor/` di komputer lokal lalu upload (lihat §3B) |
 
@@ -393,6 +394,7 @@ php artisan view:cache
 | Export PDF/Excel macet di status "Menunggu" terus | Cron job kedua di §9 (`queue:work`) belum aktif, atau salah path folder di baris cron. |
 | Perubahan `.env` tidak berpengaruh setelah edit | Lupa `php artisan config:clear` setelah edit `.env` (kalau sudah pernah `config:cache`). |
 | Error `.env` / password DB terlihat di browser saat error | `APP_DEBUG` masih `true` — segera ubah ke `false` dan `config:cache` ulang. |
+| Unggah gambar latar login gagal/halaman kembali kosong tanpa pesan | `upload_max_filesize`/`post_max_size` PHP lebih kecil dari berkasnya (§1). Naikkan lewat MultiPHP INI Editor, atau perkecil gambarnya. |
 | Notifikasi WhatsApp gagal terus | Normal kalau `WHATSAPP_API_TOKEN` kosong — otomatis fallback ke email, bukan bug. Isi token asli dari Meta Business kalau sudah siap pakai. |
 | Login gagal terus untuk akun staf baru dengan pesan "Aktifkan autentikasi dua faktor" | Memang perilaku yang benar (bukan bug) — akun internal (teller, manajer, dst.) wajib setup 2FA di percobaan login pertama sebelum bisa masuk. |
 | Buka domain malah selalu redirect ke `/install` | Normal selama `storage/installed` belum ada — berarti wizard belum diselesaikan sampai Langkah 5. Lanjutkan wizard-nya; kalau memang sudah pernah selesai tapi file itu terhapus (mis. saat re-deploy menimpa folder `storage/`), install ulang tidak akan merusak data (migrasi/seed aman dijalankan ulang) — cukup selesaikan lagi sampai Langkah 5 supaya lock file dibuat ulang. |
