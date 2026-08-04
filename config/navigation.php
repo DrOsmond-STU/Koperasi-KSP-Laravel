@@ -90,6 +90,7 @@ return [
         [
             'label' => 'Sistem',
             'items' => [
+                ['label' => 'Cabang', 'route' => 'admin.master.branches.index', 'permission' => 'master_data.read', 'icon' => 'briefcase'],
                 ['label' => 'Manajemen Pengguna', 'route' => 'admin.users.index', 'permission' => 'user.manage', 'icon' => 'user'],
                 ['label' => 'Role & Permission', 'route' => 'admin.role-permission.index', 'permission' => 'role.manage', 'icon' => 'shield'],
                 ['label' => 'Template Notifikasi', 'route' => 'admin.notifikasi.template.index', 'permission' => 'notifikasi_template.manage', 'icon' => 'mail'],

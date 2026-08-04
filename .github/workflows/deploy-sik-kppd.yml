@@ -1,0 +1,124 @@
+name: Test & deploy ke sik-kppd.com
+
+# Workflow sementara: menjalankan test suite lalu — hanya bila hijau —
+# mengirim source ke shared hosting, migrasi, dan membangun ulang cache.
+# Repo privat sehingga server tidak bisa clone sendiri. Dihapus lagi setelah
+# deploy selesai.
+
+on:
+  push:
+    branches:
+      - claude/deploy-koperasi-ksp-laravel-73960e
+
+jobs:
+  test:
+    name: Test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: true
+          MYSQL_DATABASE: koperasi_sejahtera_bersama_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_mysql, bcmath, pcntl, posix
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Copy .env
+        run: cp .env.example .env
+
+      - name: Generate app key
+        run: php artisan key:generate
+
+      - name: Run test suite
+        run: php artisan test
+
+  deploy:
+    name: Kirim source & finalisasi
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Entri didaftarkan eksplisit, bukan "-C . ." — arsip dengan entri "./"
+      # ditolak PharData, yang jadi jalur cadangan bila `tar` tidak tersedia
+      # dari proses web hosting.
+      - name: Bundle source
+        run: |
+          mapfile -t entries < <(ls -A | grep -vxE '\.git|\.github|database-dumps|tests|node_modules|vendor')
+          tar -czf /tmp/src.tar.gz -- "${entries[@]}"
+          ls -l /tmp/src.tar.gz
+
+      - name: Kirim & ekstrak di server
+        run: |
+          code=$(curl -sS --retry 2 --retry-delay 5 -m 180 \
+            -o /tmp/up.txt -w '%{http_code}' \
+            -X POST -H 'Content-Type: application/octet-stream' \
+            --data-binary @/tmp/src.tar.gz \
+            "https://sik-kppd.com/_deploy_KAH5fEVNhugNKbqHJyNL34PQ8lcW.php?t=KAH5fEVNhugNKbqHJyNL34PQ8lcW&step=upload")
+          echo "HTTP $code"; cat /tmp/up.txt
+          test "$code" = "200"
+          grep -q 'OK-UPLOAD' /tmp/up.txt
+
+      - name: Migrasi & bangun ulang cache
+        run: |
+          code=$(curl -sS -m 180 -o /tmp/fin.txt -w '%{http_code}' \
+            "https://sik-kppd.com/_deploy_KAH5fEVNhugNKbqHJyNL34PQ8lcW.php?t=KAH5fEVNhugNKbqHJyNL34PQ8lcW&step=finalize")
+          echo "HTTP $code"; cat /tmp/fin.txt
+          test "$code" = "200"
+          grep -q 'OK-FINALIZE' /tmp/fin.txt
+
+      - name: Verifikasi halaman
+        run: |
+          J=/tmp/cj.txt
+          curl -sS -o /dev/null -w '/up -> %{http_code}\n' https://sik-kppd.com/up
+          curl -sS -c "$J" -o /tmp/lf.html https://sik-kppd.com/login
+          TOKEN=$(grep -o 'name="_token"[^>]*value="[^"]*"' /tmp/lf.html | head -1 | sed 's/.*value="//; s/"$//')
+          curl -sS -b "$J" -c "$J" -o /dev/null \
+            -w 'POST /login -> %{http_code} redirect=%{redirect_url}\n' \
+            --data-urlencode "_token=$TOKEN" \
+            --data-urlencode "email=admin.sistem@ksp.test" \
+            --data-urlencode "password=IQ4Vjl-mY1zE6-FVDn5Y" \
+            https://sik-kppd.com/login
+
+          echo "--- daftar cabang"
+          curl -sSL -b "$J" -c "$J" -o /tmp/cabang.html \
+            -w 'GET /admin/master/cabang -> %{http_code} bytes=%{size_download}\n' \
+            https://sik-kppd.com/admin/master/cabang
+          grep -o '<title>[^<]*</title>' /tmp/cabang.html | head -1
+          echo -n 'tombol Tambah Cabang: '; grep -c 'Tambah Cabang' /tmp/cabang.html
+          echo -n 'baris cabang PST: '; grep -c 'Kantor Pusat' /tmp/cabang.html
+
+          echo "--- form tambah cabang"
+          curl -sSL -b "$J" -c "$J" -o /tmp/cabang-baru.html \
+            -w 'GET /admin/master/cabang/tambah -> %{http_code}\n' \
+            https://sik-kppd.com/admin/master/cabang/tambah
+          grep -o 'name="\(code\|name\|address\|parent_branch_id\|operational_date\|is_active\)"' /tmp/cabang-baru.html | sort -u
+
+          echo "--- menu Cabang di sidebar (dari halaman dashboard)"
+          curl -sSL -b "$J" -c "$J" -o /tmp/dash.html https://sik-kppd.com/admin/dashboard
+          echo -n 'link /admin/master/cabang di sidebar: '; grep -c 'admin/master/cabang' /tmp/dash.html
+
+          echo "--- tarif & parameter"
+          curl -sSL -b "$J" -c "$J" -o /tmp/tarif.html \
+            -w 'GET /admin/tarif-parameter -> %{http_code}\n' \
+            https://sik-kppd.com/admin/tarif-parameter
+          sed 's/<[^>]*>/ /g' /tmp/tarif.html | tr -s ' \n' ' \n' | grep -iE 'belum ada produk|Simpan Parameter|Tambah Tarif' | head -5

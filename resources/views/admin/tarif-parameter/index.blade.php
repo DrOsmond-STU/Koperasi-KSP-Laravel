@@ -13,9 +13,21 @@
         .data-table th, .data-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
         .status-msg { color: var(--ok); font-size: 13px; margin-bottom: 14px; }
         .error-text { color: var(--brick); font-size: 12px; margin-bottom: 14px; }
+        .empty-panel {
+            background: var(--surface); border: 1px dashed var(--line); border-radius: 14px;
+            padding: 20px; margin-bottom: 20px; color: var(--muted); font-size: 13px;
+        }
+        .empty-panel a { color: var(--pine); font-weight: 700; }
+        .page-lead { color: var(--muted); margin-top: -8px; font-size: 13px; }
     </style>
 
     <h2>Tarif & Parameter</h2>
+    <p class="page-lead">
+        Halaman ini mengatur tarif dan parameter <em>produk yang sudah ada</em>.
+        Setiap produk simpanan dan pinjaman tampil sebagai satu panel dengan
+        tombol Simpan Parameter dan Tambah Tarif sendiri — kalau daftarnya
+        kosong, berarti produknya memang belum dibuat.
+    </p>
 
     @if (session('status'))
         <p class="status-msg">{{ session('status') }}</p>
@@ -27,6 +39,14 @@
     @endif
 
     <h3>Produk Simpanan</h3>
+    @if ($savingsProducts->isEmpty())
+        <div class="empty-panel">
+            Belum ada produk simpanan, jadi belum ada tarif yang bisa diatur di sini.
+            Buat produknya lebih dulu lewat
+            <a href="{{ route('admin.master.savings-products.index') }}">Simpan Pinjam → Produk Simpanan</a>,
+            lalu kembali ke halaman ini untuk mengubah parameter dan menambah riwayat tarifnya.
+        </div>
+    @endif
     @foreach ($savingsProducts as $product)
         <div class="panel">
             <h4>{{ $product->name }} ({{ $product->code }})</h4>
@@ -89,6 +109,14 @@
     @endforeach
 
     <h3>Produk Pinjaman</h3>
+    @if ($loanProducts->isEmpty())
+        <div class="empty-panel">
+            Belum ada produk pinjaman, jadi belum ada tarif yang bisa diatur di sini.
+            Buat produknya lebih dulu lewat
+            <a href="{{ route('admin.master.loan-products.index') }}">Simpan Pinjam → Produk Pinjaman</a>,
+            lalu kembali ke halaman ini untuk mengubah parameter dan menambah riwayat tarifnya.
+        </div>
+    @endif
     @foreach ($loanProducts as $product)
         <div class="panel">
             <h4>{{ $product->name }} ({{ $product->code }})</h4>

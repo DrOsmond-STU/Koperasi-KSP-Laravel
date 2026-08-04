@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\BranchController;
 use App\Http\Controllers\Admin\BrandingSettingsController;
 use App\Http\Controllers\Anggota\LoanApplicationController as MemberLoanApplicationController;
 use App\Http\Controllers\Anggota\LoanController as MemberLoanController;
@@ -246,6 +247,19 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.pengaturan.tanda-tangan.slot.update');
     Route::delete('/admin/pengaturan/tanda-tangan/slot/{slot}', [SignatureConfigController::class, 'destroySlot'])
         ->name('admin.pengaturan.tanda-tangan.slot.destroy');
+
+    Route::get('/admin/master/cabang', [BranchController::class, 'index'])
+        ->name('admin.master.branches.index');
+    Route::get('/admin/master/cabang/tambah', [BranchController::class, 'create'])
+        ->name('admin.master.branches.create');
+    Route::post('/admin/master/cabang', [BranchController::class, 'store'])
+        ->name('admin.master.branches.store');
+    Route::get('/admin/master/cabang/{branch}/edit', [BranchController::class, 'edit'])
+        ->name('admin.master.branches.edit');
+    Route::put('/admin/master/cabang/{branch}', [BranchController::class, 'update'])
+        ->name('admin.master.branches.update');
+    Route::delete('/admin/master/cabang/{branch}', [BranchController::class, 'destroy'])
+        ->name('admin.master.branches.destroy');
 
     Route::get('/admin/master/jenis-anggota', [MemberTypeController::class, 'index'])
         ->name('admin.master.member-types.index');
