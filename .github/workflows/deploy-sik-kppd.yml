@@ -14,7 +14,10 @@ jobs:
   test:
     name: Test suite
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Run sebelumnya menggantung >20 menit di langkah test padahal suite
+    # penuh biasanya selesai ~2,5 menit, jadi tiap langkah dibatasi sendiri
+    # supaya kegagalan terlihat sebagai kegagalan, bukan sebagai diam.
+    timeout-minutes: 15
     services:
       mysql:
         image: mysql:8.4
@@ -47,7 +50,15 @@ jobs:
       - name: Generate app key
         run: php artisan key:generate
 
+      # Test yang menyentuh perubahan dijalankan lebih dulu dan terpisah:
+      # kalau ada yang salah di situ, hasilnya kelihatan dalam hitungan
+      # detik, bukan setelah menunggu seluruh suite.
+      - name: Test perubahan (Cabang)
+        timeout-minutes: 5
+        run: php artisan test --filter=BranchControllerTest
+
       - name: Run test suite
+        timeout-minutes: 8
         run: php artisan test
 
   deploy:
