@@ -7,7 +7,6 @@ use App\Models\Member;
 use App\Models\MemberType;
 use App\Models\Scopes\BranchScope;
 use App\Services\OpeningBalance\ImportResult;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 /**
@@ -232,7 +231,13 @@ class MemberImportService
         }
 
         foreach (['Y-m-d', 'd/m/Y', 'd-m-Y'] as $format) {
-            $date = Carbon::createFromFormat($format, $value);
+            // Sengaja memakai DateTimeImmutable, BUKAN Carbon::createFromFormat:
+            // Carbon melempar InvalidFormatException untuk input yang tidak
+            // cocok, sehingga satu tanggal ngawur akan menggagalkan seluruh
+            // import alih-alih dilaporkan sebagai error per baris.
+            // '!' me-reset komponen jam supaya perbandingan round-trip bersih.
+            $date = \DateTimeImmutable::createFromFormat('!'.$format, $value);
+
             // createFromFormat menerima tanggal mustahil (mis. 2026-02-31) lalu
             // menggesernya; round-trip memastikan input benar-benar sesuai format.
             if ($date !== false && $date->format($format) === $value) {
