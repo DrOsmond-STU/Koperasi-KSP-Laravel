@@ -36,11 +36,15 @@
             <div class="field">
                 <label>Kategori</label>
                 <select name="category" required>
-                    <option value="pokok">Simpanan Pokok</option>
-                    <option value="wajib">Simpanan Wajib</option>
-                    <option value="sukarela" selected>Simpanan Sukarela</option>
-                    <option value="berjangka">Simpanan Berjangka</option>
+                    @forelse ($categories as $category)
+                        <option value="{{ $category->code }}" @selected(old('category', 'sukarela') === $category->code)>{{ $category->name }}</option>
+                    @empty
+                        <option value="">— belum ada kategori —</option>
+                    @endforelse
                 </select>
+                @if ($categories->isEmpty())
+                    <p class="hint">Belum ada kategori aktif. <a href="{{ route('admin.master.savings-product-categories.index') }}">Tambahkan kategori dulu</a>.</p>
+                @endif
             </div>
             <div class="field">
                 <label>Metode Perhitungan Jasa</label>

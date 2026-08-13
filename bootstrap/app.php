@@ -20,6 +20,8 @@ return Application::configure(basePath: dirname(__DIR__))
         then: function (): void {
             // Import massal Master Anggota - lihat routes/member-import.php.
             require __DIR__.'/../routes/member-import.php';
+            // Master Kategori Produk Simpanan.
+            require __DIR__.'/../routes/master-kategori-simpanan.php';
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreSavingsProductRequest;
 use App\Models\ChartOfAccount;
 use App\Models\SavingsProduct;
+use App\Models\SavingsProductCategory;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
@@ -27,6 +28,7 @@ class SavingsProductController extends Controller
 
         return view('admin.master.produk-simpanan.create', [
             'postableAccounts' => ChartOfAccount::query()->where('is_postable', true)->orderBy('code')->get(),
+            'categories' => SavingsProductCategory::query()->where('is_active', true)->orderBy('name')->get(),
         ]);
     }
 

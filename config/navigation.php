@@ -30,6 +30,7 @@ return [
                 ['label' => 'Pengajuan Pinjaman', 'route' => 'staf.pengajuan-pinjaman.create', 'permission' => 'pinjaman.create', 'icon' => 'send'],
                 ['label' => 'Catat Angsuran', 'route' => 'staf.angsuran.create', 'permission' => 'pinjaman.create', 'icon' => 'repeat'],
                 ['label' => 'Persetujuan Pinjaman', 'route' => 'admin.pinjaman.index', 'permission' => 'pinjaman.approve', 'icon' => 'check-circle'],
+                ['label' => 'Kategori Simpanan', 'route' => 'admin.master.savings-product-categories.index', 'permission' => 'master_data.read', 'icon' => 'tag'],
                 ['label' => 'Produk Simpanan', 'route' => 'admin.master.savings-products.index', 'permission' => 'master_data.read', 'icon' => 'piggy-bank'],
                 ['label' => 'Produk Pinjaman', 'route' => 'admin.master.loan-products.index', 'permission' => 'master_data.read', 'icon' => 'credit-card'],
             ],
