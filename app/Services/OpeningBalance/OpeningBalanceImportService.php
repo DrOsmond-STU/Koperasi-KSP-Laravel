@@ -42,12 +42,12 @@ class OpeningBalanceImportService
 
             $member = Member::query()->where('member_number', trim((string) ($row['kode_anggota'] ?? '')))->first();
             if (! $member) {
-                $rowErrors[] = "kode_anggota \"{$row['kode_anggota']}\" tidak ditemukan di Master Anggota";
+                $rowErrors[] = 'kode_anggota "'.($row['kode_anggota'] ?? '').'" tidak ditemukan di Master Anggota';
             }
 
             $product = SavingsProduct::query()->where('code', trim((string) ($row['kode_produk_simpanan'] ?? '')))->first();
             if (! $product) {
-                $rowErrors[] = "kode_produk_simpanan \"{$row['kode_produk_simpanan']}\" tidak ditemukan di Master Produk Simpanan";
+                $rowErrors[] = 'kode_produk_simpanan "'.($row['kode_produk_simpanan'] ?? '').'" tidak ditemukan di Master Produk Simpanan';
             }
 
             if (! is_numeric($row['saldo_awal'] ?? null)) {
@@ -86,12 +86,12 @@ class OpeningBalanceImportService
 
             $member = Member::query()->where('member_number', trim((string) ($row['kode_anggota'] ?? '')))->first();
             if (! $member) {
-                $rowErrors[] = "kode_anggota \"{$row['kode_anggota']}\" tidak ditemukan di Master Anggota";
+                $rowErrors[] = 'kode_anggota "'.($row['kode_anggota'] ?? '').'" tidak ditemukan di Master Anggota';
             }
 
             $product = LoanProduct::query()->where('code', trim((string) ($row['kode_produk_pinjaman'] ?? '')))->first();
             if (! $product) {
-                $rowErrors[] = "kode_produk_pinjaman \"{$row['kode_produk_pinjaman']}\" tidak ditemukan di Master Produk Pinjaman";
+                $rowErrors[] = 'kode_produk_pinjaman "'.($row['kode_produk_pinjaman'] ?? '').'" tidak ditemukan di Master Produk Pinjaman';
             }
 
             foreach (['plafon_awal', 'sisa_pokok', 'sisa_jasa_berjalan', 'tenor_bulan', 'sisa_tenor', 'angsuran_ke'] as $numericField) {
@@ -152,7 +152,7 @@ class OpeningBalanceImportService
                 ->first();
 
             if (! $loan) {
-                $rowErrors[] = "no_pinjaman_lama \"{$row['no_pinjaman_lama']}\" tidak ditemukan di Saldo Awal Pinjaman pada batch ini";
+                $rowErrors[] = 'no_pinjaman_lama "'.($row['no_pinjaman_lama'] ?? '').'" tidak ditemukan di Saldo Awal Pinjaman pada batch ini';
             }
 
             foreach (['angsuran_ke', 'nominal_pokok', 'nominal_jasa'] as $numericField) {
@@ -204,7 +204,7 @@ class OpeningBalanceImportService
                 ->first();
 
             if (! $account) {
-                $rowErrors[] = "kode_akun \"{$row['kode_akun']}\" tidak ditemukan atau bukan akun postable";
+                $rowErrors[] = 'kode_akun "'.($row['kode_akun'] ?? '').'" tidak ditemukan atau bukan akun postable';
             }
 
             $position = strtolower(trim((string) ($row['posisi'] ?? '')));
@@ -250,7 +250,7 @@ class OpeningBalanceImportService
 
             $type = RetributionType::query()->where('code', trim((string) ($row['kode_jenis_retribusi'] ?? '')))->first();
             if (! $type) {
-                $rowErrors[] = "kode_jenis_retribusi \"{$row['kode_jenis_retribusi']}\" tidak ditemukan di Master Jenis Retribusi";
+                $rowErrors[] = 'kode_jenis_retribusi "'.($row['kode_jenis_retribusi'] ?? '').'" tidak ditemukan di Master Jenis Retribusi';
             }
 
             if (! is_numeric($row['saldo_awal'] ?? null)) {
@@ -292,7 +292,7 @@ class OpeningBalanceImportService
 
             $product = Product::query()->where('code', trim((string) ($row['kode_barang'] ?? '')))->first();
             if (! $product) {
-                $rowErrors[] = "kode_barang \"{$row['kode_barang']}\" tidak ditemukan di Master Barang";
+                $rowErrors[] = 'kode_barang "'.($row['kode_barang'] ?? '').'" tidak ditemukan di Master Barang';
             }
 
             if (! is_numeric($row['qty'] ?? null)) {
@@ -343,16 +343,45 @@ class OpeningBalanceImportService
     private function readCsv(string $path): array
     {
         $handle = fopen($path, 'r');
+
+        $firstLine = fgets($handle);
+        if ($firstLine === false) {
+            fclose($handle);
+
+            return [];
+        }
+
+        // Excel menambahkan BOM UTF-8 saat "Save as CSV UTF-8"; tanpa dibuang,
+        // nama kolom pertama jadi "\xEF\xBB\xBFkode_anggota" dan seluruh baris
+        // kehilangan kunci itu.
+        $firstLine = preg_replace('/^\xEF\xBB\xBF/', '', $firstLine);
+
+        // Excel pada Windows berlokal Indonesia menyimpan CSV dengan titik
+        // koma, bukan koma. Delimiter dideteksi dari baris header supaya file
+        // hasil sunting Excel tetap terbaca.
+        $delimiter = $this->detectDelimiter($firstLine);
+
         $header = array_map(
             fn (string $column) => self::HEADER_ALIASES[$column] ?? $column,
-            array_map('trim', fgetcsv($handle))
+            array_map('trim', str_getcsv(rtrim($firstLine, "\r\n"), $delimiter, '"', '\\'))
         );
+
         $rows = [];
 
-        while (($line = fgetcsv($handle)) !== false) {
+        while (($line = fgetcsv($handle, 0, $delimiter)) !== false) {
             if ($line === null || $line === [null]) {
                 continue;
             }
+
+            // Lewati baris kosong (umum di ekspor Excel).
+            if (count(array_filter($line, fn ($cell) => trim((string) $cell) !== '')) === 0) {
+                continue;
+            }
+
+            // Samakan jumlah kolom dengan header: array_combine melempar
+            // ValueError kalau jumlahnya beda, dan itu memunculkan 500 alih-alih
+            // pesan kesalahan per baris.
+            $line = array_slice(array_pad($line, count($header), ''), 0, count($header));
 
             $rows[] = array_combine($header, $line);
         }
@@ -360,6 +389,21 @@ class OpeningBalanceImportService
         fclose($handle);
 
         return $rows;
+    }
+
+    /** Pilih delimiter yang paling banyak muncul di baris header. */
+    private function detectDelimiter(string $headerLine): string
+    {
+        $counts = [
+            ',' => substr_count($headerLine, ','),
+            ';' => substr_count($headerLine, ';'),
+            "\t" => substr_count($headerLine, "\t"),
+        ];
+
+        arsort($counts);
+        $best = array_key_first($counts);
+
+        return $counts[$best] > 0 ? $best : ',';
     }
 
     /**
