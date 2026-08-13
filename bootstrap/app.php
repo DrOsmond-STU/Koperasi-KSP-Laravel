@@ -22,6 +22,8 @@ return Application::configure(basePath: dirname(__DIR__))
             require __DIR__.'/../routes/member-import.php';
             // Master Kategori Produk Simpanan.
             require __DIR__.'/../routes/master-kategori-simpanan.php';
+            // Koreksi Data Saldo Awal (pengosongan massal sebelum dikunci).
+            require __DIR__.'/../routes/saldo-awal-koreksi.php';
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
