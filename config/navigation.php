@@ -39,6 +39,7 @@ return [
             'label' => 'Akuntansi',
             'items' => [
                 ['label' => 'Bagan Akun', 'route' => 'admin.master.chart-of-accounts.index', 'permission' => 'chart_of_account.read', 'icon' => 'archive'],
+                ['label' => 'Import Bagan Akun', 'route' => 'admin.master.chart-of-accounts.import.form', 'permission' => 'chart_of_account.create', 'icon' => 'database'],
                 ['label' => 'Jurnal & Buku Besar', 'route' => 'admin.jurnal-buku-besar.index', 'permission' => 'jurnal.read', 'icon' => 'book'],
                 ['label' => 'Jurnal Umum', 'route' => 'admin.jurnal-umum.create', 'permission' => 'jurnal.create', 'icon' => 'file-text'],
                 ['label' => 'Jurnal Penyesuaian', 'route' => 'admin.jurnal-penyesuaian.create', 'permission' => 'jurnal.adjust', 'icon' => 'sliders'],
