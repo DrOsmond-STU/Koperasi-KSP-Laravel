@@ -37,6 +37,12 @@
         <span>
             <a href="{{ route('admin.master.chart-of-accounts.export-pdf') }}" target="_blank" class="btn-link">Export PDF</a>
             <a href="{{ route('admin.master.chart-of-accounts.export-excel') }}" class="btn-link" style="margin-left:10px;">Export Excel</a>
+            @can('chart_of_account.delete')
+                <a href="{{ route('admin.master.chart-of-accounts.purge.form') }}" class="btn-link" style="margin-left:10px; color: var(--brick);">Hapus Massal</a>
+            @endcan
+            @can('chart_of_account.create')
+                <a href="{{ route('admin.master.chart-of-accounts.import.form') }}" class="btn-link" style="margin-left:10px;">Import CSV</a>
+            @endcan
             <a href="{{ route('admin.master.chart-of-accounts.create') }}" class="btn-primary" style="margin-left:10px;">+ Tambah Akun</a>
         </span>
     </div>
