@@ -198,13 +198,19 @@ class OpeningBalanceImportService
         [$valid, $errors] = $this->processRows($this->readCsv($path), function (array $row) {
             $rowErrors = [];
 
-            $account = ChartOfAccount::query()
-                ->where('code', trim((string) ($row['kode_akun'] ?? '')))
-                ->where('is_postable', true)
-                ->first();
+            // Dua sebab kegagalan yang berbeda dipisahkan pesannya: "belum ada
+            // di Bagan Akun" menuntun ke Import Bagan Akun, sedangkan "akun
+            // induk" menuntun ke pemilihan akun level transaksi. Menggabungkan
+            // keduanya jadi satu kalimat membuat 150 baris gagal terbaca
+            // seolah berkasnya yang salah, padahal bagan akunnya yang belum
+            // diimport.
+            $code = trim((string) ($row['kode_akun'] ?? ''));
+            $account = ChartOfAccount::query()->where('code', $code)->first();
 
             if (! $account) {
-                $rowErrors[] = 'kode_akun "'.($row['kode_akun'] ?? '').'" tidak ditemukan atau bukan akun postable';
+                $rowErrors[] = 'kode_akun "'.$code.'" belum ada di Bagan Akun — import dulu bagan akunnya lewat Akuntansi → Import Bagan Akun';
+            } elseif (! $account->is_postable) {
+                $rowErrors[] = 'kode_akun "'.$code.'" ada di Bagan Akun tapi berupa akun induk (header), bukan akun transaksi';
             }
 
             $position = strtolower(trim((string) ($row['posisi'] ?? '')));

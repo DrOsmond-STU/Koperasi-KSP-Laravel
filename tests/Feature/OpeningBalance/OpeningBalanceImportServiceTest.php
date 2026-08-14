@@ -144,5 +144,26 @@ class OpeningBalanceImportServiceTest extends TestCase
         $result = app(OpeningBalanceImportService::class)->validateCoa($batch, $this->csvFile($csv)->getRealPath());
 
         $this->assertTrue($result->hasErrors());
+        $this->assertStringContainsString('akun induk', implode(' ', $result->errors[0]['errors']));
+    }
+
+    /**
+     * Kode yang belum ada di Bagan Akun harus menuntun ke Import Bagan Akun,
+     * bukan disamakan dengan akun induk — keduanya butuh tindakan berbeda, dan
+     * pesan gabungan membuat kegagalan massal terbaca seolah berkasnya salah.
+     */
+    public function test_coa_csv_membedakan_kode_yang_belum_ada_dari_akun_induk(): void
+    {
+        $batch = $this->batch();
+
+        $csv = "kode_akun,posisi,saldo,tanggal_saldo_awal\n"
+            .'9999999,Debit,50000000,2026-01-01'."\n";
+
+        $result = app(OpeningBalanceImportService::class)->validateCoa($batch, $this->csvFile($csv)->getRealPath());
+
+        $pesan = implode(' ', $result->errors[0]['errors']);
+        $this->assertStringContainsString('belum ada di Bagan Akun', $pesan);
+        $this->assertStringContainsString('Import Bagan Akun', $pesan);
+        $this->assertStringNotContainsString('akun induk', $pesan);
     }
 }
