@@ -78,8 +78,19 @@
             <input type="text" name="awalan" value="{{ $awalan }}" placeholder="mis. 11">
         </div>
         <button type="submit" class="btn-primary">Tampilkan</button>
-        <span class="muted" style="font-size:13px;">{{ $accounts->count() }} dari {{ $jumlahTotal }} akun</span>
+        <span class="muted" style="font-size:13px;">
+            {{ $accounts->count() }} dari {{ $jumlahTotal }} akun ·
+            <strong>{{ $accounts->count() - $jumlahTerkunci }} bisa dihapus</strong> ·
+            {{ $jumlahTerkunci }} terkunci
+        </span>
     </form>
+
+    @if ($accounts->count() > 0 && $accounts->count() === $jumlahTerkunci)
+        <div class="notice" style="border-color: var(--brick);">
+            Semua akun pada tampilan ini <strong>terkunci</strong>, jadi tidak ada yang bisa dicentang.
+            Lepaskan dulu pemakaiannya (mis. arahkan produk simpanan/pinjaman ke akun lain), atau ubah filter di atas.
+        </div>
+    @endif
 
     <form method="POST" action="{{ route('admin.master.chart-of-accounts.purge') }}"
           onsubmit="return confirm('Hapus akun yang dicentang? Tindakan ini tidak bisa dibatalkan.');">
@@ -129,33 +140,43 @@
         </div>
 
         <div class="confirm-bar">
-            <span style="font-size:13px;">Ketik <strong>HAPUS</strong> untuk mengaktifkan tombol:</span>
+            <span style="font-size:13px;">Ketik <strong>HAPUS</strong> (huruf besar) lalu tekan tombol:</span>
             <input type="text" name="konfirmasi" id="konfirmasi" autocomplete="off" placeholder="HAPUS">
-            <button type="submit" class="btn-danger" id="tombol-hapus" disabled>Hapus Akun Terpilih</button>
-            <span class="muted" id="hitungan" style="font-size:13px;">0 akun dicentang</span>
+            <button type="submit" class="btn-danger">Hapus Akun Terpilih</button>
+            <span class="muted" id="hitungan" style="font-size:13px;"></span>
         </div>
     </form>
 
+    {{--
+        Tombol sengaja TIDAK pernah di-disable lewat JavaScript. Versi
+        sebelumnya menonaktifkannya sampai kotak konfirmasi terisi, dan itu
+        membuat satu kesalahan kecil di skrip ini — atau satu elemen yang tidak
+        ketemu — muncul sebagai tombol mati tanpa penjelasan apa pun.
+        PurgeChartOfAccountRequest sudah memvalidasi kata kunci konfirmasi dan
+        keharusan memilih baris di sisi server, lengkap dengan pesan berbahasa
+        Indonesia, jadi menekan tombol selalu memberi jawaban yang bisa dibaca.
+        Skrip di bawah murni penghitung, dan setiap elemen dicek dulu supaya
+        tidak ada yang bisa menggagalkan pengiriman form.
+    --}}
     <script>
         (function () {
             var kotak = Array.prototype.slice.call(document.querySelectorAll('.pilih'));
             var semua = document.getElementById('pilih-semua');
-            var konfirmasi = document.getElementById('konfirmasi');
-            var tombol = document.getElementById('tombol-hapus');
             var hitungan = document.getElementById('hitungan');
 
             function segarkan() {
+                if (!hitungan) { return; }
                 var n = kotak.filter(function (k) { return k.checked; }).length;
-                hitungan.textContent = n + ' akun dicentang';
-                tombol.disabled = !(n > 0 && konfirmasi.value === 'HAPUS');
+                hitungan.textContent = n + ' dari ' + kotak.length + ' akun dicentang';
             }
 
-            semua.addEventListener('change', function () {
-                kotak.forEach(function (k) { k.checked = semua.checked; });
-                segarkan();
-            });
+            if (semua) {
+                semua.addEventListener('change', function () {
+                    kotak.forEach(function (k) { k.checked = semua.checked; });
+                    segarkan();
+                });
+            }
             kotak.forEach(function (k) { k.addEventListener('change', segarkan); });
-            konfirmasi.addEventListener('input', segarkan);
             segarkan();
         })();
     </script>

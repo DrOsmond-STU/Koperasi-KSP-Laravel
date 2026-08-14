@@ -43,11 +43,18 @@ class ChartOfAccountPurgeController extends Controller
             $query->where('code', 'like', $awalan.'%');
         }
 
+        $accounts = $query->orderBy('code')->get();
+        $blockers = $this->purge->blockers();
+
         return view('admin.master.bagan-akun.hapus-massal', [
-            'accounts' => $query->orderBy('code')->get(),
-            'blockers' => $this->purge->blockers(),
+            'accounts' => $accounts,
+            'blockers' => $blockers,
             'childCounts' => $this->purge->childCounts(),
             'jumlahTotal' => ChartOfAccount::query()->count(),
+            // Dihitung di sini supaya layar bisa menjelaskan sendiri kenapa
+            // tidak ada yang bisa dicentang, alih-alih menyisakan tombol mati
+            // tanpa keterangan.
+            'jumlahTerkunci' => $accounts->filter(fn ($a) => isset($blockers[$a->id]))->count(),
             'sumber' => $sumber,
             'awalan' => $awalan,
         ]);
