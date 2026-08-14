@@ -24,8 +24,10 @@ return Application::configure(basePath: dirname(__DIR__))
             require __DIR__.'/../routes/master-kategori-simpanan.php';
             // Koreksi Data Saldo Awal (pengosongan massal sebelum dikunci).
             require __DIR__.'/../routes/saldo-awal-koreksi.php';
-            // Import massal Bagan Akun.
+            // Import massal & hapus massal Bagan Akun.
             require __DIR__.'/../routes/coa-import.php';
+            // Ubah/hapus Produk Simpanan & Produk Pinjaman.
+            require __DIR__.'/../routes/master-produk.php';
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
