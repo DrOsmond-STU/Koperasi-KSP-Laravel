@@ -15,7 +15,13 @@ use Barryvdh\DomPDF\PDF as PdfDocument;
  */
 trait GeneratesPrintPdf
 {
-    protected function renderPrintPdf(string $view, array $data = []): PdfDocument
+    /**
+     * $orientation menimpa pilihan admin hanya untuk cetakan yang secara
+     * bentuk memang tidak muat portrait (mis. tabel laporan berkolom banyak).
+     * Dibiarkan null untuk semua cetakan lain, supaya pengaturan admin tetap
+     * jadi penentu seperti sebelumnya.
+     */
+    protected function renderPrintPdf(string $view, array $data = [], ?string $orientation = null): PdfDocument
     {
         $printSettings = app(PrintSettingsService::class)->current();
 
@@ -25,6 +31,7 @@ trait GeneratesPrintPdf
             default => 'a4',
         };
 
-        return Pdf::loadView($view, $data)->setPaper($paperSize, $printSettings->orientation);
+        return Pdf::loadView($view, $data)
+            ->setPaper($paperSize, $orientation ?? $printSettings->orientation);
     }
 }

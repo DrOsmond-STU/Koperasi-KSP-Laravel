@@ -10,7 +10,14 @@
     </style>
 
     <h2 style="font-size:13pt; margin:0 0 2px;">{{ $title }}</h2>
-    <p style="font-size:9pt; color:#5C6E64;">Dicetak {{ $generatedAt->translatedFormat('d M Y H:i') }} — {{ $rows->count() }} baris</p>
+    <p style="font-size:9pt; color:#5C6E64; margin:0 0 2px;">Dicetak {{ $generatedAt->translatedFormat('d M Y H:i') }} — {{ $rows->count() }} baris</p>
+
+    {{-- Saringan cetak harus terbaca di kertasnya sendiri: pembaca laporan
+         keuangan tidak boleh menebak-nebak kenapa jumlah barisnya beda dengan
+         yang di layar. --}}
+    @if (! empty($catatan ?? null))
+        <p style="font-size:8.5pt; color:#8A5A2B; margin:0;">{{ $catatan }}</p>
+    @endif
 
     <table>
         <thead>

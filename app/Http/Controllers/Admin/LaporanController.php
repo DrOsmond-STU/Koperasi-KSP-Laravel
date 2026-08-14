@@ -60,6 +60,21 @@ class LaporanController extends Controller
 {
     use GeneratesPrintPdf;
 
+    /**
+     * Cetakan menyaring baris yang saldonya sudah nol supaya tidak menghabiskan
+     * kertas untuk rekening dan pinjaman mati. Layar dan Excel TIDAK disaring —
+     * keduanya dipakai untuk menelusuri riwayat, dan menyembunyikan baris di
+     * sana akan membuat data terlihat hilang.
+     *
+     * Karena itu jumlah baris PDF bisa lebih sedikit daripada di layar, dan
+     * alasannya dicetak di kepala halaman lewat catatan ini — laporan keuangan
+     * yang diam-diam memangkas baris jauh lebih berbahaya daripada yang tebal.
+     */
+    private const CATATAN_SARINGAN_CETAK = [
+        'simpanan_rekening' => 'Hanya rekening bersaldo di atas nol. Rekening bersaldo nol tidak dicetak — lihat Export Excel untuk daftar lengkap.',
+        'pinjaman' => 'Hanya pinjaman yang belum lunas. Pinjaman berstatus Lunas tidak dicetak — lihat Export Excel untuk daftar lengkap.',
+    ];
+
     public function __construct(private readonly InventoryReportService $inventoryReportService) {}
 
     public function index(): View
@@ -110,7 +125,7 @@ class LaporanController extends Controller
         ini_set('memory_limit', '768M');
         set_time_limit(300);
 
-        $rows = $this->fetch($module);
+        $rows = $this->fetch($module, hanyaBersaldo: true);
         $maxRows = (int) config('koperasi.cetak_laporan_maks_baris', 1400);
 
         if ($rows->count() > $maxRows) {
@@ -121,14 +136,32 @@ class LaporanController extends Controller
                     .' baris). Pakai Export Excel; isinya sama persis.');
         }
 
+        $columns = LaporanRegistry::columnsFor($module);
+
         $pdf = $this->renderPrintPdf('prints.laporan.generic', [
             'title' => LaporanRegistry::labelFor($module),
-            'columns' => LaporanRegistry::columnsFor($module),
+            'columns' => $columns,
             'rows' => $rows,
             'generatedAt' => now(),
-        ]);
+            'catatan' => self::CATATAN_SARINGAN_CETAK[$module] ?? null,
+        ], $this->orientasiUntuk($columns));
 
         return $pdf->download(Str::slug($module).'-'.now()->format('Ymd-His').'.pdf');
+    }
+
+    /**
+     * Tabel berkolom banyak diremas tidak terbaca di A4 portrait — kolom nama
+     * anggota dan nama produk pecah jadi beberapa baris per sel. Cetakan lain
+     * tetap mengikuti pilihan admin di Pengaturan Cetakan; hanya hub laporan
+     * yang memaksa landscape, dan hanya bila kolomnya memang padat.
+     *
+     * @param  array<string, string>  $columns
+     */
+    private function orientasiUntuk(array $columns): ?string
+    {
+        $ambang = (int) config('koperasi.cetak_laporan_kolom_landscape', 7);
+
+        return count($columns) >= $ambang ? 'landscape' : null;
     }
 
     public function exportExcel(string $module): BinaryFileResponse
@@ -148,17 +181,18 @@ class LaporanController extends Controller
     }
 
     /**
+     * @param  bool  $hanyaBersaldo  Buang baris bersaldo nol — lihat CATATAN_SARINGAN_CETAK.
      * @return Collection<int, array<string, mixed>>
      */
-    private function fetch(string $module): Collection
+    private function fetch(string $module, bool $hanyaBersaldo = false): Collection
     {
         return match ($module) {
             'anggota' => $this->anggota(),
             'jenis_anggota' => $this->jenisAnggota(),
             'bagan_akun' => $this->baganAkun(),
-            'simpanan_rekening' => $this->simpananRekening(),
+            'simpanan_rekening' => $this->simpananRekening($hanyaBersaldo),
             'simpanan_transaksi' => $this->simpananTransaksi(),
-            'pinjaman' => $this->pinjaman(),
+            'pinjaman' => $this->pinjaman($hanyaBersaldo),
             'angsuran' => $this->angsuran(),
             'transaksi_pinjaman' => $this->transaksiPinjaman(),
             'pembayaran_angsuran' => $this->pembayaranAngsuran(),
@@ -231,9 +265,10 @@ class LaporanController extends Controller
         ]);
     }
 
-    private function simpananRekening(): Collection
+    private function simpananRekening(bool $hanyaBersaldo = false): Collection
     {
         return SavingsAccount::query()
+            ->when($hanyaBersaldo, fn ($query) => $query->where('balance', '>', 0))
             ->with(['member', 'savingsProduct', 'branch'])
             ->orderByDesc('id')
             ->get()
@@ -266,9 +301,16 @@ class LaporanController extends Controller
             ]);
     }
 
-    private function pinjaman(): Collection
+    /**
+     * `loans` tidak menyimpan kolom sisa pokok — sisa dihitung dari jadwal
+     * angsuran. Untuk saringan cetak dipakai status `lunas`, yang justru lebih
+     * jujur di sini: status itu satu-satunya penanda pelunasan yang ikut
+     * tercetak, jadi pembaca bisa melihat sendiri kenapa baris tertentu absen.
+     */
+    private function pinjaman(bool $hanyaBersaldo = false): Collection
     {
         return Loan::query()
+            ->when($hanyaBersaldo, fn ($query) => $query->where('status', '!=', 'lunas'))
             ->with(['member', 'loanProduct', 'branch'])
             ->orderByDesc('id')
             ->get()
