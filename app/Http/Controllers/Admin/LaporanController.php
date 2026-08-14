@@ -86,15 +86,45 @@ class LaporanController extends Controller
         ]);
     }
 
+    /**
+     * Hub laporan memakai satu view cetak untuk 29 modul, jadi ukuran datanya
+     * sangat bervariasi — Jenis Anggota belasan baris, Rekening Simpanan ribuan
+     * setelah migrasi. DomPDF menyimpan pohon style tiap sel di memori dan
+     * kehabisan batas PHP jauh sebelum halaman pertama selesai, muncul sebagai
+     * 500 tanpa keterangan (lihat MemberController::printList() untuk kejadian
+     * yang sama di Daftar Anggota).
+     *
+     * Batas baris ditegakkan lebih dulu dan diarahkan ke Export Excel, yang
+     * menulis berkas secara bertahap dan tidak punya langit-langit serupa.
+     *
+     * Angkanya diukur di produksi, bukan ditebak: Rekening Simpanan 1.224 baris
+     * memuncak di 594 MB dan 25 detik — 0,458 MB dan 0,02 detik per baris. Batas
+     * 1.400 baris berarti ~675 MB dan ~29 detik, masih di bawah kedua pagar di
+     * bawah ini; di atas ~1.600 baris memory_limit-nya jebol.
+     */
     public function exportPdf(string $module): Response
     {
         $this->authorize('laporan.read');
         abort_unless(LaporanRegistry::exists($module), 404);
 
+        ini_set('memory_limit', '768M');
+        set_time_limit(300);
+
+        $rows = $this->fetch($module);
+        $maxRows = (int) config('koperasi.cetak_laporan_maks_baris', 1400);
+
+        if ($rows->count() > $maxRows) {
+            return redirect()
+                ->route('admin.laporan.show', $module)
+                ->with('error', 'Laporan ini berisi '.number_format($rows->count(), 0, ',', '.')
+                    .' baris — terlalu besar untuk PDF (batas '.number_format($maxRows, 0, ',', '.')
+                    .' baris). Pakai Export Excel; isinya sama persis.');
+        }
+
         $pdf = $this->renderPrintPdf('prints.laporan.generic', [
             'title' => LaporanRegistry::labelFor($module),
             'columns' => LaporanRegistry::columnsFor($module),
-            'rows' => $this->fetch($module),
+            'rows' => $rows,
             'generatedAt' => now(),
         ]);
 

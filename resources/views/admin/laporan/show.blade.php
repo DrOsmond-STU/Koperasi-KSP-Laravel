@@ -8,7 +8,12 @@
         .laporan-actions { display: flex; gap: 8px; flex-wrap: wrap; }
         .btn-primary { display: inline-block; padding: 9px 16px; background: var(--pine); color: #fff; border-radius: 9px; text-decoration: none; font-weight: 700; font-size: 13px; }
         .btn-secondary { display: inline-block; padding: 9px 16px; background: transparent; color: var(--pine-bright); border: 1px solid var(--pine); border-radius: 9px; text-decoration: none; font-weight: 700; font-size: 13px; }
+        .error-msg { color: var(--brick); font-size: 13px; margin-bottom: 14px; }
     </style>
+
+    @if (session('error'))
+        <p class="error-msg">{{ session('error') }}</p>
+    @endif
 
     <div class="laporan-header">
         <div>
