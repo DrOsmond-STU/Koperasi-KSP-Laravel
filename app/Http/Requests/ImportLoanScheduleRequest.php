@@ -39,6 +39,11 @@ class ImportLoanScheduleRequest extends FormRequest
             'file.required' => 'Pilih dulu berkas CSV jadwal angsurannya.',
             'file.mimes' => 'Berkas harus CSV.',
             'file.max' => 'Berkas maksimal 5 MB.',
+            // Lihat ImportLoanRepaymentHistoryRequest untuk alasan pesan ini
+            // menyebut batas server, bukan sekadar "file gagal diunggah".
+            'file.uploaded' => 'Berkas ditolak PHP sebelum sampai ke aplikasi. Batas unggah server saat ini '
+                .ini_get('upload_max_filesize').' (post_max_size '.ini_get('post_max_size')
+                .'), dan berkas Anda melebihi itu.',
         ];
     }
 }
