@@ -310,18 +310,21 @@ class LaporanController extends Controller
     }
 
     /**
-     * Kosong sampai importir riwayat pembayaran dibangun — laporannya sengaja
-     * disediakan lebih dulu supaya hasil import nanti langsung bisa diperiksa
-     * tanpa menunggu laporan menyusul.
+     * Hanya baris bertanda migrasi. Pembayaran yang benar-benar terjadi di
+     * aplikasi ini punya laporannya sendiri ("Transaksi Pembayaran Angsuran");
+     * mencampur keduanya di sini akan membuat rekonsiliasi terhadap sistem
+     * lama menghitung transaksi yang bukan bagian dari migrasi.
      */
     private function migrasiHistorisPembayaran(): Collection
     {
         return LoanRepayment::query()
+            ->whereNotNull('migrated_at')
             ->with(['loan.member'])
+            ->orderBy('paid_at')
             ->orderBy('id')
             ->get()
             ->map(fn (LoanRepayment $row) => [
-                'tanggal' => $row->created_at->format('d-m-Y'),
+                'tanggal' => $row->paidOn()->format('d-m-Y'),
                 'no_pinjaman' => $row->loan->loan_number ?? '-',
                 'nama_anggota' => $row->loan->member->name ?? '-',
                 'pokok' => $this->rupiah((float) $row->principal_portion),

@@ -46,6 +46,7 @@ return [
                 ['label' => 'Jurnal Penyesuaian', 'route' => 'admin.jurnal-penyesuaian.create', 'permission' => 'jurnal.adjust', 'icon' => 'sliders'],
                 ['label' => 'Saldo Awal', 'route' => 'admin.saldo-awal.index', 'permission' => 'saldo_awal.read', 'icon' => 'database'],
                 ['label' => 'Import Jadwal Angsuran', 'route' => 'admin.pinjaman.jadwal.import.form', 'permission' => 'saldo_awal.create', 'icon' => 'repeat'],
+                ['label' => 'Import Riwayat Pembayaran', 'route' => 'admin.pinjaman.historis.import.form', 'permission' => 'saldo_awal.create', 'icon' => 'repeat'],
                 ['label' => 'Tarif & Parameter', 'route' => 'admin.tarif-parameter.index', 'permission' => 'tarif.read', 'icon' => 'sliders'],
             ],
         ],

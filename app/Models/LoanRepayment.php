@@ -24,6 +24,8 @@ class LoanRepayment extends Model
         'principal_portion',
         'interest_portion',
         'balance_after',
+        'paid_at',
+        'migrated_at',
         'journal_entry_id',
         'created_by',
         'description',
@@ -40,8 +42,25 @@ class LoanRepayment extends Model
             'principal_portion' => 'decimal:2',
             'interest_portion' => 'decimal:2',
             'balance_after' => 'decimal:2',
+            'paid_at' => 'date',
+            'migrated_at' => 'datetime',
             'cancelled_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Dibawa dari sistem lama lewat import riwayat, bukan transaksi yang
+     * terjadi di aplikasi ini — tidak berjurnal dan tidak mengubah saldo.
+     */
+    public function isMigrated(): bool
+    {
+        return $this->migrated_at !== null;
+    }
+
+    /** Tanggal pembayaran sebenarnya; baris lama jatuh kembali ke created_at. */
+    public function paidOn(): \Illuminate\Support\Carbon
+    {
+        return $this->paid_at ?? $this->created_at;
     }
 
     public function isCancelled(): bool
