@@ -19,6 +19,9 @@ use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
 use App\Models\Member;
 use App\Models\MemberType;
+use App\Models\OpeningBalanceCoa;
+use App\Models\OpeningBalanceLoan;
+use App\Models\OpeningBalanceSaving;
 use App\Models\PosSale;
 use App\Models\Product;
 use App\Models\PurchaseReturn;
@@ -215,9 +218,140 @@ class LaporanController extends Controller
             'transaksi_teller' => $this->transaksiTeller(),
             'kalender_kegiatan' => $this->kalenderKegiatan(),
             'jurnal_umum' => $this->jurnalUmum(),
+            'saldo_awal_neraca' => $this->saldoAwalCoa(neracaSaja: true),
+            'saldo_awal_neraca_saldo' => $this->saldoAwalCoa(neracaSaja: false),
+            'saldo_awal_pinjaman' => $this->saldoAwalPinjaman(),
+            'saldo_awal_simpanan' => $this->saldoAwalSimpanan(),
+            'migrasi_historis_pembayaran' => $this->migrasiHistorisPembayaran(),
+            'migrasi_jadwal_pembayaran' => $this->migrasiJadwalPembayaran(),
             'pengguna' => $this->pengguna(),
             default => collect(),
         };
+    }
+
+    /**
+     * Saldo Awal COA apa adanya dari opening_balance_coa.
+     *
+     * `neracaSaja` memisahkan dua laporan yang orang sering tertukar: Neraca
+     * hanya memuat akun Neraca (Aset/Liabilitas/Ekuitas), sedangkan Neraca
+     * Saldo memuat seluruh akun termasuk Laba/Rugi. Keduanya ditutup baris
+     * TOTAL, karena yang paling sering dicari saat pengecekan justru apakah
+     * debit dan kreditnya sama.
+     */
+    private function saldoAwalCoa(bool $neracaSaja): Collection
+    {
+        $lines = OpeningBalanceCoa::query()
+            ->with('account')
+            ->get()
+            ->when($neracaSaja, fn (Collection $rows) => $rows->filter(
+                fn (OpeningBalanceCoa $line) => ($line->account->statement ?? null) === 'NERACA'
+            ))
+            ->sortBy(fn (OpeningBalanceCoa $line) => $line->account->code ?? '')
+            ->values();
+
+        $rows = $lines->map(fn (OpeningBalanceCoa $line) => [
+            'kode' => $line->account->code ?? '-',
+            'nama_akun' => $line->account->name ?? '-',
+            'tipe' => $line->account->type ?? '-',
+            'laporan' => ($line->account->statement ?? null) === 'NERACA' ? 'Neraca' : 'Laba/Rugi',
+            'debit' => $line->position === 'debit' ? $this->rupiah((float) $line->amount) : '-',
+            'kredit' => $line->position === 'kredit' ? $this->rupiah((float) $line->amount) : '-',
+        ]);
+
+        $totalDebit = $lines->where('position', 'debit')->sum('amount');
+        $totalKredit = $lines->where('position', 'kredit')->sum('amount');
+
+        return $rows->push([
+            'kode' => '',
+            'nama_akun' => 'TOTAL',
+            'tipe' => '',
+            'laporan' => '',
+            'debit' => $this->rupiah((float) $totalDebit),
+            'kredit' => $this->rupiah((float) $totalKredit),
+        ]);
+    }
+
+    private function saldoAwalPinjaman(): Collection
+    {
+        return OpeningBalanceLoan::query()
+            ->with(['member', 'loanProduct'])
+            ->orderBy('external_loan_number')
+            ->get()
+            ->map(fn (OpeningBalanceLoan $row) => [
+                'kode_anggota' => $row->member->member_number ?? '-',
+                'nama_anggota' => $row->member->name ?? '-',
+                'no_pinjaman_lama' => $row->external_loan_number ?? '-',
+                'produk' => $row->loanProduct->name ?? '-',
+                'tanggal_akad' => optional($row->disbursement_date)->format('d-m-Y') ?? '-',
+                'plafon_awal' => $this->rupiah((float) $row->original_principal),
+                'sisa_pokok' => $this->rupiah((float) $row->outstanding_principal),
+                'sisa_jasa' => $this->rupiah((float) $row->outstanding_interest),
+                'tenor' => (string) $row->tenor_months,
+                'sisa_tenor' => (string) $row->remaining_tenor_months,
+                'jatuh_tempo' => optional($row->next_due_date)->format('d-m-Y') ?? '-',
+                'kolektibilitas' => ucwords(str_replace('_', ' ', (string) $row->collectibility)),
+            ]);
+    }
+
+    private function saldoAwalSimpanan(): Collection
+    {
+        return OpeningBalanceSaving::query()
+            ->with(['member', 'savingsProduct'])
+            ->orderBy('member_id')
+            ->get()
+            ->map(fn (OpeningBalanceSaving $row) => [
+                'kode_anggota' => $row->member->member_number ?? '-',
+                'nama_anggota' => $row->member->name ?? '-',
+                'produk' => $row->savingsProduct->name ?? '-',
+                'no_rekening' => $row->account_number ?: '-',
+                'saldo_awal' => $this->rupiah((float) $row->balance),
+                'keterangan' => $row->notes ?: '-',
+            ]);
+    }
+
+    /**
+     * Kosong sampai importir riwayat pembayaran dibangun — laporannya sengaja
+     * disediakan lebih dulu supaya hasil import nanti langsung bisa diperiksa
+     * tanpa menunggu laporan menyusul.
+     */
+    private function migrasiHistorisPembayaran(): Collection
+    {
+        return LoanRepayment::query()
+            ->with(['loan.member'])
+            ->orderBy('id')
+            ->get()
+            ->map(fn (LoanRepayment $row) => [
+                'tanggal' => $row->created_at->format('d-m-Y'),
+                'no_pinjaman' => $row->loan->loan_number ?? '-',
+                'nama_anggota' => $row->loan->member->name ?? '-',
+                'pokok' => $this->rupiah((float) $row->principal_portion),
+                'jasa' => $this->rupiah((float) $row->interest_portion),
+                'jumlah' => $this->rupiah((float) $row->amount),
+                'sisa' => $this->rupiah((float) $row->balance_after),
+                'keterangan' => $row->description ?: '-',
+            ]);
+    }
+
+    private function migrasiJadwalPembayaran(): Collection
+    {
+        return LoanSchedule::query()
+            ->whereHas('loan')
+            ->with(['loan.member'])
+            ->orderBy('loan_id')
+            ->orderBy('installment_number')
+            ->get()
+            ->map(fn (LoanSchedule $row) => [
+                'no_pinjaman' => $row->loan->loan_number ?? '-',
+                'nama_anggota' => $row->loan->member->name ?? '-',
+                'angsuran_ke' => (string) $row->installment_number,
+                'jatuh_tempo' => $row->due_date->format('d-m-Y'),
+                'pokok' => $this->rupiah((float) $row->principal_amount),
+                'jasa' => $this->rupiah((float) $row->interest_amount),
+                'total' => $this->rupiah((float) $row->total_amount),
+                'terbayar' => $this->rupiah((float) $row->paid_amount),
+                'sisa' => $this->rupiah((float) $row->total_amount - (float) $row->paid_amount),
+                'status' => ucwords(str_replace('_', ' ', (string) $row->status)),
+            ]);
     }
 
     private function rupiah(float|string $amount): string

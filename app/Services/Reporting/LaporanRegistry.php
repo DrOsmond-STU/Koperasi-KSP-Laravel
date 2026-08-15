@@ -431,6 +431,115 @@ class LaporanRegistry
                 'filterable' => ['cabang', 'source_type'],
                 'date_column' => 'tanggal',
             ],
+            /*
+             * Kelompok Migrasi membaca tabel opening_balance_* apa adanya —
+             * angka yang masuk saat migrasi, bukan saldo berjalan. Itulah
+             * gunanya: setelah batch dikunci, saldo awal tidak bisa diubah
+             * lagi, jadi satu-satunya cara memeriksanya adalah membacanya
+             * kembali dari sumbernya sendiri dan membandingkannya dengan
+             * sistem lama.
+             *
+             * Dua laporan terakhir memang beririsan dengan "Jadwal Angsuran"
+             * dan "Transaksi Pembayaran Angsuran" di kelompok Simpanan &
+             * Pinjaman, tapi kolomnya berbeda: di sini pokok dan jasa dipecah
+             * supaya bisa diadu dengan rekap sistem lama, sementara laporan
+             * operasional hanya menampilkan jumlah totalnya.
+             */
+            'saldo_awal_neraca' => [
+                'group' => 'Migrasi & Saldo Awal',
+                'label' => 'Saldo Awal — Neraca',
+                'columns' => [
+                    'kode' => 'Kode Akun',
+                    'nama_akun' => 'Nama Akun',
+                    'tipe' => 'Tipe',
+                    'debit' => 'Debit',
+                    'kredit' => 'Kredit',
+                ],
+                'filterable' => ['tipe'],
+                'date_column' => null,
+            ],
+            'saldo_awal_neraca_saldo' => [
+                'group' => 'Migrasi & Saldo Awal',
+                'label' => 'Saldo Awal — Neraca Saldo',
+                'columns' => [
+                    'kode' => 'Kode Akun',
+                    'nama_akun' => 'Nama Akun',
+                    'tipe' => 'Tipe',
+                    'laporan' => 'Laporan',
+                    'debit' => 'Debit',
+                    'kredit' => 'Kredit',
+                ],
+                'filterable' => ['tipe', 'laporan'],
+                'date_column' => null,
+            ],
+            'saldo_awal_pinjaman' => [
+                'group' => 'Migrasi & Saldo Awal',
+                'label' => 'Saldo Awal — Pinjaman',
+                'columns' => [
+                    'kode_anggota' => 'Kode Anggota',
+                    'nama_anggota' => 'Nama Anggota',
+                    'no_pinjaman_lama' => 'No. Pinjaman Lama',
+                    'produk' => 'Produk',
+                    'tanggal_akad' => 'Tgl Akad',
+                    'plafon_awal' => 'Plafon Awal',
+                    'sisa_pokok' => 'Sisa Pokok',
+                    'sisa_jasa' => 'Sisa Jasa',
+                    'tenor' => 'Tenor (bln)',
+                    'sisa_tenor' => 'Sisa Tenor',
+                    'jatuh_tempo' => 'Jatuh Tempo Berikutnya',
+                    'kolektibilitas' => 'Kolektibilitas',
+                ],
+                'filterable' => ['produk', 'kolektibilitas'],
+                'date_column' => 'tanggal_akad',
+            ],
+            'saldo_awal_simpanan' => [
+                'group' => 'Migrasi & Saldo Awal',
+                'label' => 'Saldo Awal — Simpanan',
+                'columns' => [
+                    'kode_anggota' => 'Kode Anggota',
+                    'nama_anggota' => 'Nama Anggota',
+                    'produk' => 'Produk',
+                    'no_rekening' => 'No. Rekening',
+                    'saldo_awal' => 'Saldo Awal',
+                    'keterangan' => 'Keterangan',
+                ],
+                'filterable' => ['produk'],
+                'date_column' => null,
+            ],
+            'migrasi_historis_pembayaran' => [
+                'group' => 'Migrasi & Saldo Awal',
+                'label' => 'Migrasi — Historis Pembayaran',
+                'columns' => [
+                    'tanggal' => 'Tanggal Bayar',
+                    'no_pinjaman' => 'No. Pinjaman',
+                    'nama_anggota' => 'Nama Anggota',
+                    'pokok' => 'Porsi Pokok',
+                    'jasa' => 'Porsi Jasa',
+                    'jumlah' => 'Jumlah Bayar',
+                    'sisa' => 'Sisa Setelah Bayar',
+                    'keterangan' => 'Keterangan',
+                ],
+                'filterable' => [],
+                'date_column' => 'tanggal',
+            ],
+            'migrasi_jadwal_pembayaran' => [
+                'group' => 'Migrasi & Saldo Awal',
+                'label' => 'Migrasi — Jadwal Pembayaran',
+                'columns' => [
+                    'no_pinjaman' => 'No. Pinjaman',
+                    'nama_anggota' => 'Nama Anggota',
+                    'angsuran_ke' => 'Angsuran Ke',
+                    'jatuh_tempo' => 'Jatuh Tempo',
+                    'pokok' => 'Pokok',
+                    'jasa' => 'Jasa',
+                    'total' => 'Total Angsuran',
+                    'terbayar' => 'Terbayar',
+                    'sisa' => 'Sisa',
+                    'status' => 'Status',
+                ],
+                'filterable' => ['status'],
+                'date_column' => 'jatuh_tempo',
+            ],
             'pengguna' => [
                 'group' => 'Lainnya',
                 'label' => 'Data Pengguna',
