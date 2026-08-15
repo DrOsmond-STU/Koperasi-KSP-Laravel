@@ -28,6 +28,8 @@ return Application::configure(basePath: dirname(__DIR__))
             require __DIR__.'/../routes/coa-import.php';
             // Ubah/hapus Produk Simpanan & Produk Pinjaman.
             require __DIR__.'/../routes/master-produk.php';
+            // Import massal Jadwal Angsuran (tambal jadwal yang luput saat migrasi).
+            require __DIR__.'/../routes/jadwal-angsuran-import.php';
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
