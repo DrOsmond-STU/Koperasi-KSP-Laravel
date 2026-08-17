@@ -21,8 +21,8 @@
             <h2 style="margin: 0;">{{ $label }}</h2>
         </div>
         <div class="laporan-actions">
-            <a href="{{ route('admin.laporan.export-pdf', $module) }}" class="btn-secondary">Export PDF</a>
-            <a href="{{ route('admin.laporan.export-excel', $module) }}" class="btn-primary">Export Excel</a>
+            <a href="{{ route('admin.laporan.export-pdf', $module) }}" class="btn-secondary" data-export>Export PDF</a>
+            <a href="{{ route('admin.laporan.export-excel', $module) }}" class="btn-primary" data-export>Export Excel</a>
         </div>
     </div>
 
@@ -76,4 +76,41 @@
             {{ $rows->isEmpty() ? 'Belum ada data untuk laporan ini.' : 'Tidak ada data yang cocok dengan pencarian/filter.' }}
         </p>
     </div>
+
+    {{--
+        Saringan datatable bekerja di sisi klien, jadi server tidak tahu apa yang
+        sedang tampil. Keadaan filter dititipkan ke URL ekspor saat tombolnya
+        ditekan, lalu diterapkan ulang di server dengan aturan yang sama —
+        tanpa ini, cetakan selalu berisi seluruh data meski layarnya tersaring.
+    --}}
+    <script>
+        (function () {
+            var wrap = document.querySelector('.dt-wrap[data-dt]');
+            if (!wrap) { return; }
+
+            document.querySelectorAll('[data-export]').forEach(function (link) {
+                link.addEventListener('click', function (event) {
+                    var p = new URLSearchParams();
+
+                    var cari = (wrap.querySelector('.dt-search') || {}).value || '';
+                    if (cari.trim() !== '') { p.set('cari', cari.trim()); }
+
+                    wrap.querySelectorAll('.dt-filter').forEach(function (select) {
+                        if (select.value !== '') { p.set('f_' + select.dataset.filterColumn, select.value); }
+                    });
+
+                    var dari = (wrap.querySelector('.dt-date-from') || {}).value || '';
+                    var sampai = (wrap.querySelector('.dt-date-to') || {}).value || '';
+                    if (dari !== '') { p.set('dari', dari); }
+                    if (sampai !== '') { p.set('sampai', sampai); }
+
+                    var qs = p.toString();
+                    if (qs === '') { return; }
+
+                    event.preventDefault();
+                    window.location = link.href + (link.href.indexOf('?') === -1 ? '?' : '&') + qs;
+                });
+            });
+        })();
+    </script>
 @endsection

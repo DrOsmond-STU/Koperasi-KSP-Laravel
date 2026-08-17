@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\UserBranchScope;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -144,6 +145,81 @@ class LaporanExportPdfTest extends TestCase
 
         $response->assertOk();
         $this->assertSame('application/pdf', $response->headers->get('content-type'));
+    }
+
+    /**
+     * Cetakan harus memuat apa yang tampil di layar. Saringan datatable bekerja
+     * di sisi klien, jadi keadaannya dititipkan lewat URL dan diterapkan ulang
+     * di server dengan aturan yang sama.
+     */
+    public function test_cetakan_hanya_memuat_baris_yang_lolos_saringan(): void
+    {
+        $controller = app(LaporanController::class);
+        $saring = new ReflectionMethod($controller, 'saringSepertiDiLayar');
+
+        $rows = collect([
+            ['member_number' => 'A-001', 'name' => 'Budi', 'cabang' => 'KSP', 'joined_at' => '10-01-2026'],
+            ['member_number' => 'A-002', 'name' => 'Siti', 'cabang' => 'UPF', 'joined_at' => '15-06-2026'],
+            ['member_number' => 'A-003', 'name' => 'Budiman', 'cabang' => 'KSP', 'joined_at' => '20-12-2026'],
+        ]);
+
+        // Pencarian bebas: mencocokkan seluruh isi baris, tanpa peduli huruf.
+        $hasil = $saring->invoke($controller, $rows, Request::create('/', 'GET', ['cari' => 'budi']), 'anggota');
+        $this->assertSame(['Budi', 'Budiman'], $hasil->pluck('name')->all());
+
+        // Filter kolom: cocok utuh, bukan sebagian.
+        $hasil = $saring->invoke($controller, $rows, Request::create('/', 'GET', ['f_cabang' => 'UPF']), 'anggota');
+        $this->assertSame(['Siti'], $hasil->pluck('name')->all());
+
+        // Rentang tanggal pada kolom tanggal laporan.
+        $hasil = $saring->invoke($controller, $rows, Request::create('/', 'GET', [
+            'dari' => '2026-02-01', 'sampai' => '2026-07-01',
+        ]), 'anggota');
+        $this->assertSame(['Siti'], $hasil->pluck('name')->all());
+
+        // Tanpa parameter apa pun, seluruh baris ikut.
+        $hasil = $saring->invoke($controller, $rows, Request::create('/', 'GET'), 'anggota');
+        $this->assertCount(3, $hasil);
+    }
+
+    /** Saringan yang dipakai wajib tercetak, supaya tidak dikira laporan lengkap. */
+    public function test_saringan_yang_dipakai_disebut_di_kepala_cetakan(): void
+    {
+        $controller = app(LaporanController::class);
+        $catatan = new ReflectionMethod($controller, 'catatanSaringan');
+
+        $teks = $catatan->invoke($controller, Request::create('/', 'GET', [
+            'cari' => 'budi', 'f_cabang' => 'UPF', 'dari' => '2026-01-01',
+        ]), 'anggota');
+
+        $this->assertStringContainsString('Disaring', $teks);
+        $this->assertStringContainsString('budi', $teks);
+        $this->assertStringContainsString('UPF', $teks);
+        $this->assertStringContainsString('2026-01-01', $teks);
+
+        $this->assertNull($catatan->invoke($controller, Request::create('/', 'GET'), 'anggota'));
+    }
+
+    /** Ambang baris dihitung setelah penyaringan, bukan sebelumnya. */
+    public function test_ambang_baris_dihitung_setelah_disaring(): void
+    {
+        $user = $this->manajer();
+        config()->set('koperasi.cetak_laporan_maks_baris', 2);
+
+        $branch = Branch::factory()->create(['name' => 'KSP']);
+        $type = MemberType::factory()->create();
+        Member::factory()->count(5)->create(['branch_id' => $branch->id, 'member_type_id' => $type->id, 'name' => 'Budi']);
+        Member::factory()->create(['branch_id' => $branch->id, 'member_type_id' => $type->id, 'name' => 'Siti']);
+
+        // Tanpa saringan 6 baris — di atas ambang, ditolak.
+        $this->actingAs($user)
+            ->get(route('admin.laporan.export-pdf', 'anggota'))
+            ->assertRedirect(route('admin.laporan.show', 'anggota'));
+
+        // Dengan saringan tersisa 1 baris — di bawah ambang, PDF terbit.
+        $this->actingAs($user)
+            ->get(route('admin.laporan.export-pdf', 'anggota').'?cari=siti')
+            ->assertOk();
     }
 
     /**

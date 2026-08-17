@@ -37,6 +37,7 @@ use App\Models\TellerCashTransaction;
 use App\Models\User;
 use App\Services\Inventory\InventoryReportService;
 use App\Services\Reporting\LaporanRegistry;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -105,6 +106,111 @@ class LaporanController extends Controller
     }
 
     /**
+     * Terapkan saringan yang sedang aktif di layar ke baris hasil fetch().
+     *
+     * Aturannya sengaja meniru persis datatable di layouts/app.blade.php —
+     * pencarian bebas mencocokkan seluruh isi baris tanpa memandang huruf
+     * besar/kecil, filter kolom mencocokkan isi sel secara utuh, dan rentang
+     * tanggal membandingkan kolom tanggal setelah diubah ke yyyy-mm-dd. Baris
+     * yang kolom tanggalnya tidak terbaca sengaja dibiarkan lolos, sama seperti
+     * di layar; itulah yang menjaga baris sub total tetap ikut saat pengguna
+     * hanya menyaring periode.
+     *
+     * Kalau salah satu aturan di sini menyimpang dari yang di layar, cetakannya
+     * akan berbeda dari yang dilihat pengguna — dan justru itu yang hendak
+     * dihindari.
+     *
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function saringSepertiDiLayar(Collection $rows, Request $request, string $module): Collection
+    {
+        $cari = mb_strtolower(trim((string) $request->query('cari', '')));
+        $dari = trim((string) $request->query('dari', ''));
+        $sampai = trim((string) $request->query('sampai', ''));
+        $kolomTanggal = LaporanRegistry::dateColumnFor($module);
+
+        $filterKolom = [];
+        foreach (LaporanRegistry::filterableFor($module) as $kolom) {
+            $nilai = trim((string) $request->query('f_'.$kolom, ''));
+
+            if ($nilai !== '') {
+                $filterKolom[$kolom] = $nilai;
+            }
+        }
+
+        if ($cari === '' && $filterKolom === [] && $dari === '' && $sampai === '') {
+            return $rows;
+        }
+
+        return $rows->filter(function (array $row) use ($cari, $filterKolom, $dari, $sampai, $kolomTanggal) {
+            if ($cari !== '' && ! str_contains(mb_strtolower(implode(' ', array_map('strval', $row))), $cari)) {
+                return false;
+            }
+
+            foreach ($filterKolom as $kolom => $nilai) {
+                if (trim((string) ($row[$kolom] ?? '')) !== $nilai) {
+                    return false;
+                }
+            }
+
+            if ($kolomTanggal !== null && ($dari !== '' || $sampai !== '')) {
+                $tanggal = $this->tanggalBarisKeIso((string) ($row[$kolomTanggal] ?? ''));
+
+                if ($tanggal !== null) {
+                    if ($dari !== '' && $tanggal < $dari) {
+                        return false;
+                    }
+                    if ($sampai !== '' && $tanggal > $sampai) {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        })->values();
+    }
+
+    /** "d-m-Y ..." menjadi "Y-m-d" supaya bisa dibandingkan leksikal. */
+    private function tanggalBarisKeIso(string $teks): ?string
+    {
+        return preg_match('/^(\d{2})-(\d{2})-(\d{4})/', trim($teks), $m) === 1
+            ? $m[3].'-'.$m[2].'-'.$m[1]
+            : null;
+    }
+
+    /**
+     * Keterangan saringan yang ikut tercetak di kepala halaman.
+     *
+     * Cetakan hasil penyaringan tidak boleh bisa dikira laporan lengkap —
+     * apalagi setelah dilepas dari layar tempat filternya terlihat.
+     */
+    private function catatanSaringan(Request $request, string $module): ?string
+    {
+        $bagian = [];
+
+        if (($cari = trim((string) $request->query('cari', ''))) !== '') {
+            $bagian[] = 'pencarian "'.$cari.'"';
+        }
+
+        foreach (LaporanRegistry::filterableFor($module) as $kolom) {
+            if (($nilai = trim((string) $request->query('f_'.$kolom, ''))) !== '') {
+                $label = LaporanRegistry::columnsFor($module)[$kolom] ?? $kolom;
+                $bagian[] = $label.' = '.$nilai;
+            }
+        }
+
+        $dari = trim((string) $request->query('dari', ''));
+        $sampai = trim((string) $request->query('sampai', ''));
+
+        if ($dari !== '' || $sampai !== '') {
+            $bagian[] = 'periode '.($dari !== '' ? $dari : '…').' s/d '.($sampai !== '' ? $sampai : '…');
+        }
+
+        return $bagian === [] ? null : 'Disaring: '.implode(' · ', $bagian).'. Baris di luar saringan tidak dicetak.';
+    }
+
+    /**
      * Hub laporan memakai satu view cetak untuk 29 modul, jadi ukuran datanya
      * sangat bervariasi — Jenis Anggota belasan baris, Rekening Simpanan ribuan
      * setelah migrasi. DomPDF menyimpan pohon style tiap sel di memori dan
@@ -112,15 +218,18 @@ class LaporanController extends Controller
      * 500 tanpa keterangan (lihat MemberController::printList() untuk kejadian
      * yang sama di Daftar Anggota).
      *
-     * Batas baris ditegakkan lebih dulu dan diarahkan ke Export Excel, yang
-     * menulis berkas secara bertahap dan tidak punya langit-langit serupa.
+     * Batas baris ditegakkan SETELAH penyaringan dan diarahkan ke Export Excel,
+     * yang menulis berkas secara bertahap dan tidak punya langit-langit serupa.
+     * Urutan itu penting: laporan besar yang disaring jadi seratus baris tetap
+     * boleh dicetak, karena yang membebani DomPDF adalah baris yang benar-benar
+     * dirender, bukan baris di database.
      *
      * Angkanya diukur di produksi, bukan ditebak: Rekening Simpanan 1.224 baris
      * memuncak di 594 MB dan 25 detik — 0,458 MB dan 0,02 detik per baris. Batas
      * 1.400 baris berarti ~675 MB dan ~29 detik, masih di bawah kedua pagar di
      * bawah ini; di atas ~1.600 baris memory_limit-nya jebol.
      */
-    public function exportPdf(string $module): Response
+    public function exportPdf(Request $request, string $module): Response
     {
         $this->authorize('laporan.read');
         abort_unless(LaporanRegistry::exists($module), 404);
@@ -128,7 +237,7 @@ class LaporanController extends Controller
         ini_set('memory_limit', '768M');
         set_time_limit(300);
 
-        $rows = $this->fetch($module, hanyaBersaldo: true);
+        $rows = $this->saringSepertiDiLayar($this->fetch($module, hanyaBersaldo: true), $request, $module);
         $maxRows = (int) config('koperasi.cetak_laporan_maks_baris', 1400);
 
         if ($rows->count() > $maxRows) {
@@ -146,7 +255,10 @@ class LaporanController extends Controller
             'columns' => $columns,
             'rows' => $rows,
             'generatedAt' => now(),
-            'catatan' => self::CATATAN_SARINGAN_CETAK[$module] ?? null,
+            'catatan' => trim(implode(' ', array_filter([
+                $this->catatanSaringan($request, $module),
+                self::CATATAN_SARINGAN_CETAK[$module] ?? null,
+            ]))) ?: null,
         ], $this->orientasiUntuk($columns));
 
         return $pdf->download(Str::slug($module).'-'.now()->format('Ymd-His').'.pdf');
@@ -167,13 +279,22 @@ class LaporanController extends Controller
         return count($columns) >= $ambang ? 'landscape' : null;
     }
 
-    public function exportExcel(string $module): BinaryFileResponse
+    /**
+     * Excel ikut menghormati saringan layar, sama seperti PDF — dua tombol
+     * bersebelahan yang menghasilkan isi berbeda dari satu tampilan yang sama
+     * adalah jebakan.
+     *
+     * Bedanya hanya satu: Excel tidak menyaring baris bersaldo nol (lihat
+     * CATATAN_SARINGAN_CETAK), karena itulah jalan keluar yang ditunjuk pesan
+     * "terlalu besar untuk PDF" dan pemakaiannya untuk menelusuri riwayat.
+     */
+    public function exportExcel(Request $request, string $module): BinaryFileResponse
     {
         $this->authorize('laporan.read');
         abort_unless(LaporanRegistry::exists($module), 404);
 
         $columns = LaporanRegistry::columnsFor($module);
-        $rows = $this->fetch($module)->map(
+        $rows = $this->saringSepertiDiLayar($this->fetch($module), $request, $module)->map(
             fn (array $row) => array_map(fn (string $key) => $row[$key] ?? '-', array_keys($columns))
         );
 
