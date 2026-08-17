@@ -95,13 +95,79 @@ class LaporanMigrasiTest extends TestCase
             'position' => 'kredit', 'amount' => 400,
         ]);
 
-        // Tiap laporan ditutup satu baris TOTAL.
         $neraca = $this->ambil('saldo_awal_neraca');
         $neracaSaldo = $this->ambil('saldo_awal_neraca_saldo');
 
-        $this->assertCount(2, $neraca);
-        $this->assertCount(3, $neracaSaldo);
+        // Neraca: 1 akun Neraca + baris SHU berjalan + TOTAL.
+        // Akun Laba/Rugi tidak ditampilkan sendiri, hanya diringkas jadi SHU.
+        $this->assertCount(3, $neraca);
+        $this->assertNull($neraca->first(fn ($row) => $row['kode'] === '9002'));
         $this->assertSame('TOTAL', $neraca->last()['nama_akun']);
+
+        // Neraca Saldo: kedua akun ditampilkan apa adanya + TOTAL, tanpa SHU.
+        $this->assertCount(3, $neracaSaldo);
+        $this->assertNotNull($neracaSaldo->first(fn ($row) => $row['kode'] === '9002'));
+    }
+
+    /**
+     * Neraca harus seimbang setelah SHU berjalan dihitung dari akun Laba/Rugi.
+     * Dari saldo mentah saja ia tidak akan pernah seimbang — hasil usaha masih
+     * tersimpan di Pendapatan/Beban dan belum ditutup ke ekuitas.
+     */
+    public function test_neraca_seimbang_setelah_shu_berjalan_dihitung(): void
+    {
+        $batch = $this->batch();
+
+        // Aset 1.000, kewajiban 900 → timpang 100 sebelum SHU dihitung.
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $this->akun('9001', 'NERACA')->id,
+            'position' => 'debit', 'amount' => 1000,
+        ]);
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $this->akun('9002', 'NERACA')->id,
+            'position' => 'kredit', 'amount' => 900,
+        ]);
+
+        // Pendapatan 300, beban 200 → SHU berjalan 100.
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $this->akun('9101', 'LABA_RUGI')->id,
+            'position' => 'kredit', 'amount' => 300,
+        ]);
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $this->akun('9102', 'LABA_RUGI')->id,
+            'position' => 'debit', 'amount' => 200,
+        ]);
+
+        $rows = $this->ambil('saldo_awal_neraca');
+        $total = $rows->last();
+
+        $this->assertSame('Rp 1.000', $total['debit']);
+        $this->assertSame('Rp 1.000', $total['kredit']);
+
+        $shu = $rows->first(fn ($row) => str_contains($row['nama_akun'], 'SHU TAHUN BERJALAN'));
+        $this->assertNotNull($shu);
+        $this->assertSame('Rp 100', $shu['kredit']);
+    }
+
+    /** Neraca Saldo sudah memuat akun Laba/Rugi — SHU tidak boleh ditambahkan lagi. */
+    public function test_neraca_saldo_tidak_menambahkan_baris_shu(): void
+    {
+        $batch = $this->batch();
+
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $this->akun('9101', 'LABA_RUGI')->id,
+            'position' => 'kredit', 'amount' => 300,
+        ]);
+
+        $rows = $this->ambil('saldo_awal_neraca_saldo');
+
+        $this->assertNull($rows->first(fn ($row) => str_contains($row['nama_akun'], 'SHU TAHUN BERJALAN')));
+        $this->assertSame('Rp 300', $rows->last()['kredit']);
     }
 
     /** Baris TOTAL adalah alasan utama laporan ini dibuka saat pengecekan. */

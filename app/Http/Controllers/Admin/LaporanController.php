@@ -240,12 +240,11 @@ class LaporanController extends Controller
      */
     private function saldoAwalCoa(bool $neracaSaja): Collection
     {
-        $lines = OpeningBalanceCoa::query()
-            ->with('account')
-            ->get()
-            ->when($neracaSaja, fn (Collection $rows) => $rows->filter(
-                fn (OpeningBalanceCoa $line) => ($line->account->statement ?? null) === 'NERACA'
-            ))
+        $semua = OpeningBalanceCoa::query()->with('account')->get();
+
+        $lines = ($neracaSaja
+            ? $semua->filter(fn (OpeningBalanceCoa $line) => ($line->account->statement ?? null) === 'NERACA')
+            : $semua)
             ->sortBy(fn (OpeningBalanceCoa $line) => $line->account->code ?? '')
             ->values();
 
@@ -258,16 +257,45 @@ class LaporanController extends Controller
             'kredit' => $line->position === 'kredit' ? $this->rupiah((float) $line->amount) : '-',
         ]);
 
-        $totalDebit = $lines->where('position', 'debit')->sum('amount');
-        $totalKredit = $lines->where('position', 'kredit')->sum('amount');
+        $totalDebit = (float) $lines->where('position', 'debit')->sum('amount');
+        $totalKredit = (float) $lines->where('position', 'kredit')->sum('amount');
+
+        /*
+         * Neraca tidak akan pernah seimbang dari saldo mentah saja: hasil usaha
+         * masih tersimpan di akun Pendapatan/Beban dan belum ditutup ke ekuitas,
+         * sementara sisi Aset sudah memuatnya. Karena itu barisnya dihitung di
+         * sini — persis seperti yang dilakukan FinancialReportEngine untuk
+         * Neraca resmi, hanya sumbernya saldo awal, bukan buku besar.
+         *
+         * Hanya untuk Neraca. Neraca Saldo sudah memuat akun Laba/Rugi satu per
+         * satu, jadi menambahkannya di sana akan menghitung ganda.
+         */
+        if ($neracaSaja) {
+            $labaRugi = $semua->filter(fn (OpeningBalanceCoa $line) => ($line->account->statement ?? null) === 'LABA_RUGI');
+            $shu = (float) $labaRugi->where('position', 'kredit')->sum('amount')
+                - (float) $labaRugi->where('position', 'debit')->sum('amount');
+
+            if (round($shu, 2) !== 0.0) {
+                $rows->push([
+                    'kode' => (string) config('koperasi.akun_shu_berjalan', ''),
+                    'nama_akun' => 'SHU TAHUN BERJALAN (dihitung dari akun Laba/Rugi)',
+                    'tipe' => 'EKUITAS',
+                    'laporan' => 'Neraca',
+                    'debit' => $shu < 0 ? $this->rupiah(abs($shu)) : '-',
+                    'kredit' => $shu > 0 ? $this->rupiah($shu) : '-',
+                ]);
+
+                $shu > 0 ? $totalKredit += $shu : $totalDebit += abs($shu);
+            }
+        }
 
         return $rows->push([
             'kode' => '',
             'nama_akun' => 'TOTAL',
             'tipe' => '',
             'laporan' => '',
-            'debit' => $this->rupiah((float) $totalDebit),
-            'kredit' => $this->rupiah((float) $totalKredit),
+            'debit' => $this->rupiah($totalDebit),
+            'kredit' => $this->rupiah($totalKredit),
         ]);
     }
 
