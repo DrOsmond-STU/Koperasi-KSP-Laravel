@@ -59,11 +59,18 @@ class LaporanMigrasiTest extends TestCase
         ]);
     }
 
-    private function akun(string $code, string $statement = 'NERACA'): ChartOfAccount
+    /**
+     * Tipe akun ikut ditentukan, bukan selalu ASET: Neraca mengelompokkan
+     * Aktiva/Pasiva/Modal menurut tipe dan menjumlahkan sub totalnya secara
+     * neto per kelompok, jadi fixture bertipe seragam akan menguji hal yang
+     * salah.
+     */
+    private function akun(string $code, string $statement = 'NERACA', string $type = 'ASET'): ChartOfAccount
     {
         return ChartOfAccount::query()->create([
-            'code' => $code, 'name' => 'Akun '.$code, 'type' => 'ASET',
-            'normal_balance' => 'DEBIT', 'is_postable' => true, 'statement' => $statement,
+            'code' => $code, 'name' => 'Akun '.$code, 'type' => $type,
+            'normal_balance' => $type === 'ASET' ? 'DEBIT' : 'KREDIT',
+            'is_postable' => true, 'statement' => $statement,
         ]);
     }
 
@@ -98,14 +105,16 @@ class LaporanMigrasiTest extends TestCase
         $neraca = $this->ambil('saldo_awal_neraca');
         $neracaSaldo = $this->ambil('saldo_awal_neraca_saldo');
 
-        // Neraca: 1 akun Neraca + baris SHU berjalan + TOTAL.
-        // Akun Laba/Rugi tidak ditampilkan sendiri, hanya diringkas jadi SHU.
-        $this->assertCount(3, $neraca);
+        // Akun Laba/Rugi tidak ditampilkan sendiri di Neraca, hanya diringkas
+        // menjadi satu baris SHU berjalan.
         $this->assertNull($neraca->first(fn ($row) => $row['kode'] === '9002'));
-        $this->assertSame('TOTAL', $neraca->last()['nama_akun']);
+        $this->assertNotNull($neraca->first(fn ($row) => $row['kode'] === '9001'));
+        $this->assertNotNull($neraca->first(fn ($row) => str_contains($row['nama_akun'], 'SHU TAHUN BERJALAN')));
+        $this->assertSame('TOTAL NERACA', $neraca->last()['nama_akun']);
 
         // Neraca Saldo: kedua akun ditampilkan apa adanya + TOTAL, tanpa SHU.
         $this->assertCount(3, $neracaSaldo);
+        $this->assertNull($neracaSaldo->first(fn ($row) => str_contains($row['nama_akun'], 'SHU TAHUN BERJALAN')));
         $this->assertNotNull($neracaSaldo->first(fn ($row) => $row['kode'] === '9002'));
     }
 
@@ -118,39 +127,71 @@ class LaporanMigrasiTest extends TestCase
     {
         $batch = $this->batch();
 
-        // Aset 1.000, kewajiban 900 → timpang 100 sebelum SHU dihitung.
+        // Aktiva 1.000, pasiva 700, modal 200 → timpang 100 sebelum SHU dihitung.
         OpeningBalanceCoa::query()->create([
             'opening_balance_batch_id' => $batch->id,
-            'chart_of_account_id' => $this->akun('9001', 'NERACA')->id,
+            'chart_of_account_id' => $this->akun('1001', 'NERACA', 'ASET')->id,
             'position' => 'debit', 'amount' => 1000,
         ]);
         OpeningBalanceCoa::query()->create([
             'opening_balance_batch_id' => $batch->id,
-            'chart_of_account_id' => $this->akun('9002', 'NERACA')->id,
-            'position' => 'kredit', 'amount' => 900,
+            'chart_of_account_id' => $this->akun('2001', 'NERACA', 'LIABILITAS')->id,
+            'position' => 'kredit', 'amount' => 700,
+        ]);
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $this->akun('3001', 'NERACA', 'EKUITAS')->id,
+            'position' => 'kredit', 'amount' => 200,
         ]);
 
         // Pendapatan 300, beban 200 → SHU berjalan 100.
         OpeningBalanceCoa::query()->create([
             'opening_balance_batch_id' => $batch->id,
-            'chart_of_account_id' => $this->akun('9101', 'LABA_RUGI')->id,
+            'chart_of_account_id' => $this->akun('4001', 'LABA_RUGI', 'PENDAPATAN')->id,
             'position' => 'kredit', 'amount' => 300,
         ]);
         OpeningBalanceCoa::query()->create([
             'opening_balance_batch_id' => $batch->id,
-            'chart_of_account_id' => $this->akun('9102', 'LABA_RUGI')->id,
+            'chart_of_account_id' => $this->akun('5001', 'LABA_RUGI', 'BEBAN')->id,
             'position' => 'debit', 'amount' => 200,
         ]);
 
         $rows = $this->ambil('saldo_awal_neraca');
-        $total = $rows->last();
 
+        $cari = fn (string $label) => $rows->first(fn ($row) => $row['nama_akun'] === $label);
+
+        $this->assertSame('Rp 1.000', $cari('SUB TOTAL AKTIVA')['debit']);
+        $this->assertSame('Rp 700', $cari('SUB TOTAL PASIVA')['kredit']);
+        $this->assertSame('Rp 300', $cari('SUB TOTAL MODAL')['kredit']);
+        $this->assertSame('Rp 1.000', $cari('TOTAL PASIVA + MODAL')['kredit']);
+
+        $total = $rows->last();
+        $this->assertSame('TOTAL NERACA', $total['nama_akun']);
         $this->assertSame('Rp 1.000', $total['debit']);
         $this->assertSame('Rp 1.000', $total['kredit']);
 
         $shu = $rows->first(fn ($row) => str_contains($row['nama_akun'], 'SHU TAHUN BERJALAN'));
-        $this->assertNotNull($shu);
         $this->assertSame('Rp 100', $shu['kredit']);
+    }
+
+    /** Aktiva harus mendahului Pasiva dan Modal, apa pun urutan datanya. */
+    public function test_urutan_bagian_aktiva_pasiva_modal(): void
+    {
+        $batch = $this->batch();
+
+        // Sengaja dimasukkan terbalik: ekuitas dulu, aset terakhir.
+        foreach ([['3001', 'EKUITAS', 'kredit'], ['2001', 'LIABILITAS', 'kredit'], ['1001', 'ASET', 'debit']] as [$kode, $tipe, $posisi]) {
+            OpeningBalanceCoa::query()->create([
+                'opening_balance_batch_id' => $batch->id,
+                'chart_of_account_id' => $this->akun($kode, 'NERACA', $tipe)->id,
+                'position' => $posisi, 'amount' => 100,
+            ]);
+        }
+
+        $labels = $this->ambil('saldo_awal_neraca')->pluck('nama_akun')->all();
+
+        $this->assertLessThan(array_search('PASIVA (KEWAJIBAN)', $labels, true), array_search('AKTIVA', $labels, true));
+        $this->assertLessThan(array_search('MODAL (EKUITAS)', $labels, true), array_search('PASIVA (KEWAJIBAN)', $labels, true));
     }
 
     /** Neraca Saldo sudah memuat akun Laba/Rugi — SHU tidak boleh ditambahkan lagi. */
@@ -177,19 +218,46 @@ class LaporanMigrasiTest extends TestCase
 
         OpeningBalanceCoa::query()->create([
             'opening_balance_batch_id' => $batch->id,
-            'chart_of_account_id' => $this->akun('9001')->id,
+            'chart_of_account_id' => $this->akun('1001', 'NERACA', 'ASET')->id,
             'position' => 'debit', 'amount' => 1500,
         ]);
         OpeningBalanceCoa::query()->create([
             'opening_balance_batch_id' => $batch->id,
-            'chart_of_account_id' => $this->akun('9002')->id,
+            'chart_of_account_id' => $this->akun('2001', 'NERACA', 'LIABILITAS')->id,
             'position' => 'kredit', 'amount' => 900,
         ]);
 
         $total = $this->ambil('saldo_awal_neraca')->last();
 
+        $this->assertSame('TOTAL NERACA', $total['nama_akun']);
         $this->assertSame('Rp 1.500', $total['debit']);
         $this->assertSame('Rp 900', $total['kredit']);
+    }
+
+    /**
+     * Akun lawan seperti akumulasi penyusutan bersaldo kredit tapi tetap masuk
+     * kelompok Aktiva. Sub totalnya harus neto — dijumlah per kolom, Total
+     * Aktiva akan tampak lebih besar dari yang sebenarnya.
+     */
+    public function test_sub_total_aktiva_dihitung_neto_terhadap_akun_lawan(): void
+    {
+        $batch = $this->batch();
+
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $this->akun('1001', 'NERACA', 'ASET')->id,
+            'position' => 'debit', 'amount' => 1000,
+        ]);
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $this->akun('1204101', 'NERACA', 'ASET')->id,
+            'position' => 'kredit', 'amount' => 250,
+        ]);
+
+        $rows = $this->ambil('saldo_awal_neraca');
+        $subTotal = $rows->first(fn ($row) => $row['nama_akun'] === 'SUB TOTAL AKTIVA');
+
+        $this->assertSame('Rp 750', $subTotal['debit']);
     }
 
     public function test_saldo_awal_pinjaman_memecah_pokok_dan_jasa(): void
@@ -219,6 +287,53 @@ class LaporanMigrasiTest extends TestCase
         $this->assertSame('117-0151-00045', $row['no_pinjaman_lama']);
         $this->assertSame('Rp 871.000', $row['sisa_pokok']);
         $this->assertSame('Rp 36.300', $row['sisa_jasa']);
+    }
+
+    /**
+     * Sub total muncul hanya untuk anggota berbaris ganda. Pada anggota dengan
+     * satu pinjaman, sub total hanya akan menggandakan angka yang sama tepat di
+     * bawahnya — menambah panjang cetakan tanpa menambah informasi.
+     */
+    public function test_sub_total_pinjaman_hanya_untuk_anggota_berpinjaman_ganda(): void
+    {
+        $batch = $this->batch();
+        $produk = LoanProduct::factory()->create();
+        $ganda = Member::factory()->create(['member_number' => 'A-001', 'name' => 'Budi']);
+        $tunggal = Member::factory()->create(['member_number' => 'A-002', 'name' => 'Siti']);
+
+        $buat = function (Member $member, string $nomor, float $pokok) use ($batch, $produk) {
+            OpeningBalanceLoan::query()->create([
+                'opening_balance_batch_id' => $batch->id,
+                'member_id' => $member->id,
+                'loan_product_id' => $produk->id,
+                'external_loan_number' => $nomor,
+                'disbursement_date' => '2026-05-26',
+                'original_principal' => $pokok,
+                'outstanding_principal' => $pokok,
+                'outstanding_interest' => 0,
+                'tenor_months' => 3, 'remaining_tenor_months' => 1,
+                'next_installment_number' => 3, 'next_due_date' => '2026-08-26',
+                'collectibility' => 'lancar',
+            ]);
+        };
+
+        $buat($ganda, 'L-001', 100000);
+        $buat($ganda, 'L-002', 200000);
+        $buat($tunggal, 'L-003', 50000);
+
+        $rows = $this->ambil('saldo_awal_pinjaman');
+        $label = $rows->pluck('nama_anggota')->all();
+
+        $this->assertContains('SUB TOTAL Budi', $label);
+        $this->assertNotContains('SUB TOTAL Siti', $label);
+
+        $subTotal = $rows->first(fn ($row) => $row['nama_anggota'] === 'SUB TOTAL Budi');
+        $this->assertSame('Rp 300.000', $subTotal['sisa_pokok']);
+        $this->assertSame('2 pinjaman', $subTotal['no_pinjaman_lama']);
+
+        $total = $rows->last();
+        $this->assertSame('TOTAL SELURUH ANGGOTA', $total['nama_anggota']);
+        $this->assertSame('Rp 350.000', $total['sisa_pokok']);
     }
 
     public function test_saldo_awal_simpanan_menampilkan_saldo_per_rekening(): void

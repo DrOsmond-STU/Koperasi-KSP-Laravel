@@ -7,8 +7,26 @@
         {{-- Paper size/orientation is set PHP-side via GeneratesPrintPdf::setPaperFrom()
              (Pdf::setPaper()) — the authoritative, reliably-supported mechanism in
              dompdf. @page here only controls margin, which dompdf does honor from CSS. --}}
+        {{-- Ruang bawah dilebihkan 9mm untuk menampung nomor halaman, yang
+             dipasang position:fixed dan karena itu tidak memesan ruang sendiri
+             — tanpa margin tambahan ia akan menimpa baris terakhir tabel. --}}
         @page {
             margin: {{ $printSettings->margin_mm }}mm;
+            margin-bottom: {{ $printSettings->margin_mm + 9 }}mm;
+        }
+        {{-- counter(page)/counter(pages) dihitung dompdf saat merangkai halaman,
+             jadi jumlah halaman baru diketahui di akhir dan tetap benar. --}}
+        .page-number {
+            position: fixed;
+            bottom: -7mm;
+            left: 0;
+            right: 0;
+            text-align: right;
+            font-size: 8pt;
+            color: #5C6E64;
+        }
+        .page-number:after {
+            content: "Halaman " counter(page) " dari " counter(pages);
         }
         body { font-family: sans-serif; font-size: {{ $printSettings->font_size_pt }}pt; color: #16201C; }
         table { width: 100%; border-collapse: collapse; }
@@ -38,6 +56,8 @@
             </td>
         </tr>
     </table>
+
+    <div class="page-number"></div>
 
     @yield('print-content')
 

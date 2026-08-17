@@ -230,82 +230,186 @@ class LaporanController extends Controller
     }
 
     /**
-     * Saldo Awal COA apa adanya dari opening_balance_coa.
+     * Satu baris ringkasan (sub total / total) untuk laporan COA.
      *
-     * `neracaSaja` memisahkan dua laporan yang orang sering tertukar: Neraca
-     * hanya memuat akun Neraca (Aset/Liabilitas/Ekuitas), sedangkan Neraca
-     * Saldo memuat seluruh akun termasuk Laba/Rugi. Keduanya ditutup baris
-     * TOTAL, karena yang paling sering dicari saat pengecekan justru apakah
-     * debit dan kreditnya sama.
+     * @return array<string, string>
      */
-    private function saldoAwalCoa(bool $neracaSaja): Collection
+    private function barisRingkasanCoa(string $label, float $debit, float $kredit): array
     {
-        $semua = OpeningBalanceCoa::query()->with('account')->get();
+        return [
+            'kode' => '',
+            'nama_akun' => $label,
+            'tipe' => '',
+            'laporan' => '',
+            'debit' => round($debit, 2) !== 0.0 ? $this->rupiah($debit) : '-',
+            'kredit' => round($kredit, 2) !== 0.0 ? $this->rupiah($kredit) : '-',
+        ];
+    }
 
-        $lines = ($neracaSaja
-            ? $semua->filter(fn (OpeningBalanceCoa $line) => ($line->account->statement ?? null) === 'NERACA')
-            : $semua)
-            ->sortBy(fn (OpeningBalanceCoa $line) => $line->account->code ?? '')
-            ->values();
-
-        $rows = $lines->map(fn (OpeningBalanceCoa $line) => [
+    /**
+     * @param  \Illuminate\Support\Collection<int, OpeningBalanceCoa>  $lines
+     * @return array<string, string>
+     */
+    private function barisAkun(OpeningBalanceCoa $line): array
+    {
+        return [
             'kode' => $line->account->code ?? '-',
             'nama_akun' => $line->account->name ?? '-',
             'tipe' => $line->account->type ?? '-',
             'laporan' => ($line->account->statement ?? null) === 'NERACA' ? 'Neraca' : 'Laba/Rugi',
             'debit' => $line->position === 'debit' ? $this->rupiah((float) $line->amount) : '-',
             'kredit' => $line->position === 'kredit' ? $this->rupiah((float) $line->amount) : '-',
-        ]);
+        ];
+    }
 
-        $totalDebit = (float) $lines->where('position', 'debit')->sum('amount');
-        $totalKredit = (float) $lines->where('position', 'kredit')->sum('amount');
+    /**
+     * Saldo Awal COA — Neraca (tersusun) dan Neraca Saldo (daftar rata).
+     *
+     * Keduanya diurutkan menurut nomor akun. Untuk Neraca, urutan itu saja
+     * belum cukup: pembaca laporan keuangan mengharapkan Aktiva lebih dulu,
+     * lalu Pasiva, lalu Modal, masing-masing dengan sub totalnya — bukan satu
+     * daftar panjang yang harus dijumlah sendiri.
+     *
+     * Sub total dihitung NETO (debit dikurangi kredit) per kelompok, bukan
+     * dijumlah per kolom. Itu perlu karena kelompok Aktiva memuat akun lawan
+     * seperti akumulasi penyusutan dan penyisihan piutang yang bersaldo kredit;
+     * menjumlahkannya di kolom kredit akan membuat Total Aktiva tampak lebih
+     * besar dari yang sebenarnya.
+     */
+    private function saldoAwalCoa(bool $neracaSaja): Collection
+    {
+        $semua = OpeningBalanceCoa::query()
+            ->with('account')
+            ->get()
+            ->sortBy(fn (OpeningBalanceCoa $line) => $line->account->code ?? '')
+            ->values();
 
-        /*
-         * Neraca tidak akan pernah seimbang dari saldo mentah saja: hasil usaha
-         * masih tersimpan di akun Pendapatan/Beban dan belum ditutup ke ekuitas,
-         * sementara sisi Aset sudah memuatnya. Karena itu barisnya dihitung di
-         * sini — persis seperti yang dilakukan FinancialReportEngine untuk
-         * Neraca resmi, hanya sumbernya saldo awal, bukan buku besar.
-         *
-         * Hanya untuk Neraca. Neraca Saldo sudah memuat akun Laba/Rugi satu per
-         * satu, jadi menambahkannya di sana akan menghitung ganda.
-         */
-        if ($neracaSaja) {
-            $labaRugi = $semua->filter(fn (OpeningBalanceCoa $line) => ($line->account->statement ?? null) === 'LABA_RUGI');
-            $shu = (float) $labaRugi->where('position', 'kredit')->sum('amount')
-                - (float) $labaRugi->where('position', 'debit')->sum('amount');
+        // Laporan kosong dibiarkan benar-benar kosong — lihat catatan yang sama
+        // di kelompokkanPerAnggota().
+        if ($semua->isEmpty()) {
+            return collect();
+        }
 
-            if (round($shu, 2) !== 0.0) {
-                $rows->push([
-                    'kode' => (string) config('koperasi.akun_shu_berjalan', ''),
-                    'nama_akun' => 'SHU TAHUN BERJALAN (dihitung dari akun Laba/Rugi)',
-                    'tipe' => 'EKUITAS',
-                    'laporan' => 'Neraca',
-                    'debit' => $shu < 0 ? $this->rupiah(abs($shu)) : '-',
-                    'kredit' => $shu > 0 ? $this->rupiah($shu) : '-',
-                ]);
+        if (! $neracaSaja) {
+            $rows = $semua->map(fn (OpeningBalanceCoa $line) => $this->barisAkun($line));
 
-                $shu > 0 ? $totalKredit += $shu : $totalDebit += abs($shu);
+            return $rows->push($this->barisRingkasanCoa(
+                'TOTAL NERACA SALDO',
+                (float) $semua->where('position', 'debit')->sum('amount'),
+                (float) $semua->where('position', 'kredit')->sum('amount'),
+            ));
+        }
+
+        $neto = fn (Collection $lines) => (float) $lines->where('position', 'debit')->sum('amount')
+            - (float) $lines->where('position', 'kredit')->sum('amount');
+
+        $perTipe = $semua
+            ->filter(fn (OpeningBalanceCoa $line) => ($line->account->statement ?? null) === 'NERACA')
+            ->groupBy(fn (OpeningBalanceCoa $line) => $line->account->type ?? '-');
+
+        $aset = $perTipe->get('ASET', collect());
+        $liabilitas = $perTipe->get('LIABILITAS', collect());
+        $ekuitas = $perTipe->get('EKUITAS', collect());
+
+        // SHU berjalan — lihat catatan di migrasiHistorisPembayaran(): hasil
+        // usaha masih tersimpan di akun Laba/Rugi dan belum ditutup ke ekuitas,
+        // sementara sisi Aset sudah memuatnya.
+        $labaRugi = $semua->filter(fn (OpeningBalanceCoa $line) => ($line->account->statement ?? null) === 'LABA_RUGI');
+        $shu = (float) $labaRugi->where('position', 'kredit')->sum('amount')
+            - (float) $labaRugi->where('position', 'debit')->sum('amount');
+
+        $rows = collect();
+
+        $rows->push($this->barisRingkasanCoa('AKTIVA', 0, 0));
+        $aset->each(fn (OpeningBalanceCoa $line) => $rows->push($this->barisAkun($line)));
+        $totalAktiva = $neto($aset);
+        $rows->push($this->barisRingkasanCoa('SUB TOTAL AKTIVA', $totalAktiva, 0));
+
+        $rows->push($this->barisRingkasanCoa('PASIVA (KEWAJIBAN)', 0, 0));
+        $liabilitas->each(fn (OpeningBalanceCoa $line) => $rows->push($this->barisAkun($line)));
+        $totalPasiva = -$neto($liabilitas);
+        $rows->push($this->barisRingkasanCoa('SUB TOTAL PASIVA', 0, $totalPasiva));
+
+        $rows->push($this->barisRingkasanCoa('MODAL (EKUITAS)', 0, 0));
+        $ekuitas->each(fn (OpeningBalanceCoa $line) => $rows->push($this->barisAkun($line)));
+        $totalModal = -$neto($ekuitas);
+
+        if (round($shu, 2) !== 0.0) {
+            $rows->push([
+                'kode' => (string) config('koperasi.akun_shu_berjalan', ''),
+                'nama_akun' => 'SHU TAHUN BERJALAN (dihitung dari akun Laba/Rugi)',
+                'tipe' => 'EKUITAS',
+                'laporan' => 'Neraca',
+                'debit' => $shu < 0 ? $this->rupiah(abs($shu)) : '-',
+                'kredit' => $shu > 0 ? $this->rupiah($shu) : '-',
+            ]);
+            $totalModal += $shu;
+        }
+
+        $rows->push($this->barisRingkasanCoa('SUB TOTAL MODAL', 0, $totalModal));
+        $rows->push($this->barisRingkasanCoa('TOTAL PASIVA + MODAL', 0, $totalPasiva + $totalModal));
+
+        return $rows->push($this->barisRingkasanCoa('TOTAL NERACA', $totalAktiva, $totalPasiva + $totalModal));
+    }
+
+    /**
+     * Kelompokkan per anggota lalu sisipkan baris sub total di ujung tiap
+     * kelompok.
+     *
+     * Baris sub total ikut jadi pembatas antar anggota — pada laporan sepanjang
+     * ribuan baris, batas itu yang membuat cetakannya bisa ditelusuri. Untuk
+     * saldo awal, sub total hanya muncul bila anggotanya punya lebih dari satu
+     * baris; menambahkannya pada anggota berbaris tunggal hanya menggandakan
+     * angka yang sama tepat di bawahnya.
+     *
+     * @param  \Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>  $records
+     * @param  callable(\Illuminate\Database\Eloquent\Model): array<string, string>  $formatBaris
+     * @param  callable(\Illuminate\Support\Collection, int): array<string, string>  $formatSubTotal
+     * @return Collection<int, array<string, string>>
+     */
+    private function kelompokkanPerAnggota(
+        Collection $records,
+        callable $kunciAnggota,
+        callable $formatBaris,
+        callable $formatSubTotal,
+        bool $subTotalHanyaBilaGanda = false,
+    ): Collection {
+        $rows = collect();
+
+        // Laporan kosong dibiarkan benar-benar kosong; baris TOTAL berisi nol
+        // hanya menyamarkan "belum ada data" jadi seolah ada isinya.
+        if ($records->isEmpty()) {
+            return $rows;
+        }
+
+        foreach ($records->groupBy($kunciAnggota) as $anggota) {
+            $anggota->each(fn ($record) => $rows->push($formatBaris($record)));
+
+            if (! $subTotalHanyaBilaGanda || $anggota->count() > 1) {
+                $rows->push($formatSubTotal($anggota, $anggota->count()));
             }
         }
 
-        return $rows->push([
-            'kode' => '',
-            'nama_akun' => 'TOTAL',
-            'tipe' => '',
-            'laporan' => '',
-            'debit' => $this->rupiah($totalDebit),
-            'kredit' => $this->rupiah($totalKredit),
-        ]);
+        return $rows;
     }
 
     private function saldoAwalPinjaman(): Collection
     {
-        return OpeningBalanceLoan::query()
+        $records = OpeningBalanceLoan::query()
             ->with(['member', 'loanProduct'])
-            ->orderBy('external_loan_number')
             ->get()
-            ->map(fn (OpeningBalanceLoan $row) => [
+            ->sortBy([
+                fn (OpeningBalanceLoan $a, OpeningBalanceLoan $b) => strcmp((string) $a->member?->member_number, (string) $b->member?->member_number),
+                fn (OpeningBalanceLoan $a, OpeningBalanceLoan $b) => strcmp((string) $a->external_loan_number, (string) $b->external_loan_number),
+            ])
+            ->values();
+
+        $kosong = array_fill_keys(array_keys(LaporanRegistry::columnsFor('saldo_awal_pinjaman')), '');
+
+        $rows = $this->kelompokkanPerAnggota(
+            $records,
+            fn (OpeningBalanceLoan $row) => $row->member_id,
+            fn (OpeningBalanceLoan $row) => [
                 'kode_anggota' => $row->member->member_number ?? '-',
                 'nama_anggota' => $row->member->name ?? '-',
                 'no_pinjaman_lama' => $row->external_loan_number ?? '-',
@@ -318,23 +422,67 @@ class LaporanController extends Controller
                 'sisa_tenor' => (string) $row->remaining_tenor_months,
                 'jatuh_tempo' => optional($row->next_due_date)->format('d-m-Y') ?? '-',
                 'kolektibilitas' => ucwords(str_replace('_', ' ', (string) $row->collectibility)),
-            ]);
+            ],
+            fn (Collection $grup, int $jumlah) => [
+                ...$kosong,
+                'nama_anggota' => 'SUB TOTAL '.($grup->first()->member->name ?? '-'),
+                'no_pinjaman_lama' => $jumlah.' pinjaman',
+                'plafon_awal' => $this->rupiah((float) $grup->sum('original_principal')),
+                'sisa_pokok' => $this->rupiah((float) $grup->sum('outstanding_principal')),
+                'sisa_jasa' => $this->rupiah((float) $grup->sum('outstanding_interest')),
+            ],
+            subTotalHanyaBilaGanda: true,
+        );
+
+        return $rows->isEmpty() ? $rows : $rows->push([
+            ...$kosong,
+            'nama_anggota' => 'TOTAL SELURUH ANGGOTA',
+            'no_pinjaman_lama' => $records->count().' pinjaman',
+            'plafon_awal' => $this->rupiah((float) $records->sum('original_principal')),
+            'sisa_pokok' => $this->rupiah((float) $records->sum('outstanding_principal')),
+            'sisa_jasa' => $this->rupiah((float) $records->sum('outstanding_interest')),
+        ]);
     }
 
     private function saldoAwalSimpanan(): Collection
     {
-        return OpeningBalanceSaving::query()
+        $records = OpeningBalanceSaving::query()
             ->with(['member', 'savingsProduct'])
-            ->orderBy('member_id')
             ->get()
-            ->map(fn (OpeningBalanceSaving $row) => [
+            ->sortBy([
+                fn (OpeningBalanceSaving $a, OpeningBalanceSaving $b) => strcmp((string) $a->member?->member_number, (string) $b->member?->member_number),
+                fn (OpeningBalanceSaving $a, OpeningBalanceSaving $b) => strcmp((string) $a->savingsProduct?->code, (string) $b->savingsProduct?->code),
+            ])
+            ->values();
+
+        $kosong = array_fill_keys(array_keys(LaporanRegistry::columnsFor('saldo_awal_simpanan')), '');
+
+        $rows = $this->kelompokkanPerAnggota(
+            $records,
+            fn (OpeningBalanceSaving $row) => $row->member_id,
+            fn (OpeningBalanceSaving $row) => [
                 'kode_anggota' => $row->member->member_number ?? '-',
                 'nama_anggota' => $row->member->name ?? '-',
                 'produk' => $row->savingsProduct->name ?? '-',
                 'no_rekening' => $row->account_number ?: '-',
                 'saldo_awal' => $this->rupiah((float) $row->balance),
                 'keterangan' => $row->notes ?: '-',
-            ]);
+            ],
+            fn (Collection $grup, int $jumlah) => [
+                ...$kosong,
+                'nama_anggota' => 'SUB TOTAL '.($grup->first()->member->name ?? '-'),
+                'produk' => $jumlah.' rekening',
+                'saldo_awal' => $this->rupiah((float) $grup->sum('balance')),
+            ],
+            subTotalHanyaBilaGanda: true,
+        );
+
+        return $rows->isEmpty() ? $rows : $rows->push([
+            ...$kosong,
+            'nama_anggota' => 'TOTAL SELURUH ANGGOTA',
+            'produk' => $records->count().' rekening',
+            'saldo_awal' => $this->rupiah((float) $records->sum('balance')),
+        ]);
     }
 
     /**
@@ -345,13 +493,23 @@ class LaporanController extends Controller
      */
     private function migrasiHistorisPembayaran(): Collection
     {
-        return LoanRepayment::query()
+        $records = LoanRepayment::query()
             ->whereNotNull('migrated_at')
             ->with(['loan.member'])
-            ->orderBy('paid_at')
-            ->orderBy('id')
             ->get()
-            ->map(fn (LoanRepayment $row) => [
+            ->sortBy([
+                fn (LoanRepayment $a, LoanRepayment $b) => strcmp((string) $a->loan?->member?->member_number, (string) $b->loan?->member?->member_number),
+                fn (LoanRepayment $a, LoanRepayment $b) => strcmp((string) $a->loan?->loan_number, (string) $b->loan?->loan_number),
+                fn (LoanRepayment $a, LoanRepayment $b) => $a->paidOn()->timestamp <=> $b->paidOn()->timestamp,
+            ])
+            ->values();
+
+        $kosong = array_fill_keys(array_keys(LaporanRegistry::columnsFor('migrasi_historis_pembayaran')), '');
+
+        $rows = $this->kelompokkanPerAnggota(
+            $records,
+            fn (LoanRepayment $row) => $row->loan?->member_id,
+            fn (LoanRepayment $row) => [
                 'tanggal' => $row->paidOn()->format('d-m-Y'),
                 'no_pinjaman' => $row->loan->loan_number ?? '-',
                 'nama_anggota' => $row->loan->member->name ?? '-',
@@ -360,18 +518,47 @@ class LaporanController extends Controller
                 'jumlah' => $this->rupiah((float) $row->amount),
                 'sisa' => $this->rupiah((float) $row->balance_after),
                 'keterangan' => $row->description ?: '-',
-            ]);
+            ],
+            fn (Collection $grup, int $jumlah) => [
+                ...$kosong,
+                'nama_anggota' => 'SUB TOTAL '.($grup->first()->loan->member->name ?? '-'),
+                'no_pinjaman' => $jumlah.' pembayaran',
+                'pokok' => $this->rupiah((float) $grup->sum('principal_portion')),
+                'jasa' => $this->rupiah((float) $grup->sum('interest_portion')),
+                'jumlah' => $this->rupiah((float) $grup->sum('amount')),
+            ],
+        );
+
+        return $rows->isEmpty() ? $rows : $rows->push([
+            ...$kosong,
+            'nama_anggota' => 'TOTAL SELURUH ANGGOTA',
+            'no_pinjaman' => $records->count().' pembayaran',
+            'pokok' => $this->rupiah((float) $records->sum('principal_portion')),
+            'jasa' => $this->rupiah((float) $records->sum('interest_portion')),
+            'jumlah' => $this->rupiah((float) $records->sum('amount')),
+        ]);
     }
 
     private function migrasiJadwalPembayaran(): Collection
     {
-        return LoanSchedule::query()
+        $records = LoanSchedule::query()
             ->whereHas('loan')
             ->with(['loan.member'])
-            ->orderBy('loan_id')
-            ->orderBy('installment_number')
             ->get()
-            ->map(fn (LoanSchedule $row) => [
+            ->sortBy([
+                fn (LoanSchedule $a, LoanSchedule $b) => strcmp((string) $a->loan?->member?->member_number, (string) $b->loan?->member?->member_number),
+                fn (LoanSchedule $a, LoanSchedule $b) => strcmp((string) $a->loan?->loan_number, (string) $b->loan?->loan_number),
+                fn (LoanSchedule $a, LoanSchedule $b) => $a->installment_number <=> $b->installment_number,
+            ])
+            ->values();
+
+        $kosong = array_fill_keys(array_keys(LaporanRegistry::columnsFor('migrasi_jadwal_pembayaran')), '');
+        $sisa = fn (LoanSchedule $row) => (float) $row->total_amount - (float) $row->paid_amount;
+
+        $rows = $this->kelompokkanPerAnggota(
+            $records,
+            fn (LoanSchedule $row) => $row->loan?->member_id,
+            fn (LoanSchedule $row) => [
                 'no_pinjaman' => $row->loan->loan_number ?? '-',
                 'nama_anggota' => $row->loan->member->name ?? '-',
                 'angsuran_ke' => (string) $row->installment_number,
@@ -380,9 +567,31 @@ class LaporanController extends Controller
                 'jasa' => $this->rupiah((float) $row->interest_amount),
                 'total' => $this->rupiah((float) $row->total_amount),
                 'terbayar' => $this->rupiah((float) $row->paid_amount),
-                'sisa' => $this->rupiah((float) $row->total_amount - (float) $row->paid_amount),
+                'sisa' => $this->rupiah($sisa($row)),
                 'status' => ucwords(str_replace('_', ' ', (string) $row->status)),
-            ]);
+            ],
+            fn (Collection $grup, int $jumlah) => [
+                ...$kosong,
+                'nama_anggota' => 'SUB TOTAL '.($grup->first()->loan->member->name ?? '-'),
+                'angsuran_ke' => (string) $jumlah,
+                'pokok' => $this->rupiah((float) $grup->sum('principal_amount')),
+                'jasa' => $this->rupiah((float) $grup->sum('interest_amount')),
+                'total' => $this->rupiah((float) $grup->sum('total_amount')),
+                'terbayar' => $this->rupiah((float) $grup->sum('paid_amount')),
+                'sisa' => $this->rupiah((float) $grup->sum($sisa)),
+            ],
+        );
+
+        return $rows->isEmpty() ? $rows : $rows->push([
+            ...$kosong,
+            'nama_anggota' => 'TOTAL SELURUH ANGGOTA',
+            'angsuran_ke' => (string) $records->count(),
+            'pokok' => $this->rupiah((float) $records->sum('principal_amount')),
+            'jasa' => $this->rupiah((float) $records->sum('interest_amount')),
+            'total' => $this->rupiah((float) $records->sum('total_amount')),
+            'terbayar' => $this->rupiah((float) $records->sum('paid_amount')),
+            'sisa' => $this->rupiah((float) $records->sum($sisa)),
+        ]);
     }
 
     private function rupiah(float|string $amount): string
