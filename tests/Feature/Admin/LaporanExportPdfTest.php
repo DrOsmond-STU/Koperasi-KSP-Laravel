@@ -182,6 +182,50 @@ class LaporanExportPdfTest extends TestCase
         $this->assertCount(3, $hasil);
     }
 
+    /**
+     * Layar memotong baris, ekspor tidak.
+     *
+     * Riwayat Pembayaran hasil migrasi 21 ribu baris menembus memory_limit saat
+     * Blade menyusun tabelnya, dan halamannya mati dengan 500. Pemotongan hanya
+     * berlaku di layar dan harus dinyatakan terang-terangan — memotong
+     * diam-diam membuat pengguna mengira laporannya memang sesingkat itu.
+     */
+    public function test_layar_memotong_baris_tapi_ekspor_tidak(): void
+    {
+        $user = $this->manajer();
+        config()->set('koperasi.laporan_maks_baris_layar', 3);
+        config()->set('koperasi.cetak_laporan_maks_baris', 1000);
+
+        $this->anggota(7);
+
+        $response = $this->actingAs($user)->get(route('admin.laporan.show', 'anggota'));
+
+        $response->assertOk();
+        $response->assertViewHas('dipotong', true);
+        $response->assertViewHas('jumlahPenuh', 7);
+        $this->assertCount(3, $response->viewData('rows'));
+        $response->assertSee('7 baris', escape: false);
+
+        // Ekspor tetap memuat tujuh baris — pemotongan hanya soal render layar.
+        $controller = app(LaporanController::class);
+        $fetch = new ReflectionMethod($controller, 'fetch');
+        $this->assertCount(7, $fetch->invoke($controller, 'anggota'));
+    }
+
+    /** Di bawah ambang, tidak ada pemotongan dan tidak ada peringatan. */
+    public function test_di_bawah_ambang_layar_tidak_dipotong(): void
+    {
+        $user = $this->manajer();
+        config()->set('koperasi.laporan_maks_baris_layar', 100);
+
+        $this->anggota(4);
+
+        $this->actingAs($user)
+            ->get(route('admin.laporan.show', 'anggota'))
+            ->assertOk()
+            ->assertViewHas('dipotong', false);
+    }
+
     /** Saringan yang dipakai wajib tercetak, supaya tidak dikira laporan lengkap. */
     public function test_saringan_yang_dipakai_disebut_di_kepala_cetakan(): void
     {

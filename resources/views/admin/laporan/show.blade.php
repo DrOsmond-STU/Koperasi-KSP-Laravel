@@ -9,6 +9,7 @@
         .btn-primary { display: inline-block; padding: 9px 16px; background: var(--pine); color: #fff; border-radius: 9px; text-decoration: none; font-weight: 700; font-size: 13px; }
         .btn-secondary { display: inline-block; padding: 9px 16px; background: transparent; color: var(--pine-bright); border: 1px solid var(--pine); border-radius: 9px; text-decoration: none; font-weight: 700; font-size: 13px; }
         .error-msg { color: var(--brick); font-size: 13px; margin-bottom: 14px; }
+        .potong-msg { background: var(--paper); border: 1px solid var(--line); border-left: 4px solid var(--brick); border-radius: 10px; padding: 12px 15px; font-size: 13px; line-height: 1.6; margin-bottom: 16px; }
         /* Sub total & total dibedakan latarnya — lihat catatan yang sama di
            prints/laporan/generic.blade.php. Memakai token tema supaya ikut
            benar di mode gelap. */
@@ -30,6 +31,18 @@
             <a href="{{ route('admin.laporan.export-excel', $module) }}" class="btn-primary" data-export>Export Excel</a>
         </div>
     </div>
+
+    @if ($dipotong ?? false)
+        <div class="potong-msg">
+            Laporan ini berisi <strong>{{ number_format($jumlahPenuh, 0, ',', '.') }} baris</strong>.
+            Layar hanya menampilkan <strong>{{ number_format($maksBarisLayar, 0, ',', '.') }} baris pertama</strong>
+            supaya halamannya tetap bisa dibuka dan disaring.
+            <br>
+            <strong>Export PDF dan Export Excel tetap memuat seluruh baris</strong> yang lolos saringan —
+            pemotongan ini hanya berlaku di layar. Persempit dengan pencarian atau filter untuk melihat
+            bagian yang Anda cari.
+        </div>
+    @endif
 
     <div class="dt-wrap" data-dt @if ($dateColumn) data-date-column="{{ $dateColumn }}" @endif>
         <div class="dt-toolbar">

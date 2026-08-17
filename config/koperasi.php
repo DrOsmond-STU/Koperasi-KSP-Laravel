@@ -60,4 +60,15 @@ return [
 
     'cetak_laporan_kolom_landscape' => (int) env('KOPERASI_CETAK_LAPORAN_KOLOM_LANDSCAPE', 7),
 
+    /*
+     | Batas baris yang dirender ke layar hub Laporan.
+     |
+     | Bukan batas data: Export PDF/Excel tetap memakai seluruh baris yang lolos
+     | saringan. Ini semata batas render — satu tabel HTML berisi puluhan ribu
+     | baris menembus memory_limit saat Blade menyusun keluarannya, dan
+     | saringan datatable yang menyisir seluruh baris tiap ketikan jadi macet
+     | jauh sebelum itu.
+     */
+    'laporan_maks_baris_layar' => (int) env('KOPERASI_LAPORAN_MAKS_BARIS_LAYAR', 5000),
+
 ];

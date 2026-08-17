@@ -90,10 +90,30 @@ class LaporanController extends Controller
         ]);
     }
 
+    /**
+     * Layar dibatasi jumlah barisnya, ekspor tidak.
+     *
+     * Riwayat Pembayaran hasil migrasi berisi 21 ribu baris. Merendernya jadi
+     * satu tabel HTML menembus memory_limit saat Blade menyusun keluarannya —
+     * bukan saat query berjalan — dan halamannya mati dengan 500 tanpa
+     * keterangan. Sekalipun memorinya dinaikkan sampai muat, tabel sebesar itu
+     * melumpuhkan saringan datatable yang menyisir seluruh baris tiap ketikan.
+     *
+     * Karena itu layar memotong di ambang yang wajar dan mengatakannya
+     * terang-terangan, sementara Export PDF/Excel tetap memakai seluruh baris
+     * yang lolos saringan. Memotong diam-diam jauh lebih berbahaya: pengguna
+     * akan mengira laporannya memang sesingkat itu.
+     */
     public function show(string $module): View
     {
         $this->authorize('laporan.read');
         abort_unless(LaporanRegistry::exists($module), 404);
+
+        ini_set('memory_limit', '512M');
+
+        $rows = $this->fetch($module);
+        $maxRows = (int) config('koperasi.laporan_maks_baris_layar', 5000);
+        $jumlahPenuh = $rows->count();
 
         return view('admin.laporan.show', [
             'module' => $module,
@@ -101,7 +121,10 @@ class LaporanController extends Controller
             'columns' => LaporanRegistry::columnsFor($module),
             'filterable' => LaporanRegistry::filterableFor($module),
             'dateColumn' => LaporanRegistry::dateColumnFor($module),
-            'rows' => $this->fetch($module),
+            'rows' => $jumlahPenuh > $maxRows ? $rows->take($maxRows)->values() : $rows,
+            'jumlahPenuh' => $jumlahPenuh,
+            'dipotong' => $jumlahPenuh > $maxRows,
+            'maksBarisLayar' => $maxRows,
         ]);
     }
 
