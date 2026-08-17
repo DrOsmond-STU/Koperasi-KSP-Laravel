@@ -218,6 +218,60 @@ class LaporanMigrasiTest extends TestCase
         $this->assertCount(0, $hasil);
     }
 
+    /**
+     * Kode akun diurutkan sebagai TEKS, bukan bilangan.
+     *
+     * Kode akun seluruhnya angka, dan pembanding bawaan PHP memperlakukan dua
+     * string angka sebagai bilangan — "21081" lalu dianggap lebih kecil dari
+     * "1101100", sehingga akun kewajiban lima digit melompat ke atas seluruh
+     * akun aset tujuh digit. Persis itu yang sempat terjadi di produksi.
+     */
+    public function test_neraca_saldo_urut_sebagai_teks_bukan_bilangan(): void
+    {
+        $batch = $this->batch();
+
+        foreach ([
+            ['1101100', 'ASET', 'debit'],
+            ['21081', 'LIABILITAS', 'kredit'],
+            ['2101101', 'LIABILITAS', 'kredit'],
+            ['42099', 'PENDAPATAN', 'kredit'],
+        ] as [$kode, $tipe, $posisi]) {
+            OpeningBalanceCoa::query()->create([
+                'opening_balance_batch_id' => $batch->id,
+                'chart_of_account_id' => $this->akun($kode, $tipe === 'ASET' || $tipe === 'LIABILITAS' ? 'NERACA' : 'LABA_RUGI', $tipe)->id,
+                'position' => $posisi, 'amount' => 100,
+            ]);
+        }
+
+        $kode = $this->ambil('saldo_awal_neraca_saldo')
+            ->filter(fn ($row) => $row['kode'] !== '')
+            ->pluck('kode')
+            ->all();
+
+        $this->assertSame(['1101100', '2101101', '21081', '42099'], $kode);
+    }
+
+    /** Neraca Saldo ditutup tepat satu baris total, dan itu baris terakhir. */
+    public function test_neraca_saldo_hanya_punya_satu_baris_total_di_akhir(): void
+    {
+        $batch = $this->batch();
+
+        foreach (['1101100', '2101101'] as $kode) {
+            OpeningBalanceCoa::query()->create([
+                'opening_balance_batch_id' => $batch->id,
+                'chart_of_account_id' => $this->akun($kode, 'NERACA', 'ASET')->id,
+                'position' => 'debit', 'amount' => 100,
+            ]);
+        }
+
+        $rows = $this->ambil('saldo_awal_neraca_saldo');
+        $bergaya = $rows->filter(fn ($row) => ($row['_gaya'] ?? null) !== null);
+
+        $this->assertCount(1, $bergaya);
+        $this->assertSame('TOTAL NERACA SALDO', $rows->last()['nama_akun']);
+        $this->assertSame('ringkasan', $rows->last()['_gaya']);
+    }
+
     /** Aktiva harus mendahului Pasiva dan Modal, apa pun urutan datanya. */
     public function test_urutan_bagian_aktiva_pasiva_modal(): void
     {

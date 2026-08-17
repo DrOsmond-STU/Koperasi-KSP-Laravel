@@ -439,10 +439,16 @@ class LaporanController extends Controller
      */
     private function saldoAwalCoa(bool $neracaSaja): Collection
     {
+        // SORT_STRING wajib. Kode akun seluruhnya angka, dan pembanding bawaan
+        // PHP memperlakukan dua string angka sebagai bilangan — "21081" lalu
+        // dianggap lebih kecil dari "1101100", sehingga akun kewajiban lima
+        // digit melompat ke atas seluruh akun aset tujuh digit. Dibandingkan
+        // sebagai teks, urutannya mengikuti hierarki bagan akun sebagaimana
+        // mestinya.
         $semua = OpeningBalanceCoa::query()
             ->with('account')
             ->get()
-            ->sortBy(fn (OpeningBalanceCoa $line) => $line->account->code ?? '')
+            ->sortBy(fn (OpeningBalanceCoa $line) => $line->account->code ?? '', SORT_STRING)
             ->values();
 
         // Laporan kosong dibiarkan benar-benar kosong — lihat catatan yang sama
