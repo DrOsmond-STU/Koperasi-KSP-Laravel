@@ -7,6 +7,12 @@
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th, td { border: 1px solid #D7E2DB; padding: 5px 8px; text-align: left; }
         th { background: #F4F7F4; }
+        {{-- Baris sub total & total diberi latar pembeda: pada laporan sepanjang
+             ribuan baris, angka rekapnya harus bisa ditemukan tanpa dibaca satu
+             per satu. Warnanya sengaja pekat karena banyak koperasi mencetak
+             hitam-putih, dan bedanya harus tetap terlihat sebagai beda abu. --}}
+        tr.baris-ringkasan td { background: #E3EDE6; font-weight: 700; }
+        tr.baris-judul td { background: #11543B; color: #FFFFFF; font-weight: 700; }
     </style>
 
     <h2 style="font-size:13pt; margin:0 0 2px;">{{ $title }}</h2>
@@ -29,7 +35,10 @@
         </thead>
         <tbody>
             @forelse ($rows as $row)
-                <tr>
+                <tr @class([
+                    'baris-ringkasan' => ($row['_gaya'] ?? null) === 'ringkasan',
+                    'baris-judul' => ($row['_gaya'] ?? null) === 'judul',
+                ])>
                     @foreach (array_keys($columns) as $key)
                         <td>{{ $row[$key] ?? '-' }}</td>
                     @endforeach

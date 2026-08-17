@@ -174,6 +174,50 @@ class LaporanMigrasiTest extends TestCase
         $this->assertSame('Rp 100', $shu['kredit']);
     }
 
+    /**
+     * Baris ringkasan ditandai supaya layar dan cetakan bisa memberinya latar
+     * pembeda. Penandanya harus tidak terlihat sebagai kolom laporan — ia tidak
+     * boleh ikut di Export Excel maupun jadi bahan pencarian.
+     */
+    public function test_baris_ringkasan_dan_judul_ditandai_gayanya(): void
+    {
+        $batch = $this->batch();
+
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $this->akun('1001', 'NERACA', 'ASET')->id,
+            'position' => 'debit', 'amount' => 1000,
+        ]);
+
+        $rows = $this->ambil('saldo_awal_neraca');
+
+        $this->assertSame('judul', $rows->first(fn ($r) => $r['nama_akun'] === 'AKTIVA')['_gaya']);
+        $this->assertSame('ringkasan', $rows->first(fn ($r) => $r['nama_akun'] === 'SUB TOTAL AKTIVA')['_gaya']);
+        $this->assertSame('ringkasan', $rows->last()['_gaya']);
+
+        // Baris akun biasa tidak ditandai.
+        $this->assertArrayNotHasKey('_gaya', $rows->first(fn ($r) => $r['kode'] === '1001'));
+
+        // Penanda bukan kolom laporan, jadi tidak muncul di daftar kolom.
+        $this->assertArrayNotHasKey('_gaya', LaporanRegistry::columnsFor('saldo_awal_neraca'));
+    }
+
+    /** Penanda gaya tidak boleh ikut jadi bahan pencarian. */
+    public function test_penanda_gaya_tidak_ikut_dicari(): void
+    {
+        $controller = app(LaporanController::class);
+        $saring = new \ReflectionMethod($controller, 'saringSepertiDiLayar');
+
+        $rows = collect([
+            ['member_number' => 'A-001', 'name' => 'Budi', 'cabang' => 'KSP', 'joined_at' => '10-01-2026'],
+            ['member_number' => '', 'name' => 'TOTAL', 'cabang' => '', 'joined_at' => '', '_gaya' => 'ringkasan'],
+        ]);
+
+        $hasil = $saring->invoke($controller, $rows, \Illuminate\Http\Request::create('/', 'GET', ['cari' => 'ringkasan']), 'anggota');
+
+        $this->assertCount(0, $hasil);
+    }
+
     /** Aktiva harus mendahului Pasiva dan Modal, apa pun urutan datanya. */
     public function test_urutan_bagian_aktiva_pasiva_modal(): void
     {

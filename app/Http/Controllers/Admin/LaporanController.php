@@ -144,7 +144,16 @@ class LaporanController extends Controller
         }
 
         return $rows->filter(function (array $row) use ($cari, $filterKolom, $dari, $sampai, $kolomTanggal) {
-            if ($cari !== '' && ! str_contains(mb_strtolower(implode(' ', array_map('strval', $row))), $cari)) {
+            // Kunci berawalan garis bawah adalah penanda gaya baris, bukan isi
+            // laporan — ikut dicocokkan, pencarian "ringkasan" akan menyapu
+            // seluruh baris sub total.
+            $isiBaris = array_filter(
+                $row,
+                fn (string $kunci) => ! str_starts_with($kunci, '_'),
+                ARRAY_FILTER_USE_KEY,
+            );
+
+            if ($cari !== '' && ! str_contains(mb_strtolower(implode(' ', array_map('strval', $isiBaris))), $cari)) {
                 return false;
             }
 
@@ -351,6 +360,18 @@ class LaporanController extends Controller
     }
 
     /**
+     * Penanda gaya baris, dibaca layar dan cetakan untuk memberi latar pembeda.
+     *
+     * Kuncinya diawali garis bawah supaya tidak pernah tertukar dengan kolom
+     * laporan: view hanya merender kunci yang terdaftar di LaporanRegistry,
+     * Export Excel juga hanya memetakan kunci itu, dan saringan pencarian
+     * membuang kunci berawalan garis bawah dari bahan pencocokannya.
+     */
+    private const GAYA_JUDUL = 'judul';
+
+    private const GAYA_RINGKASAN = 'ringkasan';
+
+    /**
      * Satu baris ringkasan (sub total / total) untuk laporan COA.
      *
      * @return array<string, string>
@@ -364,6 +385,25 @@ class LaporanController extends Controller
             'laporan' => '',
             'debit' => round($debit, 2) !== 0.0 ? $this->rupiah($debit) : '-',
             'kredit' => round($kredit, 2) !== 0.0 ? $this->rupiah($kredit) : '-',
+            '_gaya' => self::GAYA_RINGKASAN,
+        ];
+    }
+
+    /**
+     * Baris judul bagian (AKTIVA / PASIVA / MODAL) — pemisah, bukan angka.
+     *
+     * @return array<string, string>
+     */
+    private function barisJudulCoa(string $label): array
+    {
+        return [
+            'kode' => '',
+            'nama_akun' => $label,
+            'tipe' => '',
+            'laporan' => '',
+            'debit' => '',
+            'kredit' => '',
+            '_gaya' => self::GAYA_JUDUL,
         ];
     }
 
@@ -441,17 +481,17 @@ class LaporanController extends Controller
 
         $rows = collect();
 
-        $rows->push($this->barisRingkasanCoa('AKTIVA', 0, 0));
+        $rows->push($this->barisJudulCoa('AKTIVA'));
         $aset->each(fn (OpeningBalanceCoa $line) => $rows->push($this->barisAkun($line)));
         $totalAktiva = $neto($aset);
         $rows->push($this->barisRingkasanCoa('SUB TOTAL AKTIVA', $totalAktiva, 0));
 
-        $rows->push($this->barisRingkasanCoa('PASIVA (KEWAJIBAN)', 0, 0));
+        $rows->push($this->barisJudulCoa('PASIVA (KEWAJIBAN)'));
         $liabilitas->each(fn (OpeningBalanceCoa $line) => $rows->push($this->barisAkun($line)));
         $totalPasiva = -$neto($liabilitas);
         $rows->push($this->barisRingkasanCoa('SUB TOTAL PASIVA', 0, $totalPasiva));
 
-        $rows->push($this->barisRingkasanCoa('MODAL (EKUITAS)', 0, 0));
+        $rows->push($this->barisJudulCoa('MODAL (EKUITAS)'));
         $ekuitas->each(fn (OpeningBalanceCoa $line) => $rows->push($this->barisAkun($line)));
         $totalModal = -$neto($ekuitas);
 
@@ -547,6 +587,7 @@ class LaporanController extends Controller
             fn (Collection $grup, int $jumlah) => [
                 ...$kosong,
                 'nama_anggota' => 'SUB TOTAL '.($grup->first()->member->name ?? '-'),
+                '_gaya' => self::GAYA_RINGKASAN,
                 'no_pinjaman_lama' => $jumlah.' pinjaman',
                 'plafon_awal' => $this->rupiah((float) $grup->sum('original_principal')),
                 'sisa_pokok' => $this->rupiah((float) $grup->sum('outstanding_principal')),
@@ -558,6 +599,7 @@ class LaporanController extends Controller
         return $rows->isEmpty() ? $rows : $rows->push([
             ...$kosong,
             'nama_anggota' => 'TOTAL SELURUH ANGGOTA',
+            '_gaya' => self::GAYA_RINGKASAN,
             'no_pinjaman_lama' => $records->count().' pinjaman',
             'plafon_awal' => $this->rupiah((float) $records->sum('original_principal')),
             'sisa_pokok' => $this->rupiah((float) $records->sum('outstanding_principal')),
@@ -592,6 +634,7 @@ class LaporanController extends Controller
             fn (Collection $grup, int $jumlah) => [
                 ...$kosong,
                 'nama_anggota' => 'SUB TOTAL '.($grup->first()->member->name ?? '-'),
+                '_gaya' => self::GAYA_RINGKASAN,
                 'produk' => $jumlah.' rekening',
                 'saldo_awal' => $this->rupiah((float) $grup->sum('balance')),
             ],
@@ -601,6 +644,7 @@ class LaporanController extends Controller
         return $rows->isEmpty() ? $rows : $rows->push([
             ...$kosong,
             'nama_anggota' => 'TOTAL SELURUH ANGGOTA',
+            '_gaya' => self::GAYA_RINGKASAN,
             'produk' => $records->count().' rekening',
             'saldo_awal' => $this->rupiah((float) $records->sum('balance')),
         ]);
@@ -643,6 +687,7 @@ class LaporanController extends Controller
             fn (Collection $grup, int $jumlah) => [
                 ...$kosong,
                 'nama_anggota' => 'SUB TOTAL '.($grup->first()->loan->member->name ?? '-'),
+                '_gaya' => self::GAYA_RINGKASAN,
                 'no_pinjaman' => $jumlah.' pembayaran',
                 'pokok' => $this->rupiah((float) $grup->sum('principal_portion')),
                 'jasa' => $this->rupiah((float) $grup->sum('interest_portion')),
@@ -653,6 +698,7 @@ class LaporanController extends Controller
         return $rows->isEmpty() ? $rows : $rows->push([
             ...$kosong,
             'nama_anggota' => 'TOTAL SELURUH ANGGOTA',
+            '_gaya' => self::GAYA_RINGKASAN,
             'no_pinjaman' => $records->count().' pembayaran',
             'pokok' => $this->rupiah((float) $records->sum('principal_portion')),
             'jasa' => $this->rupiah((float) $records->sum('interest_portion')),
@@ -694,6 +740,7 @@ class LaporanController extends Controller
             fn (Collection $grup, int $jumlah) => [
                 ...$kosong,
                 'nama_anggota' => 'SUB TOTAL '.($grup->first()->loan->member->name ?? '-'),
+                '_gaya' => self::GAYA_RINGKASAN,
                 'angsuran_ke' => (string) $jumlah,
                 'pokok' => $this->rupiah((float) $grup->sum('principal_amount')),
                 'jasa' => $this->rupiah((float) $grup->sum('interest_amount')),
@@ -706,6 +753,7 @@ class LaporanController extends Controller
         return $rows->isEmpty() ? $rows : $rows->push([
             ...$kosong,
             'nama_anggota' => 'TOTAL SELURUH ANGGOTA',
+            '_gaya' => self::GAYA_RINGKASAN,
             'angsuran_ke' => (string) $records->count(),
             'pokok' => $this->rupiah((float) $records->sum('principal_amount')),
             'jasa' => $this->rupiah((float) $records->sum('interest_amount')),

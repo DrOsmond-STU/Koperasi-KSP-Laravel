@@ -9,6 +9,11 @@
         .btn-primary { display: inline-block; padding: 9px 16px; background: var(--pine); color: #fff; border-radius: 9px; text-decoration: none; font-weight: 700; font-size: 13px; }
         .btn-secondary { display: inline-block; padding: 9px 16px; background: transparent; color: var(--pine-bright); border: 1px solid var(--pine); border-radius: 9px; text-decoration: none; font-weight: 700; font-size: 13px; }
         .error-msg { color: var(--brick); font-size: 13px; margin-bottom: 14px; }
+        /* Sub total & total dibedakan latarnya — lihat catatan yang sama di
+           prints/laporan/generic.blade.php. Memakai token tema supaya ikut
+           benar di mode gelap. */
+        .dt-table tr.baris-ringkasan td { background: var(--leaf); font-weight: 700; }
+        .dt-table tr.baris-judul td { background: var(--pine); color: #fff; font-weight: 700; letter-spacing: .03em; }
     </style>
 
     @if (session('error'))
@@ -62,7 +67,10 @@
                 </thead>
                 <tbody>
                     @foreach ($rows as $row)
-                        <tr>
+                        <tr @class([
+                            'baris-ringkasan' => ($row['_gaya'] ?? null) === 'ringkasan',
+                            'baris-judul' => ($row['_gaya'] ?? null) === 'judul',
+                        ])>
                             @foreach ($columns as $key => $columnLabel)
                                 <td data-column="{{ $key }}">{{ $row[$key] ?? '-' }}</td>
                             @endforeach
