@@ -56,6 +56,7 @@ class UserController extends Controller
                 'email' => $request->validated('email'),
                 'password' => Hash::make($request->validated('password')),
                 'is_active' => true,
+                'mfa_enforced' => $request->boolean('enable_mfa'),
             ]);
 
             $user->syncRoles($request->validated('roles'));
@@ -102,6 +103,7 @@ class UserController extends Controller
             $data = [
                 'name' => $request->validated('name'),
                 'email' => $request->validated('email'),
+                'mfa_enforced' => $request->boolean('enable_mfa'),
             ];
 
             if ($request->filled('password')) {
@@ -165,6 +167,28 @@ class UserController extends Controller
         return redirect()
             ->route('admin.users.index')
             ->with('status', "Pengguna \"{$user->name}\" telah diaktifkan kembali.");
+    }
+
+    /**
+     * Hapus setup MFA milik user (secret, recovery codes, timestamp konfirmasi)
+     * supaya mereka bisa mengulang aktivasi dari awal — dipakai bila user
+     * kehilangan aplikasi authenticator / ganti ponsel. Setelah reset, user
+     * yang wajib MFA otomatis diarahkan ke /mfa/setup pada login berikutnya
+     * oleh EnsureMfaIsEnabledForInternalRoles.
+     */
+    public function resetMfa(User $user): RedirectResponse
+    {
+        $this->authorize('user.manage');
+
+        $user->forceFill([
+            'two_factor_secret' => null,
+            'two_factor_recovery_codes' => null,
+            'two_factor_confirmed_at' => null,
+        ])->save();
+
+        return redirect()
+            ->route('admin.users.edit', $user)
+            ->with('status', "MFA untuk \"{$user->name}\" berhasil direset. User akan diminta setup ulang saat login berikutnya.");
     }
 
     /**

@@ -34,7 +34,12 @@
         $currentRoles = old('roles', $targetUser->roles->pluck('name')->all());
         $currentScopeType = old('scope_type', $targetUser->branchScope?->scope_type ?? 'all');
         $currentBranchIds = old('branch_ids', $targetUser->branchScope?->branches->pluck('id')->all() ?? []);
+        $currentEnableMfa = (bool) old('enable_mfa', $targetUser->mfa_enforced);
     @endphp
+
+    @if (session('status'))
+        <p style="color: var(--ok); font-size: 13px; margin-bottom: 14px;">{{ session('status') }}</p>
+    @endif
 
     <div class="form-card">
         <form method="POST" action="{{ route('admin.users.update', $targetUser) }}" id="user-form">
@@ -74,6 +79,23 @@
                     @endforeach
                 </div>
                 <div class="permission-preview" id="permission-preview">Pilih role untuk melihat daftar akses.</div>
+            </div>
+
+            <div class="field">
+                <label>Autentikasi Dua Faktor (MFA)</label>
+                <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:500;">
+                    <input type="checkbox" name="enable_mfa" value="1" id="enable-mfa" @checked($currentEnableMfa)>
+                    <span>Wajibkan aktivasi MFA saat login</span>
+                </label>
+                <p class="hint" id="mfa-hint">
+                    Untuk role internal (teller, petugas kredit, bendahara, manajer, pengawas, admin sistem) MFA wajib dan tidak bisa dinonaktifkan.
+                </p>
+                <p class="hint" style="margin-top:8px;">
+                    Status setup:
+                    <strong style="color: {{ $targetUser->two_factor_confirmed_at ? 'var(--ok)' : 'var(--brick)' }};">
+                        {{ $targetUser->two_factor_confirmed_at ? 'Sudah dikonfirmasi user' : 'Belum dikonfirmasi user' }}
+                    </strong>
+                </p>
             </div>
 
             <div class="field" id="member-link-field" style="display:none;">
@@ -118,6 +140,22 @@
         </form>
     </div>
 
+    @if ($targetUser->two_factor_secret)
+        <div class="form-card" style="margin-top:16px;">
+            <h3 style="margin-top:0;">Reset MFA</h3>
+            <p class="hint" style="margin-bottom:12px;">
+                Hapus setup 2FA milik user (secret, recovery codes, konfirmasi) — dipakai bila user
+                kehilangan aplikasi authenticator. User akan diminta setup ulang di /mfa/setup
+                pada login berikutnya.
+            </p>
+            <form method="POST" action="{{ route('admin.users.reset-mfa', $targetUser) }}"
+                  onsubmit="return confirm('Reset setup MFA untuk {{ $targetUser->name }}? User akan diminta setup ulang pada login berikutnya.');">
+                @csrf
+                <button type="submit" class="btn-primary" style="background: var(--brick);">Reset MFA User</button>
+            </form>
+        </div>
+    @endif
+
     <script>
         (function () {
             var roleChecks = document.querySelectorAll('#role-list input[type="checkbox"]');
@@ -141,9 +179,33 @@
                 memberField.style.display = anggotaChecked ? 'block' : 'none';
             }
 
-            roleChecks.forEach(function (cb) { cb.addEventListener('change', updatePreview); cb.addEventListener('change', updateMemberField); });
+            // Same pola dengan form Create — kunci checkbox MFA saat role internal terpilih,
+            // tapi tanpa `disabled` supaya nilai tetap terkirim ke server.
+            var mfaRequiredRoles = ['teller', 'petugas_kredit', 'petugas_upf', 'bendahara', 'manajer', 'pengawas', 'admin_sistem'];
+            var enableMfa = document.getElementById('enable-mfa');
+            var mfaHint = document.getElementById('mfa-hint');
+            var mfaForced = false;
+
+            function updateMfaLock() {
+                mfaForced = Array.from(roleChecks).some(function (cb) { return cb.checked && mfaRequiredRoles.indexOf(cb.value) !== -1; });
+                if (mfaForced) {
+                    enableMfa.checked = true;
+                    mfaHint.textContent = 'Role internal terpilih — MFA wajib aktif, tidak bisa dinonaktifkan.';
+                } else {
+                    mfaHint.textContent = 'Opsional untuk role anggota — centang jika Anda ingin memaksa aktivasi MFA untuk akun ini.';
+                }
+            }
+            enableMfa.addEventListener('click', function (event) {
+                if (mfaForced && ! enableMfa.checked) {
+                    event.preventDefault();
+                    enableMfa.checked = true;
+                }
+            });
+
+            roleChecks.forEach(function (cb) { cb.addEventListener('change', updatePreview); cb.addEventListener('change', updateMemberField); cb.addEventListener('change', updateMfaLock); });
             updatePreview();
             updateMemberField();
+            updateMfaLock();
 
             var scopeRadios = document.querySelectorAll('input[name="scope_type"]');
             var scopeSingle = document.getElementById('scope-single');

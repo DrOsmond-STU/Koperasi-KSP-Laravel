@@ -14,7 +14,7 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'email', 'password', 'is_active'])]
+#[Fillable(['name', 'email', 'password', 'is_active', 'mfa_enforced'])]
 #[Hidden(['password', 'remember_token', 'two_factor_recovery_codes', 'two_factor_secret'])]
 class User extends Authenticatable
 {
@@ -32,6 +32,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'mfa_enforced' => 'boolean',
         ];
     }
 
@@ -88,10 +89,16 @@ class User extends Authenticatable
     /**
      * SECURITY.md §Authentication: MFA wajib untuk seluruh role internal
      * (Teller, Petugas Kredit, Petugas UPF, Bendahara, Manajer/Pengurus,
-     * Pengawas, Admin Sistem). Anggota: opsional.
+     * Pengawas, Admin Sistem). Anggota: opsional — Admin Sistem bisa
+     * memaksanya per-akun lewat kolom `mfa_enforced` (dicentang saat
+     * Tambah/Ubah Pengguna).
      */
     public function requiresMfa(): bool
     {
+        if ($this->mfa_enforced) {
+            return true;
+        }
+
         return $this->hasAnyRole([
             'teller',
             'petugas_kredit',
@@ -101,5 +108,16 @@ class User extends Authenticatable
             'pengawas',
             'admin_sistem',
         ]);
+    }
+
+    /**
+     * True bila user WAJIB MFA (per role atau override admin) tapi belum
+     * mengonfirmasi setup 2FA-nya. Ini yang dipakai middleware mfa.required
+     * untuk memutuskan apakah user perlu diarahkan ke wizard setup MFA
+     * (halaman /mfa/setup) sebelum boleh masuk area terproteksi.
+     */
+    public function needsMfaSetup(): bool
+    {
+        return $this->requiresMfa() && ! $this->two_factor_confirmed_at;
     }
 }

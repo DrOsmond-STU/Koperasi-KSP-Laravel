@@ -50,6 +50,7 @@ class UserControllerTest extends TestCase
             'password' => 'Vhq9wLbTn3fZ',
             'password_confirmation' => 'Vhq9wLbTn3fZ',
             'roles' => ['teller'],
+            'enable_mfa' => '1',
             'scope_type' => 'single',
             'single_branch_id' => $branch->id,
         ]);
@@ -59,8 +60,73 @@ class UserControllerTest extends TestCase
         $created = User::query()->where('email', 'teller.baru@koperasi.local')->firstOrFail();
         $this->assertTrue($created->hasRole('teller'));
         $this->assertTrue($created->is_active);
+        $this->assertTrue($created->mfa_enforced);
         $this->assertEquals('single', $created->branchScope->scope_type);
         $this->assertEquals($branch->id, $created->branchScope->single_branch_id);
+    }
+
+    public function test_store_rejects_internal_role_when_enable_mfa_unchecked(): void
+    {
+        $admin = $this->adminSistem();
+        $branch = Branch::factory()->create();
+
+        $response = $this->actingAs($admin)->post(route('admin.users.store'), [
+            'name' => 'Teller Bandel',
+            'email' => 'teller.bandel@koperasi.local',
+            'password' => 'Vhq9wLbTn3fZ',
+            'password_confirmation' => 'Vhq9wLbTn3fZ',
+            'roles' => ['teller'],
+            // enable_mfa tidak dicentang
+            'scope_type' => 'single',
+            'single_branch_id' => $branch->id,
+        ]);
+
+        $response->assertSessionHasErrors('enable_mfa');
+        $this->assertDatabaseMissing('users', ['email' => 'teller.bandel@koperasi.local']);
+    }
+
+    public function test_admin_sistem_can_create_anggota_without_forcing_mfa(): void
+    {
+        $admin = $this->adminSistem();
+        $member = Member::factory()->create();
+
+        $response = $this->actingAs($admin)->post(route('admin.users.store'), [
+            'name' => 'Anggota Santai',
+            'email' => 'anggota.santai@koperasi.local',
+            'password' => 'Vhq9wLbTn3fZ',
+            'password_confirmation' => 'Vhq9wLbTn3fZ',
+            'roles' => ['anggota'],
+            'member_id' => $member->id,
+            'scope_type' => 'all',
+            // enable_mfa tidak dicentang — boleh untuk anggota
+        ]);
+
+        $response->assertRedirect(route('admin.users.index'));
+
+        $created = User::query()->where('email', 'anggota.santai@koperasi.local')->firstOrFail();
+        $this->assertFalse($created->mfa_enforced);
+        $this->assertFalse($created->requiresMfa());
+    }
+
+    public function test_admin_sistem_can_force_mfa_on_anggota_account(): void
+    {
+        $admin = $this->adminSistem();
+        $member = Member::factory()->create();
+
+        $this->actingAs($admin)->post(route('admin.users.store'), [
+            'name' => 'Anggota VIP',
+            'email' => 'anggota.vip@koperasi.local',
+            'password' => 'Vhq9wLbTn3fZ',
+            'password_confirmation' => 'Vhq9wLbTn3fZ',
+            'roles' => ['anggota'],
+            'enable_mfa' => '1',
+            'member_id' => $member->id,
+            'scope_type' => 'all',
+        ]);
+
+        $created = User::query()->where('email', 'anggota.vip@koperasi.local')->firstOrFail();
+        $this->assertTrue($created->mfa_enforced);
+        $this->assertTrue($created->requiresMfa());
     }
 
     public function test_admin_sistem_can_update_user_roles_and_it_is_audit_logged(): void
@@ -74,6 +140,7 @@ class UserControllerTest extends TestCase
             'name' => $target->name,
             'email' => $target->email,
             'roles' => ['manajer'],
+            'enable_mfa' => '1',
             'scope_type' => 'all',
         ]);
 
@@ -104,6 +171,7 @@ class UserControllerTest extends TestCase
             'name' => $target->name,
             'email' => $target->email,
             'roles' => ['teller'],
+            'enable_mfa' => '1',
             'scope_type' => 'all',
         ]);
 
@@ -208,5 +276,52 @@ class UserControllerTest extends TestCase
 
         $this->assertNull($oldMember->fresh()->user_id);
         $this->assertEquals($target->id, $newMember->fresh()->user_id);
+    }
+
+    public function test_admin_sistem_can_reset_mfa_for_a_user(): void
+    {
+        $admin = $this->adminSistem();
+        $target = User::factory()->create([
+            'two_factor_secret' => encrypt('SECRET'),
+            'two_factor_recovery_codes' => encrypt(json_encode(['a', 'b'])),
+            'two_factor_confirmed_at' => now(),
+        ]);
+        $target->assignRole('teller');
+        UserBranchScope::query()->create(['user_id' => $target->id, 'scope_type' => 'all']);
+
+        $this->actingAs($admin)->post(route('admin.users.reset-mfa', $target))
+            ->assertRedirect(route('admin.users.edit', $target));
+
+        $fresh = $target->fresh();
+        $this->assertNull($fresh->two_factor_secret);
+        $this->assertNull($fresh->two_factor_recovery_codes);
+        $this->assertNull($fresh->two_factor_confirmed_at);
+    }
+
+    public function test_internal_user_without_mfa_setup_is_redirected_to_setup_page(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+        $user = User::factory()->create(['two_factor_confirmed_at' => null]);
+        $user->assignRole('teller');
+        UserBranchScope::query()->create(['user_id' => $user->id, 'scope_type' => 'all']);
+
+        $this->actingAs($user)->get(route('home'))
+            ->assertRedirect(route('mfa.setup'));
+    }
+
+    public function test_anggota_with_mfa_enforced_is_redirected_to_setup_page(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+        $member = Member::factory()->create();
+        $user = User::factory()->create([
+            'two_factor_confirmed_at' => null,
+            'mfa_enforced' => true,
+        ]);
+        $user->assignRole('anggota');
+        UserBranchScope::query()->create(['user_id' => $user->id, 'scope_type' => 'all']);
+        $member->update(['user_id' => $user->id]);
+
+        $this->actingAs($user)->get(route('home'))
+            ->assertRedirect(route('mfa.setup'));
     }
 }
