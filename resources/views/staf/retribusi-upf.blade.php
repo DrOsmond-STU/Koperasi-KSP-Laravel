@@ -285,22 +285,44 @@
                     @csrf
 
                     <div class="payer-toggle">
-                        <label><input type="radio" name="payer_type" value="umum" id="payer-umum" checked><span>Umum</span></label>
-                        <label><input type="radio" name="payer_type" value="anggota" id="payer-anggota"><span>Anggota</span></label>
+                        <label><input type="radio" name="payer_type" value="umum" id="payer-umum" @checked(old('payer_type', 'umum') === 'umum')><span>Umum</span></label>
+                        <label><input type="radio" name="payer_type" value="anggota" id="payer-anggota" @checked(old('payer_type') === 'anggota')><span>Anggota</span></label>
                     </div>
 
                     <div class="field" id="field-payer-name">
                         <label>Nama Pembayar</label>
-                        <input type="text" name="payer_name" placeholder="Nama pembayar umum">
+                        <input type="text" name="payer_name" value="{{ old('payer_name') }}" placeholder="Nama pembayar umum">
                     </div>
-                    <div class="field" id="field-member" style="display:none;">
-                        <label>Anggota (Kios/Blok)</label>
-                        <select name="member_id" class="js-searchable">
-                            <option value="">— Pilih Anggota —</option>
-                            @foreach ($members as $member)
-                                <option value="{{ $member->id }}">{{ $member->member_number }} — {{ $member->name }}</option>
+                    <div class="field" id="field-retribution-type">
+                        <label>Jenis Retribusi <span style="color:var(--brick);">*</span></label>
+                        <select name="retribution_type_id" id="retribution-type-select">
+                            <option value="">— Pilih Jenis Retribusi —</option>
+                            @foreach ($umumTypes as $type)
+                                <option value="{{ $type->id }}"
+                                        data-code="{{ $type->revenueAccount?->code }}"
+                                        data-name="{{ $type->name }}"
+                                        @selected((string) old('retribution_type_id') === (string) $type->id)>
+                                    {{ $type->code }} — {{ $type->name }}
+                                </option>
                             @endforeach
                         </select>
+                        @if ($umumTypes->isEmpty())
+                            <p class="error-msg" style="margin-top:6px;">⚠ Belum ada jenis retribusi umum (persentase = 100%) yang aktif. Tambahkan di menu <em>Pengaturan → Jenis Retribusi</em>.</p>
+                        @endif
+                    </div>
+                    <div class="field" id="field-member" style="display:none;">
+                        <label>Anggota (Kios/Blok) <span style="color:var(--brick);">*</span></label>
+                        <select name="member_id" class="js-searchable" id="member-select">
+                            <option value="">— Pilih Anggota —</option>
+                            @foreach ($members as $member)
+                                <option value="{{ $member->id }}" @selected((string) old('member_id') === (string) $member->id)>
+                                    {{ $member->member_number }} — {{ $member->name }}@if ($member->memberType) ({{ $member->memberType->code }})@endif
+                                </option>
+                            @endforeach
+                        </select>
+                        @if ($members->isEmpty())
+                            <p class="error-msg" style="margin-top:6px;">⚠ Belum ada data anggota yang bisa dipilih. Pastikan master data Anggota sudah terisi (khususnya jenis KIOS/BLOK).</p>
+                        @endif
                     </div>
 
                     <div class="field-row">
@@ -343,11 +365,17 @@
 
             <div class="panel">
                 <h3>Preview Jurnal</h3>
-                <p class="preview-empty" id="preview-empty-msg">Isi total iuran untuk melihat pembagian jurnal.</p>
+                <p class="preview-empty" id="preview-empty-msg">Pilih mode transaksi &amp; isi total iuran untuk melihat pembagian jurnal.</p>
                 <div id="preview-lines" style="display:none;"></div>
-                @if ($activePercentageTotal != 100)
-                    <p class="error-msg" style="margin-top:12px;">⚠ Total persentase jenis retribusi aktif baru {{ number_format($activePercentageTotal, 2) }}% — belum bisa memproses transaksi sampai mencapai 100%.</p>
+                @if ($splitPercentageTotal != 100 && $splitTypes->isNotEmpty())
+                    <p class="error-msg" style="margin-top:12px;">⚠ Total persentase jenis retribusi <em>split</em> (untuk pembagian otomatis Anggota) baru {{ number_format($splitPercentageTotal, 2) }}% — transaksi Anggota belum bisa diproses sampai mencapai 100%.</p>
                 @endif
+                @if ($splitTypes->isEmpty())
+                    <p class="error-msg" style="margin-top:12px;">⚠ Belum ada jenis retribusi <em>split</em> (persentase &lt; 100%) yang aktif — transaksi <strong>Anggota</strong> belum tersedia. Tambahkan di menu <em>Pengaturan → Jenis Retribusi</em>.</p>
+                @endif
+                <p class="preview-empty" style="margin-top:14px; font-size:11px;">
+                    Jurnal LAWAN (debit) diarahkan ke akun kas <strong>1101600 — KAS AO RIDWAN (UPF)</strong>.
+                </p>
             </div>
         </div>
 
@@ -487,14 +515,25 @@
             var payerAnggota = document.getElementById('payer-anggota');
             var fieldPayerName = document.getElementById('field-payer-name');
             var fieldMember = document.getElementById('field-member');
+            var fieldRetType = document.getElementById('field-retribution-type');
+            var retTypeSelect = document.getElementById('retribution-type-select');
+            var memberSelect = document.getElementById('member-select');
+
             function syncPayerFields() {
                 var isAnggota = payerAnggota.checked;
                 fieldPayerName.style.display = isAnggota ? 'none' : '';
                 fieldMember.style.display = isAnggota ? '' : 'none';
+                fieldRetType.style.display = isAnggota ? 'none' : '';
+                // Clear values on the hidden side so validators don't see stale data.
+                if (isAnggota) {
+                    if (retTypeSelect) { retTypeSelect.value = ''; }
+                } else {
+                    if (memberSelect) { memberSelect.value = ''; }
+                }
+                renderPreview();
             }
             payerUmum.addEventListener('change', syncPayerFields);
             payerAnggota.addEventListener('change', syncPayerFields);
-            syncPayerFields();
 
             // --- Live journal preview ---
             // PENTING: algoritma di bawah ini adalah PROYEKSI saja untuk tampilan.
@@ -505,14 +544,15 @@
             // ini. Logika largest-remainder di bawah HARUS sinkron dengan
             // app/Services/Retribution/RetributionSplitCalculator.php.
             @php
-                $activeTypesForJs = $activeTypes->map(fn ($type) => [
+                $splitTypesForJs = $splitTypes->map(fn ($type) => [
                     'id' => $type->id,
                     'name' => $type->name,
                     'percentage' => (float) $type->percentage,
                     'account_code' => $type->revenueAccount?->code,
                 ]);
             @endphp
-            var activeTypes = @json($activeTypesForJs);
+            var splitTypes = @json($splitTypesForJs);
+            var cashAccountLabel = 'KAS AO RIDWAN (UPF) (1101600)';
 
             function splitCents(totalCents, types) {
                 var rows = types.map(function (t) {
@@ -540,19 +580,50 @@
 
             function renderPreview() {
                 var value = parseFloat(amountInput.value);
-                if (!value || value <= 0 || activeTypes.length === 0) {
+                var isAnggota = payerAnggota.checked;
+
+                if (!value || value <= 0) {
                     previewLines.style.display = 'none';
                     previewEmptyMsg.style.display = '';
                     return;
                 }
-                var totalCents = Math.round(value * 100);
-                var splits = splitCents(totalCents, activeTypes);
 
+                var totalCents = Math.round(value * 100);
                 var html = '';
-                activeTypes.forEach(function (t) {
-                    html += '<div class="preview-line"><span>Kredit — ' + t.name + (t.account_code ? ' (' + t.account_code + ')' : ' (belum di-link)') + '</span><span>' + formatRupiah(splits[t.id]) + '</span></div>';
-                });
-                html += '<div class="preview-line"><span>Debit — Kas</span><span>' + formatRupiah(totalCents) + '</span></div>';
+
+                if (isAnggota) {
+                    if (splitTypes.length === 0) {
+                        previewLines.style.display = 'none';
+                        previewEmptyMsg.style.display = '';
+                        return;
+                    }
+                    var splits = splitCents(totalCents, splitTypes);
+                    splitTypes.forEach(function (t) {
+                        html += '<div class="preview-line"><span>Kredit — ' + t.name
+                            + (t.account_code ? ' (' + t.account_code + ')' : ' (belum di-link)')
+                            + '</span><span>' + formatRupiah(splits[t.id]) + '</span></div>';
+                    });
+                } else {
+                    // Umum: satu jenis retribusi (100%), tanpa pembagian.
+                    var selectedOption = retTypeSelect && retTypeSelect.selectedIndex >= 0
+                        ? retTypeSelect.options[retTypeSelect.selectedIndex]
+                        : null;
+
+                    if (!selectedOption || selectedOption.value === '') {
+                        previewLines.innerHTML = '<p class="preview-empty">Pilih Jenis Retribusi terlebih dahulu untuk melihat pembagian jurnal.</p>';
+                        previewLines.style.display = '';
+                        previewEmptyMsg.style.display = 'none';
+                        return;
+                    }
+
+                    var name = selectedOption.getAttribute('data-name') || selectedOption.text;
+                    var code = selectedOption.getAttribute('data-code');
+                    html += '<div class="preview-line"><span>Kredit — ' + name
+                        + (code ? ' (' + code + ')' : ' (belum di-link)')
+                        + '</span><span>' + formatRupiah(totalCents) + '</span></div>';
+                }
+
+                html += '<div class="preview-line"><span>Debit — ' + cashAccountLabel + '</span><span>' + formatRupiah(totalCents) + '</span></div>';
                 html += '<div class="preview-line total"><span>Total</span><span>' + formatRupiah(totalCents) + '</span></div>';
 
                 previewLines.innerHTML = html;
@@ -561,6 +632,9 @@
             }
 
             amountInput.addEventListener('input', renderPreview);
+            if (retTypeSelect) { retTypeSelect.addEventListener('change', renderPreview); }
+
+            syncPayerFields();
         })();
 
         document.querySelectorAll('[data-toggle-cancel]').forEach(function (btn) {

@@ -21,6 +21,7 @@ class RetributionTransaction extends Model
         'payer_type',
         'payer_name',
         'member_id',
+        'retribution_type_id',
         'total_amount',
         'payment_method',
         'description',
@@ -49,6 +50,11 @@ class RetributionTransaction extends Model
     public function member(): BelongsTo
     {
         return $this->belongsTo(Member::class);
+    }
+
+    public function retributionType(): BelongsTo
+    {
+        return $this->belongsTo(RetributionType::class);
     }
 
     public function journalEntry(): BelongsTo

@@ -2,6 +2,7 @@ code,name,type,group,normal_balance,is_postable,parent_code,statement,notes
 1000,ASET,ASET,,DEBIT,FALSE,,NERACA,Header
 1100,Aset Lancar,ASET,Aset Lancar,DEBIT,FALSE,1000,NERACA,Header
 1101,Kas,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,Kas di tangan / kas cabang (termasuk kas Teller)
+1101600,KAS AO RIDWAN (UPF),ASET,Aset Lancar,DEBIT,TRUE,1101,NERACA,v2 - Kas Petugas UPF (AO Ridwan) - default jurnal lawan (debit) untuk transaksi Retribusi UPF (umum & anggota)
 1102,Kas Kecil,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,Petty cash
 1110,Bank,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,Rekening bank koperasi
 1120,Piutang Pinjaman Anggota,ASET,Aset Lancar,DEBIT,TRUE,1100,NERACA,Pokok pinjaman beredar

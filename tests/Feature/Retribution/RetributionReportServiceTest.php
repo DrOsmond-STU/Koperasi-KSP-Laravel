@@ -4,6 +4,7 @@ namespace Tests\Feature\Retribution;
 
 use App\Models\Branch;
 use App\Models\ChartOfAccount;
+use App\Models\Member;
 use App\Models\RetributionType;
 use App\Models\User;
 use App\Services\Reporting\ReportBuilderService;
@@ -37,12 +38,16 @@ class RetributionReportServiceTest extends TestCase
         ]);
         $branch = Branch::factory()->create();
         $user = User::factory()->create();
+        // Split types (< 100%) hanya dipakai untuk transaksi Anggota;
+        // sample-nya pakai flow anggota supaya kedua jenis retribusi
+        // dijurnal via pembagian otomatis (RetributionSplitCalculator).
+        $member = Member::factory()->create(['name' => 'Ibu Sari']);
 
         app(RetributionService::class)->record(
             branchId: $branch->id,
-            payerType: 'umum',
-            payerName: 'Ibu Sari',
-            member: null,
+            payerType: 'anggota',
+            payerName: null,
+            member: $member,
             totalAmount: 100000,
             paymentMethod: 'tunai',
             createdBy: $user->id,

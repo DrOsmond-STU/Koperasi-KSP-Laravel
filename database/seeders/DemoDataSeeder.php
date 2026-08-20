@@ -513,21 +513,45 @@ class DemoDataSeeder extends Seeder
             return;
         }
 
-        $accounts = [
-            'RET-KBR' => ['name' => 'Retribusi Kebersihan', 'code' => '4302', 'pct' => 30],
-            'RET-KMN' => ['name' => 'Retribusi Keamanan', 'code' => '4303', 'pct' => 25],
-            'RET-LST' => ['name' => 'Retribusi Listrik', 'code' => '4304', 'pct' => 20],
-            'RET-AIR' => ['name' => 'Retribusi Air', 'code' => '4305', 'pct' => 15],
-            'RET-LNN' => ['name' => 'Retribusi Lainnya', 'code' => '4306', 'pct' => 10],
+        // Jenis retribusi "split" (persentase < 100, jumlahnya HARUS 100) —
+        // dipakai untuk pembagian otomatis pada transaksi Anggota.
+        $splitAccounts = [
+            '01' => ['name' => 'Retribusi Kebersihan', 'code' => '4302', 'pct' => 30, 'sort' => 1],
+            '02' => ['name' => 'Retribusi Keamanan', 'code' => '4303', 'pct' => 25, 'sort' => 2],
+            '03' => ['name' => 'Retribusi Listrik', 'code' => '4304', 'pct' => 20, 'sort' => 3],
+            '04' => ['name' => 'Retribusi Air', 'code' => '4305', 'pct' => 15, 'sort' => 4],
+            '05' => ['name' => 'Retribusi Lainnya', 'code' => '4306', 'pct' => 10, 'sort' => 5],
         ];
 
-        foreach ($accounts as $typeCode => $def) {
+        foreach ($splitAccounts as $typeCode => $def) {
             RetributionType::query()->updateOrCreate(
                 ['code' => $typeCode],
                 [
                     'name' => $def['name'],
                     'percentage' => $def['pct'],
                     'coa_revenue_account_id' => ChartOfAccount::query()->where('code', $def['code'])->firstOrFail()->id,
+                    'sort_order' => $def['sort'],
+                    'is_active' => true,
+                ]
+            );
+        }
+
+        // Jenis retribusi "umum" (persentase = 100, satu jenis satu transaksi)
+        // — dipakai untuk transaksi Umum (bukan anggota). Contoh bawaan:
+        // sewa fasilitas & jasa fasilitas lain di luar iuran bulanan.
+        $umumAccounts = [
+            '06' => ['name' => 'Retribusi Sewa Fasilitas', 'code' => '4301', 'sort' => 10],
+            '07' => ['name' => 'Retribusi Jasa Fasilitas Lain', 'code' => '4306', 'sort' => 11],
+        ];
+
+        foreach ($umumAccounts as $typeCode => $def) {
+            RetributionType::query()->updateOrCreate(
+                ['code' => $typeCode],
+                [
+                    'name' => $def['name'],
+                    'percentage' => 100,
+                    'coa_revenue_account_id' => ChartOfAccount::query()->where('code', $def['code'])->firstOrFail()->id,
+                    'sort_order' => $def['sort'],
                     'is_active' => true,
                 ]
             );
@@ -535,11 +559,13 @@ class DemoDataSeeder extends Seeder
 
         $retributionService = app(RetributionService::class);
         $branchId = Branch::query()->where('name', 'Kantor Pusat')->value('id');
+        $sewaType = RetributionType::query()->where('code', '06')->first();
 
-        // Kios/Blok anggota (index 4 & 5 dari createMembers()).
+        // Kios/Blok anggota (index 4 & 5 dari createMembers()) → split otomatis.
         $retributionService->record($branchId, 'anggota', null, $members[4], 150000, 'tunai', $this->petugasUpf->id, 'Iuran bulanan kios');
         $retributionService->record($branchId, 'anggota', null, $members[5], 100000, 'tunai', $this->petugasUpf->id, 'Iuran bulanan blok');
-        $retributionService->record($branchId, 'umum', 'Pedagang Kaki Lima Depan Pasar', null, 50000, 'tunai', $this->petugasUpf->id, 'Retribusi harian umum');
+        // Umum → wajib menunjuk satu jenis retribusi (100%).
+        $retributionService->record($branchId, 'umum', 'Pedagang Kaki Lima Depan Pasar', null, 50000, 'tunai', $this->petugasUpf->id, 'Retribusi harian umum', retributionType: $sewaType);
     }
 
     private function createBusinessUnits(): void
