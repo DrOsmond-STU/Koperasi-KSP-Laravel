@@ -1,20 +1,10 @@
 <?php
 
 use App\Http\Controllers\Admin\BrandingSettingsController;
-use App\Http\Controllers\Anggota\LoanApplicationController as MemberLoanApplicationController;
-use App\Http\Controllers\Anggota\LoanController as MemberLoanController;
-use App\Http\Controllers\Anggota\LoanRepaymentController;
-use App\Http\Controllers\Staf\LoanRepaymentController as StafLoanRepaymentController;
-use App\Http\Controllers\Anggota\PortalController;
-use App\Http\Controllers\Anggota\PrintLoanController as MemberPrintLoanController;
-use App\Http\Controllers\Anggota\PrintSavingsController as MemberPrintSavingsController;
-use App\Http\Controllers\Anggota\SavingsController as MemberSavingsController;
-use App\Http\Controllers\Anggota\SavingsDepositController;
-use App\Http\Controllers\Anggota\WithdrawalRequestController;
 use App\Http\Controllers\Admin\BusinessUnitController;
+use App\Http\Controllers\Admin\ChartOfAccountController;
 use App\Http\Controllers\Admin\CooperativeEventController;
 use App\Http\Controllers\Admin\CustomReportController;
-use App\Http\Controllers\Admin\LaporanController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FinancialReportController;
 use App\Http\Controllers\Admin\FixedAssetBarcodeController;
@@ -26,6 +16,7 @@ use App\Http\Controllers\Admin\GeneralJournalController;
 use App\Http\Controllers\Admin\GeneralLedgerController;
 use App\Http\Controllers\Admin\InventoryReportController;
 use App\Http\Controllers\Admin\JournalAdjustmentController;
+use App\Http\Controllers\Admin\LaporanController;
 use App\Http\Controllers\Admin\LoanApprovalController;
 use App\Http\Controllers\Admin\LoanProductController;
 use App\Http\Controllers\Admin\MemberCardController;
@@ -35,33 +26,43 @@ use App\Http\Controllers\Admin\MemberTypeController;
 use App\Http\Controllers\Admin\NotificationLogController;
 use App\Http\Controllers\Admin\NotificationTemplateController;
 use App\Http\Controllers\Admin\OpeningBalanceController;
-use App\Http\Controllers\InstallController;
-use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Admin\PrintLoanApplicationController;
 use App\Http\Controllers\Admin\PrintLoanController;
 use App\Http\Controllers\Admin\PrintLoanRepaymentController;
 use App\Http\Controllers\Admin\PrintSavingsController;
-use App\Http\Controllers\Admin\PrintWithdrawalRequestController;
 use App\Http\Controllers\Admin\PrintSettingsController;
+use App\Http\Controllers\Admin\PrintWithdrawalRequestController;
 use App\Http\Controllers\Admin\ProductBarcodeController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\PurchaseController;
 use App\Http\Controllers\Admin\PurchaseReturnController;
 use App\Http\Controllers\Admin\RatPackageController;
-use App\Http\Controllers\Admin\ChartOfAccountController;
 use App\Http\Controllers\Admin\RetributionTypeController;
 use App\Http\Controllers\Admin\RolePermissionController;
-use App\Http\Controllers\Admin\SignatureConfigController;
-use App\Http\Controllers\Staf\RetributionController;
 use App\Http\Controllers\Admin\SavingsProductController;
 use App\Http\Controllers\Admin\SecurityAuditController;
 use App\Http\Controllers\Admin\ShuController;
+use App\Http\Controllers\Admin\SignatureConfigController;
 use App\Http\Controllers\Admin\StockAdjustmentController;
 use App\Http\Controllers\Admin\SupplierController;
 use App\Http\Controllers\Admin\TarifParameterController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Anggota\LoanApplicationController as MemberLoanApplicationController;
+use App\Http\Controllers\Anggota\LoanController as MemberLoanController;
+use App\Http\Controllers\Anggota\LoanRepaymentController;
+use App\Http\Controllers\Anggota\PortalController;
+use App\Http\Controllers\Anggota\PrintLoanController as MemberPrintLoanController;
+use App\Http\Controllers\Anggota\PrintSavingsController as MemberPrintSavingsController;
+use App\Http\Controllers\Anggota\SavingsController as MemberSavingsController;
+use App\Http\Controllers\Anggota\SavingsDepositController;
+use App\Http\Controllers\Anggota\WithdrawalRequestController;
+use App\Http\Controllers\InstallController;
+use App\Http\Controllers\MfaSetupController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Staf\LoanApplicationController;
+use App\Http\Controllers\Staf\LoanRepaymentController as StafLoanRepaymentController;
 use App\Http\Controllers\Staf\PosController;
+use App\Http\Controllers\Staf\RetributionController;
 use App\Http\Controllers\Staf\SalesReturnController;
 use App\Http\Controllers\Staf\TellerCashController;
 use App\Http\Controllers\Staf\TellerController;
@@ -89,6 +90,16 @@ Route::get('/', function () {
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', fn () => view('auth.login'))->name('login');
+});
+
+// Wizard aktivasi MFA — SENGAJA di luar grup 'mfa.required' agar user yang
+// belum aktif MFA bisa sampai ke halamannya (kalau tidak, redirect loop dari
+// EnsureMfaIsEnabledForInternalRoles). Tetap dikawal 'auth' + 'active.user'
+// supaya hanya pemilik akun (dan bukan akun nonaktif) yang bisa akses.
+Route::middleware(['auth', 'active.user'])->prefix('mfa')->name('mfa.')->group(function () {
+    Route::get('/setup', [MfaSetupController::class, 'show'])->name('setup');
+    Route::post('/setup/confirm', [MfaSetupController::class, 'confirm'])->name('setup.confirm');
+    Route::post('/setup/regenerate', [MfaSetupController::class, 'regenerate'])->name('setup.regenerate');
 });
 
 Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
@@ -214,6 +225,8 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.users.deactivate');
     Route::post('/admin/pengguna/{user}/aktifkan', [UserController::class, 'reactivate'])
         ->name('admin.users.reactivate');
+    Route::post('/admin/pengguna/{user}/reset-mfa', [UserController::class, 'resetMfa'])
+        ->name('admin.users.reset-mfa');
 
     Route::get('/admin/role-permission', [RolePermissionController::class, 'index'])
         ->name('admin.role-permission.index');

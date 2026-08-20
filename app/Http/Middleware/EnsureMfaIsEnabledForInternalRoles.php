@@ -13,6 +13,12 @@ use Symfony\Component\HttpFoundation\Response;
  * berbeda dari alur "verifikasi 2FA saat login" bawaan Fortify, yang hanya
  * menegakkan MFA JIKA sudah diaktifkan. Middleware ini menutup celah:
  * user berperan internal yang belum pernah mengaktifkan 2FA tetap diblok.
+ *
+ * Alur: user yang wajib MFA tapi belum setup diarahkan ke wizard
+ * /mfa/setup — bukan di-403, supaya mereka bisa mengaktifkan MFA sendiri
+ * (scan QR + input kode) sebelum akhirnya dilepas ke sistem. Route
+ * mfa.setup sengaja TIDAK dilindungi middleware ini (lihat routes/web.php)
+ * agar tidak terjadi redirect loop.
  */
 class EnsureMfaIsEnabledForInternalRoles
 {
@@ -25,8 +31,10 @@ class EnsureMfaIsEnabledForInternalRoles
     {
         $user = $request->user();
 
-        if ($user && $user->requiresMfa() && ! $user->two_factor_confirmed_at) {
-            abort(403, 'Aktifkan autentikasi dua faktor (MFA) sebelum melanjutkan. Hubungi Admin Sistem bila perlu bantuan.');
+        if ($user && $user->needsMfaSetup()) {
+            return redirect()
+                ->route('mfa.setup')
+                ->with('status', 'Aktifkan autentikasi dua faktor (MFA) untuk melanjutkan.');
         }
 
         return $next($request);
