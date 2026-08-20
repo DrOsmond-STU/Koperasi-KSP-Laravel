@@ -3,6 +3,7 @@
 namespace App\Services\Retribution;
 
 use App\Models\RetributionTransaction;
+use App\Models\RetributionTransactionLine;
 use App\Models\RetributionType;
 use Illuminate\Support\Collection;
 
@@ -53,5 +54,74 @@ class RetributionReportService
 
             return $row;
         });
+    }
+
+    /**
+     * Rekap ringkas periode: total kas masuk + breakdown per jenis
+     * retribusi (nama, jumlah baris terpakai, total nilai) — dipakai oleh
+     * cetakan portrait "Rekap Pendapatan UPF" (periode harian s/d bulanan).
+     *
+     * Sumbernya `retribution_transaction_lines` (yang di-snapshot per
+     * transaksi) di-join ke header supaya bisa difilter branch/tanggal;
+     * transaksi yang dibatalkan (`cancelled_at IS NOT NULL`) DIKELUARKAN
+     * — jumlahnya sudah tercermin di jurnal pembalik dan tidak lagi
+     * jadi pendapatan.
+     *
+     * @param  array{branch_id?: int|null, period_start: string, period_end: string}  $filters
+     * @return array{
+     *     period_start: string,
+     *     period_end: string,
+     *     branch_id: int|null,
+     *     transaction_count: int,
+     *     transaction_count_umum: int,
+     *     transaction_count_anggota: int,
+     *     total_cash_in: float,
+     *     breakdown: array<int, array{name: string, count: int, total: float}>,
+     * }
+     */
+    public function rekapPendapatan(array $filters): array
+    {
+        $branchId = $filters['branch_id'] ?? null;
+        $start = $filters['period_start'];
+        $end = $filters['period_end'];
+
+        $baseTx = RetributionTransaction::query()
+            ->whereNull('cancelled_at')
+            ->where('transaction_date', '>=', $start)
+            ->where('transaction_date', '<=', $end)
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+
+        $totalCashIn = (float) (clone $baseTx)->sum('total_amount');
+        $transactionCount = (clone $baseTx)->count();
+        $transactionCountUmum = (clone $baseTx)->where('payer_type', 'umum')->count();
+        $transactionCountAnggota = (clone $baseTx)->where('payer_type', 'anggota')->count();
+
+        $breakdown = RetributionTransactionLine::query()
+            ->join('retribution_transactions', 'retribution_transactions.id', '=', 'retribution_transaction_lines.retribution_transaction_id')
+            ->whereNull('retribution_transactions.cancelled_at')
+            ->where('retribution_transactions.transaction_date', '>=', $start)
+            ->where('retribution_transactions.transaction_date', '<=', $end)
+            ->when($branchId, fn ($q) => $q->where('retribution_transactions.branch_id', $branchId))
+            ->selectRaw('retribution_transaction_lines.retribution_type_name as name, COUNT(*) as line_count, SUM(retribution_transaction_lines.amount) as total')
+            ->groupBy('retribution_transaction_lines.retribution_type_name')
+            ->orderByDesc('total')
+            ->get()
+            ->map(fn ($row) => [
+                'name' => $row->name,
+                'count' => (int) $row->line_count,
+                'total' => (float) $row->total,
+            ])
+            ->all();
+
+        return [
+            'period_start' => $start,
+            'period_end' => $end,
+            'branch_id' => $branchId,
+            'transaction_count' => $transactionCount,
+            'transaction_count_umum' => $transactionCountUmum,
+            'transaction_count_anggota' => $transactionCountAnggota,
+            'total_cash_in' => $totalCashIn,
+            'breakdown' => $breakdown,
+        ];
     }
 }

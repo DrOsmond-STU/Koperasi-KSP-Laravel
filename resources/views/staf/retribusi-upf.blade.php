@@ -435,6 +435,39 @@
         </div>
 
         <div class="panel">
+            <h3>Rekap Pendapatan UPF (Portrait)</h3>
+            <p style="color: var(--muted); font-size: 12px; margin-top: -4px; margin-bottom: 12px;">
+                Cetak PDF portrait berisi total kas masuk &amp; rekap per jenis retribusi.
+                Preset periode: <a href="#" data-preset-rekap="today" style="color:var(--pine);">Hari ini</a> ·
+                <a href="#" data-preset-rekap="2days" style="color:var(--pine);">2 hari</a> ·
+                <a href="#" data-preset-rekap="week" style="color:var(--pine);">1 minggu</a> ·
+                <a href="#" data-preset-rekap="month" style="color:var(--pine);">1 bulan</a>.
+            </p>
+            <form method="GET" action="{{ route('staf.retribusi-upf.print-rekap') }}" target="_blank" id="rekap-form">
+                <div class="field-row">
+                    <div class="field">
+                        <label>Periode Mulai</label>
+                        <input type="date" name="period_start" id="rekap-start" value="{{ now()->startOfMonth()->toDateString() }}" required>
+                    </div>
+                    <div class="field">
+                        <label>Periode Akhir</label>
+                        <input type="date" name="period_end" id="rekap-end" value="{{ now()->toDateString() }}" required>
+                    </div>
+                    <div class="field">
+                        <label>Cabang</label>
+                        <select name="branch_id">
+                            <option value="">Semua Cabang</option>
+                            @foreach ($branches as $branch)
+                                <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" class="btn-primary">Cetak Rekap</button>
+            </form>
+        </div>
+
+        <div class="panel">
             <h3>Konfigurasi Laporan</h3>
             <form method="POST" action="{{ route('staf.retribusi-upf.laporan') }}">
                 @csrf
@@ -643,5 +676,41 @@
                 form.style.display = form.style.display === 'none' ? 'flex' : 'none';
             });
         });
+
+        // Preset periode untuk form Rekap Pendapatan UPF (harian, 2 hari, 1
+        // minggu, 1 bulan) — hanya mengisi input tanggal; user tetap klik
+        // tombol "Cetak Rekap" untuk membuka PDF.
+        (function () {
+            var startInput = document.getElementById('rekap-start');
+            var endInput = document.getElementById('rekap-end');
+            if (!startInput || !endInput) return;
+
+            function toDateInputValue(d) {
+                var y = d.getFullYear();
+                var m = ('0' + (d.getMonth() + 1)).slice(-2);
+                var day = ('0' + d.getDate()).slice(-2);
+                return y + '-' + m + '-' + day;
+            }
+
+            document.querySelectorAll('[data-preset-rekap]').forEach(function (link) {
+                link.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    var preset = link.dataset.presetRekap;
+                    var end = new Date();
+                    var start = new Date();
+                    if (preset === 'today') {
+                        // start === end === today
+                    } else if (preset === '2days') {
+                        start.setDate(end.getDate() - 1);
+                    } else if (preset === 'week') {
+                        start.setDate(end.getDate() - 6);
+                    } else if (preset === 'month') {
+                        start.setDate(end.getDate() - 29);
+                    }
+                    startInput.value = toDateInputValue(start);
+                    endInput.value = toDateInputValue(end);
+                });
+            });
+        })();
     </script>
 @endsection

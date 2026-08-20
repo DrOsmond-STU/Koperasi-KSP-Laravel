@@ -100,4 +100,49 @@ class RetributionReportServiceTest extends TestCase
             'period_end' => now()->addDay()->toDateString(),
         ]);
     }
+
+    public function test_rekap_pendapatan_totals_cash_and_breaks_down_by_jenis(): void
+    {
+        $this->recordSampleTransaction();
+
+        $rekap = app(RetributionReportService::class)->rekapPendapatan([
+            'branch_id' => null,
+            'period_start' => now()->subDay()->toDateString(),
+            'period_end' => now()->addDay()->toDateString(),
+        ]);
+
+        $this->assertEquals(1, $rekap['transaction_count']);
+        $this->assertEquals(1, $rekap['transaction_count_anggota']);
+        $this->assertEquals(0, $rekap['transaction_count_umum']);
+        $this->assertEquals(100000.0, $rekap['total_cash_in']);
+        $this->assertCount(2, $rekap['breakdown']);
+        // Highest total (60% split) berada di atas.
+        $this->assertEquals('Retribusi Kebersihan', $rekap['breakdown'][0]['name']);
+        $this->assertEquals(60000.0, $rekap['breakdown'][0]['total']);
+        $this->assertEquals(40000.0, $rekap['breakdown'][1]['total']);
+        // Σbreakdown === total_cash_in (invariant journal-lawan)
+        $this->assertEquals(
+            $rekap['total_cash_in'],
+            array_sum(array_column($rekap['breakdown'], 'total')),
+        );
+    }
+
+    public function test_rekap_pendapatan_excludes_cancelled_transactions(): void
+    {
+        $this->recordSampleTransaction();
+
+        // Batalkan transaksi terakhir — rekap seharusnya turun ke nol.
+        $tx = \App\Models\RetributionTransaction::query()->latest('id')->firstOrFail();
+        app(RetributionService::class)->reverseTransaction($tx, 'Salah input', User::factory()->create()->id);
+
+        $rekap = app(RetributionReportService::class)->rekapPendapatan([
+            'branch_id' => null,
+            'period_start' => now()->subDay()->toDateString(),
+            'period_end' => now()->addDay()->toDateString(),
+        ]);
+
+        $this->assertEquals(0, $rekap['transaction_count']);
+        $this->assertEquals(0.0, $rekap['total_cash_in']);
+        $this->assertSame([], $rekap['breakdown']);
+    }
 }

@@ -140,6 +140,39 @@ class RetributionController extends Controller
     }
 
     /**
+     * Cetak "Rekap Pendapatan UPF" (potrait, periode fleksibel harian s/d
+     * bulanan). Menampilkan breakdown per jenis retribusi + total kas
+     * masuk. Reuse RetributionReportService::rekapPendapatan().
+     */
+    public function printRekap(Request $request): Response
+    {
+        $this->authorize('retribusi_upf.read');
+
+        $branchId = $this->resolveBranchId($request);
+        $periodStart = $request->date('period_start')?->toDateString() ?: now()->startOfMonth()->toDateString();
+        $periodEnd = $request->date('period_end')?->toDateString() ?: now()->toDateString();
+
+        // Guard: kalau end < start, swap otomatis supaya cetakan tetap
+        // masuk akal dan tidak menampilkan hasil kosong yang membingungkan.
+        if ($periodEnd < $periodStart) {
+            [$periodStart, $periodEnd] = [$periodEnd, $periodStart];
+        }
+
+        $rekap = $this->reportService->rekapPendapatan([
+            'branch_id' => $branchId,
+            'period_start' => $periodStart,
+            'period_end' => $periodEnd,
+        ]);
+
+        $pdf = $this->renderPrintPdf('prints.laporan.upf-rekap', [
+            'rekap' => $rekap,
+            'branch' => $branchId ? Branch::query()->find($branchId) : null,
+        ], orientationOverride: 'portrait');
+
+        return $pdf->download('rekap-upf-'.$periodStart.'_sd_'.$periodEnd.'.pdf');
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function baseViewData(Request $request): array
