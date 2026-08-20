@@ -77,15 +77,27 @@
             </table>
             <p class="{{ $neraca['is_balanced'] ? 'badge-ok' : 'badge-bad' }}">{{ $neraca['is_balanced'] ? 'Seimbang' : 'TIDAK SEIMBANG' }}</p>
         @endif
-        <form method="POST" action="{{ route('admin.laporan-keuangan.export') }}">
-            @csrf
-            <input type="hidden" name="report_kind" value="neraca">
-            <input type="hidden" name="basis" value="{{ $basis }}">
-            <input type="hidden" name="branch_id" value="{{ $selectedBranchId }}">
-            <input type="hidden" name="as_of_date" value="{{ $asOfDate }}">
-            <select name="format"><option value="pdf">PDF</option><option value="xlsx">Excel</option></select>
-            <button type="submit" class="btn-primary">Ekspor</button>
-        </form>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-top:10px;">
+            <form method="POST" action="{{ route('admin.laporan-keuangan.export') }}" style="display:flex; gap:8px; align-items:center;">
+                @csrf
+                <input type="hidden" name="report_kind" value="neraca">
+                <input type="hidden" name="basis" value="{{ $basis }}">
+                <input type="hidden" name="branch_id" value="{{ $selectedBranchId }}">
+                <input type="hidden" name="as_of_date" value="{{ $asOfDate }}">
+                <select name="format"><option value="pdf">PDF (Stafel)</option><option value="xlsx">Excel</option></select>
+                <button type="submit" class="btn-primary">Ekspor</button>
+            </form>
+
+            {{-- Cetak langsung Bentuk SKONTRO (horizontal/T-form) — aktiva
+                 kiri, pasiva kanan. Tidak lewat antrian queue: PDF langsung
+                 di-stream untuk dibuka/di-download oleh user. --}}
+            <form method="GET" action="{{ route('admin.laporan-keuangan.print-scontro') }}" target="_blank" style="display:flex; gap:8px; align-items:center;">
+                <input type="hidden" name="basis" value="{{ $basis }}">
+                <input type="hidden" name="branch_id" value="{{ $selectedBranchId }}">
+                <input type="hidden" name="as_of_date" value="{{ $asOfDate }}">
+                <button type="submit" class="btn-primary" style="background:#3D5A4B;">Cetak Skontro (Landscape)</button>
+            </form>
+        </div>
     </div>
 
     <div class="panel">

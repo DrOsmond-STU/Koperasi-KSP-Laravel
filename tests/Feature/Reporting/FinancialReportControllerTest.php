@@ -51,4 +51,32 @@ class FinancialReportControllerTest extends TestCase
         $response->assertRedirect(route('admin.laporan-keuangan.exports'));
         $this->assertDatabaseCount('financial_report_exports', 1);
     }
+
+    public function test_manajer_can_print_neraca_scontro(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+        $user = User::factory()->create(['two_factor_confirmed_at' => now()]);
+        $user->assignRole('manajer');
+        UserBranchScope::query()->create(['user_id' => $user->id, 'scope_type' => 'all']);
+
+        $response = $this->actingAs($user)->get(route('admin.laporan-keuangan.print-scontro', [
+            'basis' => 'sak_ep',
+            'as_of_date' => now()->toDateString(),
+        ]));
+
+        $response->assertOk();
+        $this->assertSame('application/pdf', $response->headers->get('content-type'));
+    }
+
+    public function test_role_without_permission_cannot_print_neraca_scontro(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+        $user = User::factory()->create(['two_factor_confirmed_at' => now()]);
+        $user->assignRole('petugas_upf');
+        UserBranchScope::query()->create(['user_id' => $user->id, 'scope_type' => 'all']);
+
+        $this->actingAs($user)->get(route('admin.laporan-keuangan.print-scontro', [
+            'as_of_date' => now()->toDateString(),
+        ]))->assertForbidden();
+    }
 }

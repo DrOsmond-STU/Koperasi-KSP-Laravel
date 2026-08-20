@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Concerns\GeneratesPrintPdf;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ExportFinancialReportRequest;
 use App\Jobs\GenerateFinancialReport;
@@ -12,10 +13,13 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class FinancialReportController extends Controller
 {
+    use GeneratesPrintPdf;
+
     public function __construct(private readonly FinancialReportEngine $engine) {}
 
     public function index(Request $request): View
@@ -77,6 +81,37 @@ class FinancialReportController extends Controller
                 ->limit(30)
                 ->get(),
         ]);
+    }
+
+    /**
+     * Cetak Neraca dalam BENTUK SKONTRO (horizontal/T-form): AKTIVA di
+     * kolom kiri, PASIVA (Liabilitas + Ekuitas) di kolom kanan. Berbeda
+     * dari export() async yang menghasilkan bentuk stafel (vertikal),
+     * cetakan ini mengembalikan PDF secara langsung ke browser — reuse
+     * FinancialReportEngine::neraca() sebagai sumber data tunggal supaya
+     * angka di layar (index.blade.php), ekspor stafel (pdf.blade.php),
+     * dan cetakan skontro (neraca-scontro.blade.php) selalu identik.
+     * Landscape dipaksa karena dua kolom sisi-sisi tidak muat di portrait.
+     */
+    public function printScontro(Request $request): Response
+    {
+        $this->authorize('laporan_keuangan.read');
+
+        $branchId = $this->resolveBranchId($request);
+        $basis = $request->input('basis', 'sak_ep');
+        $asOfDate = $request->input('as_of_date', now()->toDateString());
+        $branch = $branchId ? Branch::query()->find($branchId) : null;
+
+        $data = $this->engine->neraca($branchId, $asOfDate, $basis);
+
+        $pdf = $this->renderPrintPdf('prints.laporan.neraca-scontro', [
+            'data' => $data,
+            'branchName' => $branch?->name,
+        ], orientationOverride: 'landscape');
+
+        $filename = 'neraca-scontro-'.$asOfDate.($branchId ? '-cab'.$branchId : '-konsolidasi').'.pdf';
+
+        return $pdf->stream($filename);
     }
 
     public function download(FinancialReportExport $export): StreamedResponse

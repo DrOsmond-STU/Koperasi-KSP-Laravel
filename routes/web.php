@@ -182,6 +182,8 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.laporan-keuangan.exports');
     Route::get('/admin/laporan-keuangan/ekspor/{export}/unduh', [FinancialReportController::class, 'download'])
         ->name('admin.laporan-keuangan.download');
+    Route::get('/admin/laporan-keuangan/neraca-scontro/cetak', [FinancialReportController::class, 'printScontro'])
+        ->name('admin.laporan-keuangan.print-scontro');
 
     Route::get('/admin/shu', [ShuController::class, 'index'])
         ->name('admin.shu.index');

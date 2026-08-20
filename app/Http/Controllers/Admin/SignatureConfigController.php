@@ -32,6 +32,7 @@ class SignatureConfigController extends Controller
         'aktiva_tetap' => ['Diketahui/Disetujui oleh (Pengurus)'],
         'laporan_kas_bank' => ['Pengurus'],
         'laporan_upf' => ['Pengurus'],
+        'laporan_keuangan' => ['Disusun oleh (Bendahara)', 'Diperiksa oleh (Pengurus)', 'Disetujui oleh (Ketua Koperasi)'],
         'unit_usaha' => ['Diketahui oleh (Pengurus)'],
     ];
 
