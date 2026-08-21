@@ -57,10 +57,14 @@
             </tr>
         </thead>
         <tbody>
+            {{-- Daftar SEMUA jenis retribusi aktif (dijamin oleh
+                 RetributionReportService::rekapPendapatan) — jenis yang
+                 tidak bertransaksi tetap tampil dengan angka nol supaya
+                 pengurus melihat cakupan lengkap tarif yang berlaku. --}}
             @php $breakdownTotal = 0; @endphp
             @forelse ($rekap['breakdown'] as $i => $row)
                 @php $breakdownTotal += $row['total']; @endphp
-                <tr>
+                <tr @if ($row['count'] === 0) style="color:#5C6E64;" @endif>
                     <td style="text-align:center;">{{ $i + 1 }}</td>
                     <td>{{ $row['name'] }}</td>
                     <td style="text-align:right;">{{ number_format($row['count'], 0, ',', '.') }}</td>
@@ -69,7 +73,8 @@
             @empty
                 <tr>
                     <td colspan="4" style="text-align:center; color:#5C6E64;">
-                        Tidak ada transaksi retribusi pada periode ini.
+                        Belum ada jenis retribusi aktif. Silakan tambahkan
+                        di menu Pengaturan &raquo; Jenis Retribusi.
                     </td>
                 </tr>
             @endforelse

@@ -131,7 +131,10 @@ class RetributionReportServiceTest extends TestCase
     {
         $this->recordSampleTransaction();
 
-        // Batalkan transaksi terakhir — rekap seharusnya turun ke nol.
+        // Batalkan transaksi terakhir — angka-angka turun ke nol, tapi
+        // breakdown TETAP menampilkan seluruh jenis retribusi aktif
+        // dengan count 0 & total 0 (permintaan pengurus: rekap harus
+        // memperlihatkan daftar jenis retribusi walau kosong).
         $tx = \App\Models\RetributionTransaction::query()->latest('id')->firstOrFail();
         app(RetributionService::class)->reverseTransaction($tx, 'Salah input', User::factory()->create()->id);
 
@@ -143,6 +146,57 @@ class RetributionReportServiceTest extends TestCase
 
         $this->assertEquals(0, $rekap['transaction_count']);
         $this->assertEquals(0.0, $rekap['total_cash_in']);
-        $this->assertSame([], $rekap['breakdown']);
+        $this->assertCount(2, $rekap['breakdown']);
+        foreach ($rekap['breakdown'] as $row) {
+            $this->assertSame(0, $row['count']);
+            $this->assertSame(0.0, $row['total']);
+        }
+        $names = array_column($rekap['breakdown'], 'name');
+        $this->assertContains('Retribusi Kebersihan', $names);
+        $this->assertContains('Retribusi Keamanan', $names);
+    }
+
+    public function test_rekap_pendapatan_shows_active_jenis_with_zero_when_no_transactions(): void
+    {
+        // Buat 2 jenis retribusi aktif dan 1 non-aktif, TANPA transaksi
+        // apapun — breakdown harus memuat 2 baris aktif (masing-masing
+        // count 0 & total 0), dan tidak memuat yang non-aktif.
+        ChartOfAccount::factory()->create(['code' => '1101']);
+        RetributionType::factory()->create([
+            'name' => 'Retribusi Kebersihan',
+            'coa_revenue_account_id' => ChartOfAccount::factory()->create()->id,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        RetributionType::factory()->create([
+            'name' => 'Retribusi Keamanan',
+            'coa_revenue_account_id' => ChartOfAccount::factory()->create()->id,
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+        RetributionType::factory()->create([
+            'name' => 'Retribusi Lama (Non-aktif)',
+            'coa_revenue_account_id' => ChartOfAccount::factory()->create()->id,
+            'is_active' => false,
+            'sort_order' => 3,
+        ]);
+
+        $rekap = app(RetributionReportService::class)->rekapPendapatan([
+            'branch_id' => null,
+            'period_start' => now()->subDay()->toDateString(),
+            'period_end' => now()->addDay()->toDateString(),
+        ]);
+
+        $this->assertEquals(0, $rekap['transaction_count']);
+        $this->assertEquals(0.0, $rekap['total_cash_in']);
+        $this->assertCount(2, $rekap['breakdown']);
+        // Urutan mengikuti sort_order (Kebersihan lebih dulu).
+        $this->assertEquals('Retribusi Kebersihan', $rekap['breakdown'][0]['name']);
+        $this->assertSame(0, $rekap['breakdown'][0]['count']);
+        $this->assertSame(0.0, $rekap['breakdown'][0]['total']);
+        $this->assertEquals('Retribusi Keamanan', $rekap['breakdown'][1]['name']);
+        // Non-aktif tidak dimunculkan.
+        $names = array_column($rekap['breakdown'], 'name');
+        $this->assertNotContains('Retribusi Lama (Non-aktif)', $names);
     }
 }

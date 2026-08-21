@@ -96,7 +96,7 @@ class RetributionReportService
         $transactionCountUmum = (clone $baseTx)->where('payer_type', 'umum')->count();
         $transactionCountAnggota = (clone $baseTx)->where('payer_type', 'anggota')->count();
 
-        $breakdown = RetributionTransactionLine::query()
+        $counted = RetributionTransactionLine::query()
             ->join('retribution_transactions', 'retribution_transactions.id', '=', 'retribution_transaction_lines.retribution_transaction_id')
             ->whereNull('retribution_transactions.cancelled_at')
             ->where('retribution_transactions.transaction_date', '>=', $start)
@@ -104,14 +104,34 @@ class RetributionReportService
             ->when($branchId, fn ($q) => $q->where('retribution_transactions.branch_id', $branchId))
             ->selectRaw('retribution_transaction_lines.retribution_type_name as name, COUNT(*) as line_count, SUM(retribution_transaction_lines.amount) as total')
             ->groupBy('retribution_transaction_lines.retribution_type_name')
-            ->orderByDesc('total')
             ->get()
             ->map(fn ($row) => [
-                'name' => $row->name,
+                'name' => (string) $row->name,
                 'count' => (int) $row->line_count,
                 'total' => (float) $row->total,
             ])
-            ->all();
+            ->keyBy('name');
+
+        // Setiap jenis retribusi yang aktif harus tetap tampil — kalau
+        // periode ini belum ada transaksi untuk jenisnya, tampilkan
+        // barisnya dengan count 0 & total Rp 0 (permintaan pengurus:
+        // rekap harus menunjukkan seluruh jenis retribusi yang berlaku,
+        // bukan hanya yang bertransaksi). Nama diambil dari master supaya
+        // ejaan konsisten dengan pengaturan terkini.
+        $activeTypeNames = RetributionType::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->pluck('name');
+
+        $nonZero = $counted->values()->sortByDesc('total')->values();
+
+        $zeroRows = $activeTypeNames
+            ->reject(fn (string $name) => $counted->has($name))
+            ->map(fn (string $name) => ['name' => $name, 'count' => 0, 'total' => 0.0])
+            ->values();
+
+        $breakdown = $nonZero->concat($zeroRows)->values()->all();
 
         return [
             'period_start' => $start,
