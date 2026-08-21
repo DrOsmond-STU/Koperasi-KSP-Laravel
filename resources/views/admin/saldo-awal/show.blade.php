@@ -39,6 +39,13 @@
         <p><span class="locked-badge">🔒 Dikunci oleh {{ $batch->lockedBy->name ?? '-' }} pada {{ $batch->locked_at?->translatedFormat('d M Y H:i') }}</span></p>
     @endif
 
+    <p style="margin: 8px 0 16px;">
+        <a href="{{ route('admin.saldo-awal.cetak', $batch) }}" target="_blank"
+           style="display:inline-block; padding: 9px 16px; background: var(--pine); color: #fff; border-radius: 9px; text-decoration: none; font-weight: 700; font-size: 13px;">
+            📄 Cetak Laporan Saldo Awal (PDF lengkap 6 seksi)
+        </a>
+    </p>
+
     @if (session('status'))
         <p class="status-msg">{{ session('status') }}</p>
     @endif

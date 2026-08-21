@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Exceptions\OpeningBalance\OpeningBalanceLockException;
+use App\Http\Controllers\Concerns\GeneratesPrintPdf;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ImportOpeningBalanceRequest;
 use App\Http\Requests\StoreOpeningBalanceBatchRequest;
@@ -30,6 +31,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OpeningBalanceController extends Controller
 {
+    use GeneratesPrintPdf;
+
     private const SUB_MODULES = ['savings', 'loans', 'installments', 'coa', 'upf', 'stock'];
 
     public function __construct(
@@ -84,6 +87,75 @@ class OpeningBalanceController extends Controller
             'retributionTypes' => RetributionType::query()->where('is_active', true)->orderBy('sort_order')->get(['id', 'code', 'name']),
             'products' => Product::query()->where('is_active', true)->orderBy('name')->get(['id', 'code', 'name']),
         ]);
+    }
+
+    /**
+     * Cetakan konsolidasi "Laporan Saldo Awal" per batch (per cabang) —
+     * satu PDF berisi 6 seksi: Neraca Saldo Awal, Neraca Saldo (trial
+     * balance), Daftar Pinjaman Aktif, Daftar Simpanan, Historis Pembayaran
+     * (opening_balance_installments yg sudah paid), dan Jadwal Angsuran
+     * (opening_balance_installments yg belum paid). Sumber data adalah
+     * relasi yang sudah di-eager-load di show(); ini me-load ulang supaya
+     * response terpisah dari layar interaktif. Landscape dipaksa karena
+     * tabel Jadwal Angsuran memuat banyak kolom.
+     */
+    public function cetakLaporan(OpeningBalanceBatch $batch)
+    {
+        $this->authorize('saldo_awal.read');
+
+        $batch->load([
+            'branch',
+            'savings.member', 'savings.savingsProduct',
+            'loans.member', 'loans.loanProduct', 'loans.installments',
+            'coaLines.account',
+        ]);
+
+        // Kelompokkan angsuran legacy: yang paid_at != null masuk historis,
+        // yang null masuk jadwal (belum jatuh tempo dibayarkan).
+        $allInstallments = $batch->loans->flatMap(fn ($l) => $l->installments);
+        $historis = $allInstallments->filter(fn ($i) => $i->paid_at !== null)
+            ->sortBy(fn ($i) => $i->paid_at?->timestamp)
+            ->values();
+        $jadwal = $allInstallments->filter(fn ($i) => $i->paid_at === null)
+            ->sortBy(fn ($i) => $i->due_date?->timestamp)
+            ->values();
+
+        // Trial balance (Neraca Saldo) — kelompokkan COA lines per akun,
+        // tampilkan sisi debit/kredit sesuai posting.
+        $trialBalance = $batch->coaLines
+            ->groupBy('chart_of_account_id')
+            ->map(function ($lines) {
+                $first = $lines->first();
+                $debit = (float) $lines->where('position', 'debit')->sum('amount');
+                $kredit = (float) $lines->where('position', 'kredit')->sum('amount');
+
+                return [
+                    'account' => $first->account,
+                    'debit' => $debit,
+                    'kredit' => $kredit,
+                ];
+            })
+            ->values();
+
+        // Neraca (posisi keuangan) — pisahkan berdasarkan tipe akun.
+        // Enum type COA: ASET, LIABILITAS, EKUITAS, PENDAPATAN, BEBAN.
+        $neracaAktiva = $trialBalance->filter(fn ($r) => $r['account']->type === 'ASET')->values();
+        $neracaKewajiban = $trialBalance->filter(fn ($r) => $r['account']->type === 'LIABILITAS')->values();
+        $neracaEkuitas = $trialBalance->filter(fn ($r) => $r['account']->type === 'EKUITAS')->values();
+
+        $pdf = $this->renderPrintPdf('prints.laporan.saldo-awal', [
+            'batch' => $batch,
+            'trialBalance' => $trialBalance,
+            'neracaAktiva' => $neracaAktiva,
+            'neracaKewajiban' => $neracaKewajiban,
+            'neracaEkuitas' => $neracaEkuitas,
+            'historis' => $historis,
+            'jadwal' => $jadwal,
+        ], orientationOverride: 'landscape');
+
+        $filename = 'laporan-saldo-awal-cab'.$batch->branch_id.'-'.$batch->cutoff_date->toDateString().'.pdf';
+
+        return $pdf->stream($filename);
     }
 
     public function import(ImportOpeningBalanceRequest $request, OpeningBalanceBatch $batch, string $subModule): RedirectResponse

@@ -33,6 +33,13 @@
     </form>
 
     @if ($selectedAccount)
+        <p style="margin: 8px 0 14px;">
+            <a href="{{ route('admin.jurnal-buku-besar.print', request()->only(['chart_of_account_id', 'branch_id', 'period_start', 'period_end'])) }}"
+               target="_blank"
+               style="display:inline-block; padding:8px 14px; background:var(--pine); color:#fff; border-radius:8px; text-decoration:none; font-weight:700; font-size:12px;">
+                Cetak PDF (Kartu Buku Besar)
+            </a>
+        </p>
         <table class="data-table">
             <thead><tr><th>Tanggal</th><th>Keterangan</th><th>Debit</th><th>Kredit</th><th>Saldo Berjalan</th></tr></thead>
             <tbody>

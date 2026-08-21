@@ -22,7 +22,8 @@ class StoreSignatureSlotRequest extends FormRequest
             'document_group' => ['required', Rule::in([
                 'pengajuan_pinjaman', 'pengajuan_penarikan', 'kas_keluar', 'kas_masuk',
                 'jurnal_umum', 'dokumen_gudang', 'aktiva_tetap', 'laporan_kas_bank',
-                'laporan_upf', 'laporan_keuangan', 'unit_usaha',
+                'laporan_upf', 'laporan_keuangan', 'unit_usaha', 'laporan',
+                'laporan_saldo_awal',
             ])],
             'label' => ['required', 'string', 'max:100'],
             'document_signatory_id' => ['nullable', Rule::exists('document_signatories', 'id')],

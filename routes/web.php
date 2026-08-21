@@ -27,6 +27,7 @@ use App\Http\Controllers\Admin\GeneralLedgerController;
 use App\Http\Controllers\Admin\InventoryReportController;
 use App\Http\Controllers\Admin\JournalAdjustmentController;
 use App\Http\Controllers\Admin\LoanApprovalController;
+use App\Http\Controllers\Admin\LoanPerMemberReportController;
 use App\Http\Controllers\Admin\LoanProductController;
 use App\Http\Controllers\Admin\MemberCardController;
 use App\Http\Controllers\Admin\MemberCardTemplateController;
@@ -161,6 +162,15 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
 
     Route::get('/admin/jurnal-buku-besar', [GeneralLedgerController::class, 'index'])
         ->name('admin.jurnal-buku-besar.index');
+    Route::get('/admin/jurnal-buku-besar/cetak', [GeneralLedgerController::class, 'print'])
+        ->name('admin.jurnal-buku-besar.print');
+
+    Route::get('/admin/laporan/pinjaman-per-anggota', [LoanPerMemberReportController::class, 'index'])
+        ->name('admin.laporan.pinjaman-per-anggota.index');
+    Route::get('/admin/laporan/pinjaman-per-anggota/cetak', [LoanPerMemberReportController::class, 'print'])
+        ->name('admin.laporan.pinjaman-per-anggota.print');
+    Route::get('/admin/saldo-awal/{batch}/cetak', [OpeningBalanceController::class, 'cetakLaporan'])
+        ->name('admin.saldo-awal.cetak');
 
     Route::get('/admin/jurnal-penyesuaian', [JournalAdjustmentController::class, 'create'])
         ->name('admin.jurnal-penyesuaian.create');

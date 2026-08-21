@@ -2,15 +2,19 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Concerns\GeneratesPrintPdf;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\ChartOfAccount;
 use App\Services\Accounting\GeneralLedgerService;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 
 class GeneralLedgerController extends Controller
 {
+    use GeneratesPrintPdf;
+
     public function __construct(private readonly GeneralLedgerService $ledgerService) {}
 
     public function index(Request $request): View
@@ -34,6 +38,45 @@ class GeneralLedgerController extends Controller
             'selectedBranchId' => $branchId,
             'isConsolidated' => $branchId === null,
         ]);
+    }
+
+    /**
+     * Cetakan Kartu Buku Besar per Akun — sumber data tunggal
+     * GeneralLedgerService::linesFor() supaya angka di layar (index) dan
+     * cetakan selalu identik. Landscape dipaksa karena kolom saldo berjalan
+     * + debit/kredit tidak nyaman di portrait.
+     */
+    public function print(Request $request): Response
+    {
+        $this->authorize('jurnal.read');
+
+        $accountId = $request->integer('chart_of_account_id') ?: null;
+        abort_if($accountId === null, 400, 'Pilih akun terlebih dahulu.');
+
+        $account = ChartOfAccount::query()->findOrFail($accountId);
+        abort_unless($account->is_postable, 400, 'Akun header tidak dapat dicetak buku besarnya.');
+
+        $branchId = $this->resolveBranchId($request);
+        $periodStart = $request->input('period_start', now()->startOfMonth()->toDateString());
+        $periodEnd = $request->input('period_end', now()->toDateString());
+        $branch = $branchId ? Branch::query()->find($branchId) : null;
+
+        $lines = $this->ledgerService->linesFor($account, $branchId, $periodStart, $periodEnd);
+        $openingBalance = $this->ledgerService->balanceFor($account, $branchId, \Illuminate\Support\Carbon::parse($periodStart)->subDay()->toDateString());
+
+        $pdf = $this->renderPrintPdf('prints.laporan.buku-besar', [
+            'account' => $account,
+            'lines' => $lines,
+            'openingBalance' => $openingBalance,
+            'periodStart' => $periodStart,
+            'periodEnd' => $periodEnd,
+            'branchName' => $branch?->name,
+            'isConsolidated' => $branchId === null,
+        ], orientationOverride: 'landscape');
+
+        $filename = 'buku-besar-'.$account->code.'-'.$periodStart.'_sd_'.$periodEnd.($branchId ? '-cab'.$branchId : '-konsolidasi').'.pdf';
+
+        return $pdf->stream($filename);
     }
 
     private function resolveBranchId(Request $request): ?int

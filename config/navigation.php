@@ -82,6 +82,7 @@ return [
             'items' => [
                 ['label' => 'Laporan Keuangan', 'route' => 'admin.laporan-keuangan.index', 'permission' => 'laporan_keuangan.read', 'icon' => 'bar-chart'],
                 ['label' => 'Laporan', 'route' => 'admin.laporan.index', 'permission' => 'laporan.read', 'icon' => 'list'],
+                ['label' => 'Pinjaman per Anggota', 'route' => 'admin.laporan.pinjaman-per-anggota.index', 'permission' => 'laporan.read', 'icon' => 'credit-card'],
                 ['label' => 'Report Builder', 'route' => 'admin.laporan-kustom.index', 'permission' => 'laporan_kustom.read', 'icon' => 'pie-chart'],
                 ['label' => 'SHU', 'route' => 'admin.shu.index', 'permission' => 'shu.read', 'icon' => 'trending-up'],
                 ['label' => 'Paket RAT', 'route' => 'admin.rat.paket.download', 'permission' => 'rat.compose', 'icon' => 'download'],
