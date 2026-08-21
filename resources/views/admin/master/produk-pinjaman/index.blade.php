@@ -8,7 +8,10 @@
         .data-table th, .data-table td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
         .data-table th { background: var(--paper); font-weight: 700; color: var(--muted); }
         .btn-primary { display: inline-block; padding: 9px 16px; background: var(--pine); color: #fff; border-radius: 9px; text-decoration: none; font-weight: 700; font-size: 13px; }
+        .btn-edit { display: inline-block; padding: 5px 12px; background: var(--paper); color: var(--pine); border: 1px solid var(--line); border-radius: 7px; text-decoration: none; font-weight: 600; font-size: 12px; }
+        .btn-edit:hover { background: var(--pine); color: #fff; }
         .status-msg { color: var(--ok); font-size: 13px; margin-bottom: 14px; }
+        .badge-inactive { display: inline-block; padding: 2px 8px; background: #F1F1F1; color: #7A7A7A; border-radius: 999px; font-size: 11px; font-weight: 600; margin-left: 6px; }
     </style>
 
     <h2>Master Produk Pinjaman</h2>
@@ -24,21 +27,29 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th>Kode</th><th>Nama</th><th>Plafon</th><th>Tenor</th><th>Metode</th><th>Ambang Approval</th>
+                <th>Kode</th><th>Nama</th><th>Plafon</th><th>Tenor</th><th>Metode</th><th>Ambang Approval</th><th style="width: 90px;">Aksi</th>
             </tr>
         </thead>
         <tbody>
             @forelse ($products as $product)
                 <tr>
                     <td>{{ $product->code }}</td>
-                    <td>{{ $product->name }}</td>
+                    <td>
+                        {{ $product->name }}
+                        @if (! $product->is_active)<span class="badge-inactive">non-aktif</span>@endif
+                    </td>
                     <td>Rp {{ number_format($product->min_plafon, 0, ',', '.') }} – Rp {{ number_format($product->max_plafon, 0, ',', '.') }}</td>
                     <td>{{ $product->min_tenor_days }}–{{ $product->max_tenor_days }} hari</td>
                     <td>{{ ucfirst($product->calculation_method) }}</td>
                     <td>{{ $product->approval_threshold ? 'Rp '.number_format($product->approval_threshold, 0, ',', '.').' (2 approval di atasnya)' : '1 approval' }}</td>
+                    <td>
+                        @can('master_data.update')
+                            <a href="{{ route('admin.master.loan-products.edit', $product) }}" class="btn-edit">Ubah</a>
+                        @endcan
+                    </td>
                 </tr>
             @empty
-                <tr><td colspan="6">Belum ada produk pinjaman — tambahkan yang pertama.</td></tr>
+                <tr><td colspan="7">Belum ada produk pinjaman — tambahkan yang pertama.</td></tr>
             @endforelse
         </tbody>
     </table>
