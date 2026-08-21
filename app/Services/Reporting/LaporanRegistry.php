@@ -443,6 +443,122 @@ class LaporanRegistry
                 'filterable' => ['role', 'status'],
                 'date_column' => null,
             ],
+
+            // ---------------------------------------------------------------
+            // Saldo Awal & Migrasi
+            //
+            // Enam entri di bawah membaca dari tabel-tabel migrasi (batch
+            // saldo awal + snapshot pembayaran/jadwal historis), bukan dari
+            // transaksi berjalan. Bentuknya sengaja dibuat mirip laporan hub
+            // biasa supaya sub-total per anggota (dan sub total per kelompok
+            // Neraca) muncul lewat mekanisme baris `_gaya` yang sama —
+            // LaporanController::barisRingkasanCoa()/kelompokkanPerAnggota()
+            // yang menyediakannya, dan generic print + show.blade.php yang
+            // meregister style "baris-ringkasan"/"baris-judul".
+            //
+            // Dua entri Neraca berbagi kolom yang sama karena barisAkun()
+            // mengeluarkan bentuk yang identik: yang membedakan hanya scope
+            // (`neracaSaja: true` vs `false`) — Neraca menyusun aktiva →
+            // pasiva → modal dengan sub total + SHU tahun berjalan; Neraca
+            // Saldo memuat semua akun termasuk Laba/Rugi tanpa sub total
+            // kelompok. Filter `tipe` & `laporan` bekerja di keduanya.
+            // ---------------------------------------------------------------
+            'saldo_awal_neraca' => [
+                'group' => 'Saldo Awal & Migrasi',
+                'label' => 'Saldo Awal — Neraca',
+                'columns' => [
+                    'kode' => 'Kode',
+                    'nama_akun' => 'Nama Akun',
+                    'tipe' => 'Tipe',
+                    'laporan' => 'Laporan',
+                    'debit' => 'Debit',
+                    'kredit' => 'Kredit',
+                ],
+                'filterable' => ['tipe', 'laporan'],
+                'date_column' => null,
+            ],
+            'saldo_awal_neraca_saldo' => [
+                'group' => 'Saldo Awal & Migrasi',
+                'label' => 'Saldo Awal — Neraca Saldo',
+                'columns' => [
+                    'kode' => 'Kode',
+                    'nama_akun' => 'Nama Akun',
+                    'tipe' => 'Tipe',
+                    'laporan' => 'Laporan',
+                    'debit' => 'Debit',
+                    'kredit' => 'Kredit',
+                ],
+                'filterable' => ['tipe', 'laporan'],
+                'date_column' => null,
+            ],
+            'saldo_awal_pinjaman' => [
+                'group' => 'Saldo Awal & Migrasi',
+                'label' => 'Saldo Awal Pinjaman',
+                'columns' => [
+                    'kode_anggota' => 'Kode Anggota',
+                    'nama_anggota' => 'Nama Anggota',
+                    'no_pinjaman_lama' => 'No. Pinjaman Lama',
+                    'produk' => 'Produk',
+                    'tanggal_akad' => 'Tgl Akad',
+                    'plafon_awal' => 'Plafon Awal',
+                    'sisa_pokok' => 'Sisa Pokok',
+                    'sisa_jasa' => 'Sisa Jasa',
+                    'tenor' => 'Tenor',
+                    'sisa_tenor' => 'Sisa Tenor',
+                    'jatuh_tempo' => 'Jatuh Tempo',
+                    'kolektibilitas' => 'Kolektibilitas',
+                ],
+                'filterable' => ['produk', 'kolektibilitas'],
+                'date_column' => 'tanggal_akad',
+            ],
+            'saldo_awal_simpanan' => [
+                'group' => 'Saldo Awal & Migrasi',
+                'label' => 'Saldo Awal Simpanan',
+                'columns' => [
+                    'kode_anggota' => 'Kode Anggota',
+                    'nama_anggota' => 'Nama Anggota',
+                    'produk' => 'Produk',
+                    'no_rekening' => 'No. Rekening',
+                    'saldo_awal' => 'Saldo Awal',
+                    'keterangan' => 'Keterangan',
+                ],
+                'filterable' => ['produk'],
+                'date_column' => null,
+            ],
+            'migrasi_historis_pembayaran' => [
+                'group' => 'Saldo Awal & Migrasi',
+                'label' => 'Migrasi Historis Pembayaran',
+                'columns' => [
+                    'tanggal' => 'Tanggal',
+                    'no_pinjaman' => 'No. Pinjaman',
+                    'nama_anggota' => 'Nama Anggota',
+                    'pokok' => 'Pokok',
+                    'jasa' => 'Jasa',
+                    'jumlah' => 'Jumlah',
+                    'sisa' => 'Sisa Setelah Bayar',
+                    'keterangan' => 'Keterangan',
+                ],
+                'filterable' => [],
+                'date_column' => 'tanggal',
+            ],
+            'migrasi_jadwal_pembayaran' => [
+                'group' => 'Saldo Awal & Migrasi',
+                'label' => 'Migrasi Jadwal Pembayaran',
+                'columns' => [
+                    'no_pinjaman' => 'No. Pinjaman',
+                    'nama_anggota' => 'Nama Anggota',
+                    'angsuran_ke' => 'Angsuran Ke',
+                    'jatuh_tempo' => 'Jatuh Tempo',
+                    'pokok' => 'Pokok',
+                    'jasa' => 'Jasa',
+                    'total' => 'Total',
+                    'terbayar' => 'Terbayar',
+                    'sisa' => 'Sisa',
+                    'status' => 'Status',
+                ],
+                'filterable' => ['status'],
+                'date_column' => 'jatuh_tempo',
+            ],
         ];
     }
 

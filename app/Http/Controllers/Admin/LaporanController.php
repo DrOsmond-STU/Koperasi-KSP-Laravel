@@ -19,6 +19,9 @@ use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
 use App\Models\Member;
 use App\Models\MemberType;
+use App\Models\OpeningBalanceCoa;
+use App\Models\OpeningBalanceLoan;
+use App\Models\OpeningBalanceSaving;
 use App\Models\PosSale;
 use App\Models\Product;
 use App\Models\PurchaseReturn;
@@ -34,6 +37,7 @@ use App\Models\TellerCashTransaction;
 use App\Models\User;
 use App\Services\Inventory\InventoryReportService;
 use App\Services\Reporting\LaporanRegistry;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -60,6 +64,21 @@ class LaporanController extends Controller
 {
     use GeneratesPrintPdf;
 
+    /**
+     * Cetakan menyaring baris yang saldonya sudah nol supaya tidak menghabiskan
+     * kertas untuk rekening dan pinjaman mati. Layar dan Excel TIDAK disaring —
+     * keduanya dipakai untuk menelusuri riwayat, dan menyembunyikan baris di
+     * sana akan membuat data terlihat hilang.
+     *
+     * Karena itu jumlah baris PDF bisa lebih sedikit daripada di layar, dan
+     * alasannya dicetak di kepala halaman lewat catatan ini — laporan keuangan
+     * yang diam-diam memangkas baris jauh lebih berbahaya daripada yang tebal.
+     */
+    private const CATATAN_SARINGAN_CETAK = [
+        'simpanan_rekening' => 'Hanya rekening bersaldo di atas nol. Rekening bersaldo nol tidak dicetak — lihat Export Excel untuk daftar lengkap.',
+        'pinjaman' => 'Hanya pinjaman yang belum lunas. Pinjaman berstatus Lunas tidak dicetak — lihat Export Excel untuk daftar lengkap.',
+    ];
+
     public function __construct(private readonly InventoryReportService $inventoryReportService) {}
 
     public function index(): View
@@ -71,10 +90,30 @@ class LaporanController extends Controller
         ]);
     }
 
+    /**
+     * Layar dibatasi jumlah barisnya, ekspor tidak.
+     *
+     * Riwayat Pembayaran hasil migrasi berisi 21 ribu baris. Merendernya jadi
+     * satu tabel HTML menembus memory_limit saat Blade menyusun keluarannya —
+     * bukan saat query berjalan — dan halamannya mati dengan 500 tanpa
+     * keterangan. Sekalipun memorinya dinaikkan sampai muat, tabel sebesar itu
+     * melumpuhkan saringan datatable yang menyisir seluruh baris tiap ketikan.
+     *
+     * Karena itu layar memotong di ambang yang wajar dan mengatakannya
+     * terang-terangan, sementara Export PDF/Excel tetap memakai seluruh baris
+     * yang lolos saringan. Memotong diam-diam jauh lebih berbahaya: pengguna
+     * akan mengira laporannya memang sesingkat itu.
+     */
     public function show(string $module): View
     {
         $this->authorize('laporan.read');
         abort_unless(LaporanRegistry::exists($module), 404);
+
+        ini_set('memory_limit', '512M');
+
+        $rows = $this->fetch($module);
+        $maxRows = (int) config('koperasi.laporan_maks_baris_layar', 5000);
+        $jumlahPenuh = $rows->count();
 
         return view('admin.laporan.show', [
             'module' => $module,
@@ -82,32 +121,212 @@ class LaporanController extends Controller
             'columns' => LaporanRegistry::columnsFor($module),
             'filterable' => LaporanRegistry::filterableFor($module),
             'dateColumn' => LaporanRegistry::dateColumnFor($module),
-            'rows' => $this->fetch($module),
+            'rows' => $jumlahPenuh > $maxRows ? $rows->take($maxRows)->values() : $rows,
+            'jumlahPenuh' => $jumlahPenuh,
+            'dipotong' => $jumlahPenuh > $maxRows,
+            'maksBarisLayar' => $maxRows,
         ]);
     }
 
-    public function exportPdf(string $module): Response
+    /**
+     * Terapkan saringan yang sedang aktif di layar ke baris hasil fetch().
+     *
+     * Aturannya sengaja meniru persis datatable di layouts/app.blade.php —
+     * pencarian bebas mencocokkan seluruh isi baris tanpa memandang huruf
+     * besar/kecil, filter kolom mencocokkan isi sel secara utuh, dan rentang
+     * tanggal membandingkan kolom tanggal setelah diubah ke yyyy-mm-dd. Baris
+     * yang kolom tanggalnya tidak terbaca sengaja dibiarkan lolos, sama seperti
+     * di layar; itulah yang menjaga baris sub total tetap ikut saat pengguna
+     * hanya menyaring periode.
+     *
+     * Kalau salah satu aturan di sini menyimpang dari yang di layar, cetakannya
+     * akan berbeda dari yang dilihat pengguna — dan justru itu yang hendak
+     * dihindari.
+     *
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function saringSepertiDiLayar(Collection $rows, Request $request, string $module): Collection
+    {
+        $cari = mb_strtolower(trim((string) $request->query('cari', '')));
+        $dari = trim((string) $request->query('dari', ''));
+        $sampai = trim((string) $request->query('sampai', ''));
+        $kolomTanggal = LaporanRegistry::dateColumnFor($module);
+
+        $filterKolom = [];
+        foreach (LaporanRegistry::filterableFor($module) as $kolom) {
+            $nilai = trim((string) $request->query('f_'.$kolom, ''));
+
+            if ($nilai !== '') {
+                $filterKolom[$kolom] = $nilai;
+            }
+        }
+
+        if ($cari === '' && $filterKolom === [] && $dari === '' && $sampai === '') {
+            return $rows;
+        }
+
+        return $rows->filter(function (array $row) use ($cari, $filterKolom, $dari, $sampai, $kolomTanggal) {
+            // Kunci berawalan garis bawah adalah penanda gaya baris, bukan isi
+            // laporan — ikut dicocokkan, pencarian "ringkasan" akan menyapu
+            // seluruh baris sub total.
+            $isiBaris = array_filter(
+                $row,
+                fn (string $kunci) => ! str_starts_with($kunci, '_'),
+                ARRAY_FILTER_USE_KEY,
+            );
+
+            if ($cari !== '' && ! str_contains(mb_strtolower(implode(' ', array_map('strval', $isiBaris))), $cari)) {
+                return false;
+            }
+
+            foreach ($filterKolom as $kolom => $nilai) {
+                if (trim((string) ($row[$kolom] ?? '')) !== $nilai) {
+                    return false;
+                }
+            }
+
+            if ($kolomTanggal !== null && ($dari !== '' || $sampai !== '')) {
+                $tanggal = $this->tanggalBarisKeIso((string) ($row[$kolomTanggal] ?? ''));
+
+                if ($tanggal !== null) {
+                    if ($dari !== '' && $tanggal < $dari) {
+                        return false;
+                    }
+                    if ($sampai !== '' && $tanggal > $sampai) {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        })->values();
+    }
+
+    /** "d-m-Y ..." menjadi "Y-m-d" supaya bisa dibandingkan leksikal. */
+    private function tanggalBarisKeIso(string $teks): ?string
+    {
+        return preg_match('/^(\d{2})-(\d{2})-(\d{4})/', trim($teks), $m) === 1
+            ? $m[3].'-'.$m[2].'-'.$m[1]
+            : null;
+    }
+
+    /**
+     * Keterangan saringan yang ikut tercetak di kepala halaman.
+     *
+     * Cetakan hasil penyaringan tidak boleh bisa dikira laporan lengkap —
+     * apalagi setelah dilepas dari layar tempat filternya terlihat.
+     */
+    private function catatanSaringan(Request $request, string $module): ?string
+    {
+        $bagian = [];
+
+        if (($cari = trim((string) $request->query('cari', ''))) !== '') {
+            $bagian[] = 'pencarian "'.$cari.'"';
+        }
+
+        foreach (LaporanRegistry::filterableFor($module) as $kolom) {
+            if (($nilai = trim((string) $request->query('f_'.$kolom, ''))) !== '') {
+                $label = LaporanRegistry::columnsFor($module)[$kolom] ?? $kolom;
+                $bagian[] = $label.' = '.$nilai;
+            }
+        }
+
+        $dari = trim((string) $request->query('dari', ''));
+        $sampai = trim((string) $request->query('sampai', ''));
+
+        if ($dari !== '' || $sampai !== '') {
+            $bagian[] = 'periode '.($dari !== '' ? $dari : '…').' s/d '.($sampai !== '' ? $sampai : '…');
+        }
+
+        return $bagian === [] ? null : 'Disaring: '.implode(' · ', $bagian).'. Baris di luar saringan tidak dicetak.';
+    }
+
+    /**
+     * Hub laporan memakai satu view cetak untuk 29 modul, jadi ukuran datanya
+     * sangat bervariasi — Jenis Anggota belasan baris, Rekening Simpanan ribuan
+     * setelah migrasi. DomPDF menyimpan pohon style tiap sel di memori dan
+     * kehabisan batas PHP jauh sebelum halaman pertama selesai, muncul sebagai
+     * 500 tanpa keterangan (lihat MemberController::printList() untuk kejadian
+     * yang sama di Daftar Anggota).
+     *
+     * Batas baris ditegakkan SETELAH penyaringan dan diarahkan ke Export Excel,
+     * yang menulis berkas secara bertahap dan tidak punya langit-langit serupa.
+     * Urutan itu penting: laporan besar yang disaring jadi seratus baris tetap
+     * boleh dicetak, karena yang membebani DomPDF adalah baris yang benar-benar
+     * dirender, bukan baris di database.
+     *
+     * Angkanya diukur di produksi, bukan ditebak: Rekening Simpanan 1.224 baris
+     * memuncak di 594 MB dan 25 detik — 0,458 MB dan 0,02 detik per baris. Batas
+     * 1.400 baris berarti ~675 MB dan ~29 detik, masih di bawah kedua pagar di
+     * bawah ini; di atas ~1.600 baris memory_limit-nya jebol.
+     */
+    public function exportPdf(Request $request, string $module): Response
     {
         $this->authorize('laporan.read');
         abort_unless(LaporanRegistry::exists($module), 404);
 
+        ini_set('memory_limit', '768M');
+        set_time_limit(300);
+
+        $rows = $this->saringSepertiDiLayar($this->fetch($module, hanyaBersaldo: true), $request, $module);
+        $maxRows = (int) config('koperasi.cetak_laporan_maks_baris', 1400);
+
+        if ($rows->count() > $maxRows) {
+            return redirect()
+                ->route('admin.laporan.show', $module)
+                ->with('error', 'Laporan ini berisi '.number_format($rows->count(), 0, ',', '.')
+                    .' baris — terlalu besar untuk PDF (batas '.number_format($maxRows, 0, ',', '.')
+                    .' baris). Pakai Export Excel; isinya sama persis.');
+        }
+
+        $columns = LaporanRegistry::columnsFor($module);
+
         $pdf = $this->renderPrintPdf('prints.laporan.generic', [
             'title' => LaporanRegistry::labelFor($module),
-            'columns' => LaporanRegistry::columnsFor($module),
-            'rows' => $this->fetch($module),
+            'columns' => $columns,
+            'rows' => $rows,
             'generatedAt' => now(),
-        ]);
+            'catatan' => trim(implode(' ', array_filter([
+                $this->catatanSaringan($request, $module),
+                self::CATATAN_SARINGAN_CETAK[$module] ?? null,
+            ]))) ?: null,
+        ], $this->orientasiUntuk($columns));
 
         return $pdf->download(Str::slug($module).'-'.now()->format('Ymd-His').'.pdf');
     }
 
-    public function exportExcel(string $module): BinaryFileResponse
+    /**
+     * Tabel berkolom banyak diremas tidak terbaca di A4 portrait — kolom nama
+     * anggota dan nama produk pecah jadi beberapa baris per sel. Cetakan lain
+     * tetap mengikuti pilihan admin di Pengaturan Cetakan; hanya hub laporan
+     * yang memaksa landscape, dan hanya bila kolomnya memang padat.
+     *
+     * @param  array<string, string>  $columns
+     */
+    private function orientasiUntuk(array $columns): ?string
+    {
+        $ambang = (int) config('koperasi.cetak_laporan_kolom_landscape', 7);
+
+        return count($columns) >= $ambang ? 'landscape' : null;
+    }
+
+    /**
+     * Excel ikut menghormati saringan layar, sama seperti PDF — dua tombol
+     * bersebelahan yang menghasilkan isi berbeda dari satu tampilan yang sama
+     * adalah jebakan.
+     *
+     * Bedanya hanya satu: Excel tidak menyaring baris bersaldo nol (lihat
+     * CATATAN_SARINGAN_CETAK), karena itulah jalan keluar yang ditunjuk pesan
+     * "terlalu besar untuk PDF" dan pemakaiannya untuk menelusuri riwayat.
+     */
+    public function exportExcel(Request $request, string $module): BinaryFileResponse
     {
         $this->authorize('laporan.read');
         abort_unless(LaporanRegistry::exists($module), 404);
 
         $columns = LaporanRegistry::columnsFor($module);
-        $rows = $this->fetch($module)->map(
+        $rows = $this->saringSepertiDiLayar($this->fetch($module), $request, $module)->map(
             fn (array $row) => array_map(fn (string $key) => $row[$key] ?? '-', array_keys($columns))
         );
 
@@ -116,19 +335,19 @@ class LaporanController extends Controller
             Str::slug($module).'-'.now()->format('Ymd-His').'.xlsx',
         );
     }
-
     /**
+     * @param  bool  $hanyaBersaldo  Buang baris bersaldo nol — lihat CATATAN_SARINGAN_CETAK.
      * @return Collection<int, array<string, mixed>>
      */
-    private function fetch(string $module): Collection
+    private function fetch(string $module, bool $hanyaBersaldo = false): Collection
     {
         return match ($module) {
             'anggota' => $this->anggota(),
             'jenis_anggota' => $this->jenisAnggota(),
             'bagan_akun' => $this->baganAkun(),
-            'simpanan_rekening' => $this->simpananRekening(),
+            'simpanan_rekening' => $this->simpananRekening($hanyaBersaldo),
             'simpanan_transaksi' => $this->simpananTransaksi(),
-            'pinjaman' => $this->pinjaman(),
+            'pinjaman' => $this->pinjaman($hanyaBersaldo),
             'angsuran' => $this->angsuran(),
             'transaksi_pinjaman' => $this->transaksiPinjaman(),
             'pembayaran_angsuran' => $this->pembayaranAngsuran(),
@@ -151,14 +370,431 @@ class LaporanController extends Controller
             'transaksi_teller' => $this->transaksiTeller(),
             'kalender_kegiatan' => $this->kalenderKegiatan(),
             'jurnal_umum' => $this->jurnalUmum(),
+            'saldo_awal_neraca' => $this->saldoAwalCoa(neracaSaja: true),
+            'saldo_awal_neraca_saldo' => $this->saldoAwalCoa(neracaSaja: false),
+            'saldo_awal_pinjaman' => $this->saldoAwalPinjaman(),
+            'saldo_awal_simpanan' => $this->saldoAwalSimpanan(),
+            'migrasi_historis_pembayaran' => $this->migrasiHistorisPembayaran(),
+            'migrasi_jadwal_pembayaran' => $this->migrasiJadwalPembayaran(),
             'pengguna' => $this->pengguna(),
             default => collect(),
         };
     }
 
-    private function rupiah(float|string $amount): string
+    /**
+     * Penanda gaya baris, dibaca layar dan cetakan untuk memberi latar pembeda.
+     *
+     * Kuncinya diawali garis bawah supaya tidak pernah tertukar dengan kolom
+     * laporan: view hanya merender kunci yang terdaftar di LaporanRegistry,
+     * Export Excel juga hanya memetakan kunci itu, dan saringan pencarian
+     * membuang kunci berawalan garis bawah dari bahan pencocokannya.
+     */
+    private const GAYA_JUDUL = 'judul';
+
+    private const GAYA_RINGKASAN = 'ringkasan';
+
+    /**
+     * Satu baris ringkasan (sub total / total) untuk laporan COA.
+     *
+     * @return array<string, string>
+     */
+    private function barisRingkasanCoa(string $label, float $debit, float $kredit): array
     {
-        return 'Rp '.number_format((float) $amount, 0, ',', '.');
+        return [
+            'kode' => '',
+            'nama_akun' => $label,
+            'tipe' => '',
+            'laporan' => '',
+            'debit' => round($debit, 2) !== 0.0 ? $this->rupiah($debit, 2) : '-',
+            'kredit' => round($kredit, 2) !== 0.0 ? $this->rupiah($kredit, 2) : '-',
+            '_gaya' => self::GAYA_RINGKASAN,
+        ];
+    }
+
+    /**
+     * Baris judul bagian (AKTIVA / PASIVA / MODAL) — pemisah, bukan angka.
+     *
+     * @return array<string, string>
+     */
+    private function barisJudulCoa(string $label): array
+    {
+        return [
+            'kode' => '',
+            'nama_akun' => $label,
+            'tipe' => '',
+            'laporan' => '',
+            'debit' => '',
+            'kredit' => '',
+            '_gaya' => self::GAYA_JUDUL,
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function barisAkun(OpeningBalanceCoa $line): array
+    {
+        return [
+            'kode' => $line->account->code ?? '-',
+            'nama_akun' => $line->account->name ?? '-',
+            'tipe' => $line->account->type ?? '-',
+            'laporan' => ($line->account->statement ?? null) === 'NERACA' ? 'Neraca' : 'Laba/Rugi',
+            'debit' => $line->position === 'debit' ? $this->rupiah((float) $line->amount, 2) : '-',
+            'kredit' => $line->position === 'kredit' ? $this->rupiah((float) $line->amount, 2) : '-',
+        ];
+    }
+
+    /**
+     * Saldo Awal COA — Neraca (tersusun) dan Neraca Saldo (daftar rata).
+     *
+     * Keduanya diurutkan menurut nomor akun. Untuk Neraca, urutan itu saja
+     * belum cukup: pembaca laporan keuangan mengharapkan Aktiva lebih dulu,
+     * lalu Pasiva, lalu Modal, masing-masing dengan sub totalnya — bukan satu
+     * daftar panjang yang harus dijumlah sendiri.
+     *
+     * Sub total dihitung NETO (debit dikurangi kredit) per kelompok, bukan
+     * dijumlah per kolom. Itu perlu karena kelompok Aktiva memuat akun lawan
+     * seperti akumulasi penyusutan dan penyisihan piutang yang bersaldo kredit;
+     * menjumlahkannya di kolom kredit akan membuat Total Aktiva tampak lebih
+     * besar dari yang sebenarnya.
+     */
+    private function saldoAwalCoa(bool $neracaSaja): Collection
+    {
+        // SORT_STRING wajib. Kode akun seluruhnya angka, dan pembanding bawaan
+        // PHP memperlakukan dua string angka sebagai bilangan — "21081" lalu
+        // dianggap lebih kecil dari "1101100", sehingga akun kewajiban lima
+        // digit melompat ke atas seluruh akun aset tujuh digit. Dibandingkan
+        // sebagai teks, urutannya mengikuti hierarki bagan akun sebagaimana
+        // mestinya.
+        $semua = OpeningBalanceCoa::query()
+            ->with('account')
+            ->get()
+            ->sortBy(fn (OpeningBalanceCoa $line) => $line->account->code ?? '', SORT_STRING)
+            ->values();
+
+        // Laporan kosong dibiarkan benar-benar kosong — lihat catatan yang sama
+        // di kelompokkanPerAnggota().
+        if ($semua->isEmpty()) {
+            return collect();
+        }
+
+        if (! $neracaSaja) {
+            $rows = $semua->map(fn (OpeningBalanceCoa $line) => $this->barisAkun($line));
+
+            return $rows->push($this->barisRingkasanCoa(
+                'TOTAL NERACA SALDO',
+                (float) $semua->where('position', 'debit')->sum('amount'),
+                (float) $semua->where('position', 'kredit')->sum('amount'),
+            ));
+        }
+
+        $neto = fn (Collection $lines) => (float) $lines->where('position', 'debit')->sum('amount')
+            - (float) $lines->where('position', 'kredit')->sum('amount');
+
+        $perTipe = $semua
+            ->filter(fn (OpeningBalanceCoa $line) => ($line->account->statement ?? null) === 'NERACA')
+            ->groupBy(fn (OpeningBalanceCoa $line) => $line->account->type ?? '-');
+
+        $aset = $perTipe->get('ASET', collect());
+        $liabilitas = $perTipe->get('LIABILITAS', collect());
+        $ekuitas = $perTipe->get('EKUITAS', collect());
+
+        // SHU berjalan: hasil usaha masih tersimpan di akun Laba/Rugi dan belum
+        // ditutup ke ekuitas, sementara sisi Aset sudah memuatnya.
+        $labaRugi = $semua->filter(fn (OpeningBalanceCoa $line) => ($line->account->statement ?? null) === 'LABA_RUGI');
+        $shu = (float) $labaRugi->where('position', 'kredit')->sum('amount')
+            - (float) $labaRugi->where('position', 'debit')->sum('amount');
+
+        $rows = collect();
+
+        $rows->push($this->barisJudulCoa('AKTIVA'));
+        $aset->each(fn (OpeningBalanceCoa $line) => $rows->push($this->barisAkun($line)));
+        $totalAktiva = $neto($aset);
+        $rows->push($this->barisRingkasanCoa('SUB TOTAL AKTIVA', $totalAktiva, 0));
+
+        $rows->push($this->barisJudulCoa('PASIVA (KEWAJIBAN)'));
+        $liabilitas->each(fn (OpeningBalanceCoa $line) => $rows->push($this->barisAkun($line)));
+        $totalPasiva = -$neto($liabilitas);
+        $rows->push($this->barisRingkasanCoa('SUB TOTAL PASIVA', 0, $totalPasiva));
+
+        $rows->push($this->barisJudulCoa('MODAL (EKUITAS)'));
+        $ekuitas->each(fn (OpeningBalanceCoa $line) => $rows->push($this->barisAkun($line)));
+        $totalModal = -$neto($ekuitas);
+
+        if (round($shu, 2) !== 0.0) {
+            $rows->push([
+                'kode' => (string) config('koperasi.akun_shu_berjalan', ''),
+                'nama_akun' => 'SHU TAHUN BERJALAN (dihitung dari akun Laba/Rugi)',
+                'tipe' => 'EKUITAS',
+                'laporan' => 'Neraca',
+                'debit' => $shu < 0 ? $this->rupiah(abs($shu), 2) : '-',
+                'kredit' => $shu > 0 ? $this->rupiah($shu, 2) : '-',
+            ]);
+            $totalModal += $shu;
+        }
+
+        $rows->push($this->barisRingkasanCoa('SUB TOTAL MODAL', 0, $totalModal));
+        $rows->push($this->barisRingkasanCoa('TOTAL PASIVA + MODAL', 0, $totalPasiva + $totalModal));
+
+        return $rows->push($this->barisRingkasanCoa('TOTAL NERACA', $totalAktiva, $totalPasiva + $totalModal));
+    }
+
+    /**
+     * Kelompokkan per anggota lalu sisipkan baris sub total di ujung tiap
+     * kelompok.
+     *
+     * Baris sub total ikut jadi pembatas antar anggota — pada laporan sepanjang
+     * ribuan baris, batas itu yang membuat cetakannya bisa ditelusuri. Untuk
+     * saldo awal, sub total hanya muncul bila anggotanya punya lebih dari satu
+     * baris; menambahkannya pada anggota berbaris tunggal hanya menggandakan
+     * angka yang sama tepat di bawahnya.
+     *
+     * @return Collection<int, array<string, string>>
+     */
+    private function kelompokkanPerAnggota(
+        Collection $records,
+        callable $kunciAnggota,
+        callable $formatBaris,
+        callable $formatSubTotal,
+        bool $subTotalHanyaBilaGanda = false,
+    ): Collection {
+        $rows = collect();
+
+        // Laporan kosong dibiarkan benar-benar kosong; baris TOTAL berisi nol
+        // hanya menyamarkan "belum ada data" jadi seolah ada isinya.
+        if ($records->isEmpty()) {
+            return $rows;
+        }
+
+        foreach ($records->groupBy($kunciAnggota) as $anggota) {
+            $anggota->each(fn ($record) => $rows->push($formatBaris($record)));
+
+            if (! $subTotalHanyaBilaGanda || $anggota->count() > 1) {
+                $rows->push($formatSubTotal($anggota, $anggota->count()));
+            }
+        }
+
+        return $rows;
+    }
+
+    private function saldoAwalPinjaman(): Collection
+    {
+        $records = OpeningBalanceLoan::query()
+            ->with(['member', 'loanProduct'])
+            ->get()
+            ->sortBy([
+                fn (OpeningBalanceLoan $a, OpeningBalanceLoan $b) => strcmp((string) $a->member?->member_number, (string) $b->member?->member_number),
+                fn (OpeningBalanceLoan $a, OpeningBalanceLoan $b) => strcmp((string) $a->external_loan_number, (string) $b->external_loan_number),
+            ])
+            ->values();
+
+        $kosong = array_fill_keys(array_keys(LaporanRegistry::columnsFor('saldo_awal_pinjaman')), '');
+
+        $rows = $this->kelompokkanPerAnggota(
+            $records,
+            fn (OpeningBalanceLoan $row) => $row->member_id,
+            fn (OpeningBalanceLoan $row) => [
+                'kode_anggota' => $row->member->member_number ?? '-',
+                'nama_anggota' => $row->member->name ?? '-',
+                'no_pinjaman_lama' => $row->external_loan_number ?? '-',
+                'produk' => $row->loanProduct->name ?? '-',
+                'tanggal_akad' => optional($row->disbursement_date)->format('d-m-Y') ?? '-',
+                'plafon_awal' => $this->rupiah((float) $row->original_principal),
+                'sisa_pokok' => $this->rupiah((float) $row->outstanding_principal),
+                'sisa_jasa' => $this->rupiah((float) $row->outstanding_interest),
+                'tenor' => (string) $row->tenor_months,
+                'sisa_tenor' => (string) $row->remaining_tenor_months,
+                'jatuh_tempo' => optional($row->next_due_date)->format('d-m-Y') ?? '-',
+                'kolektibilitas' => ucwords(str_replace('_', ' ', (string) $row->collectibility)),
+            ],
+            fn (Collection $grup, int $jumlah) => [
+                ...$kosong,
+                'nama_anggota' => 'SUB TOTAL '.($grup->first()->member->name ?? '-'),
+                '_gaya' => self::GAYA_RINGKASAN,
+                'no_pinjaman_lama' => $jumlah.' pinjaman',
+                'plafon_awal' => $this->rupiah((float) $grup->sum('original_principal')),
+                'sisa_pokok' => $this->rupiah((float) $grup->sum('outstanding_principal')),
+                'sisa_jasa' => $this->rupiah((float) $grup->sum('outstanding_interest')),
+            ],
+            subTotalHanyaBilaGanda: true,
+        );
+
+        return $rows->isEmpty() ? $rows : $rows->push([
+            ...$kosong,
+            'nama_anggota' => 'TOTAL SELURUH ANGGOTA',
+            '_gaya' => self::GAYA_RINGKASAN,
+            'no_pinjaman_lama' => $records->count().' pinjaman',
+            'plafon_awal' => $this->rupiah((float) $records->sum('original_principal')),
+            'sisa_pokok' => $this->rupiah((float) $records->sum('outstanding_principal')),
+            'sisa_jasa' => $this->rupiah((float) $records->sum('outstanding_interest')),
+        ]);
+    }
+
+    private function saldoAwalSimpanan(): Collection
+    {
+        $records = OpeningBalanceSaving::query()
+            ->with(['member', 'savingsProduct'])
+            ->get()
+            ->sortBy([
+                fn (OpeningBalanceSaving $a, OpeningBalanceSaving $b) => strcmp((string) $a->member?->member_number, (string) $b->member?->member_number),
+                fn (OpeningBalanceSaving $a, OpeningBalanceSaving $b) => strcmp((string) $a->savingsProduct?->code, (string) $b->savingsProduct?->code),
+            ])
+            ->values();
+
+        $kosong = array_fill_keys(array_keys(LaporanRegistry::columnsFor('saldo_awal_simpanan')), '');
+
+        $rows = $this->kelompokkanPerAnggota(
+            $records,
+            fn (OpeningBalanceSaving $row) => $row->member_id,
+            fn (OpeningBalanceSaving $row) => [
+                'kode_anggota' => $row->member->member_number ?? '-',
+                'nama_anggota' => $row->member->name ?? '-',
+                'produk' => $row->savingsProduct->name ?? '-',
+                'no_rekening' => $row->account_number ?: '-',
+                'saldo_awal' => $this->rupiah((float) $row->balance),
+                'keterangan' => $row->notes ?: '-',
+            ],
+            fn (Collection $grup, int $jumlah) => [
+                ...$kosong,
+                'nama_anggota' => 'SUB TOTAL '.($grup->first()->member->name ?? '-'),
+                '_gaya' => self::GAYA_RINGKASAN,
+                'produk' => $jumlah.' rekening',
+                'saldo_awal' => $this->rupiah((float) $grup->sum('balance')),
+            ],
+            subTotalHanyaBilaGanda: true,
+        );
+
+        return $rows->isEmpty() ? $rows : $rows->push([
+            ...$kosong,
+            'nama_anggota' => 'TOTAL SELURUH ANGGOTA',
+            '_gaya' => self::GAYA_RINGKASAN,
+            'produk' => $records->count().' rekening',
+            'saldo_awal' => $this->rupiah((float) $records->sum('balance')),
+        ]);
+    }
+
+    /**
+     * Hanya baris bertanda migrasi. Pembayaran yang benar-benar terjadi di
+     * aplikasi ini punya laporannya sendiri ("Transaksi Pembayaran Angsuran");
+     * mencampur keduanya di sini akan membuat rekonsiliasi terhadap sistem
+     * lama menghitung transaksi yang bukan bagian dari migrasi.
+     */
+    private function migrasiHistorisPembayaran(): Collection
+    {
+        $records = LoanRepayment::query()
+            ->whereNotNull('migrated_at')
+            ->with(['loan.member'])
+            ->get()
+            ->sortBy([
+                fn (LoanRepayment $a, LoanRepayment $b) => strcmp((string) $a->loan?->member?->member_number, (string) $b->loan?->member?->member_number),
+                fn (LoanRepayment $a, LoanRepayment $b) => strcmp((string) $a->loan?->loan_number, (string) $b->loan?->loan_number),
+                fn (LoanRepayment $a, LoanRepayment $b) => $a->paidOn()->timestamp <=> $b->paidOn()->timestamp,
+            ])
+            ->values();
+
+        $kosong = array_fill_keys(array_keys(LaporanRegistry::columnsFor('migrasi_historis_pembayaran')), '');
+
+        $rows = $this->kelompokkanPerAnggota(
+            $records,
+            fn (LoanRepayment $row) => $row->loan?->member_id,
+            fn (LoanRepayment $row) => [
+                'tanggal' => $row->paidOn()->format('d-m-Y'),
+                'no_pinjaman' => $row->loan->loan_number ?? '-',
+                'nama_anggota' => $row->loan->member->name ?? '-',
+                'pokok' => $this->rupiah((float) $row->principal_portion),
+                'jasa' => $this->rupiah((float) $row->interest_portion),
+                'jumlah' => $this->rupiah((float) $row->amount),
+                'sisa' => $this->rupiah((float) $row->balance_after),
+                'keterangan' => $row->description ?: '-',
+            ],
+            fn (Collection $grup, int $jumlah) => [
+                ...$kosong,
+                'nama_anggota' => 'SUB TOTAL '.($grup->first()->loan->member->name ?? '-'),
+                '_gaya' => self::GAYA_RINGKASAN,
+                'no_pinjaman' => $jumlah.' pembayaran',
+                'pokok' => $this->rupiah((float) $grup->sum('principal_portion')),
+                'jasa' => $this->rupiah((float) $grup->sum('interest_portion')),
+                'jumlah' => $this->rupiah((float) $grup->sum('amount')),
+            ],
+        );
+
+        return $rows->isEmpty() ? $rows : $rows->push([
+            ...$kosong,
+            'nama_anggota' => 'TOTAL SELURUH ANGGOTA',
+            '_gaya' => self::GAYA_RINGKASAN,
+            'no_pinjaman' => $records->count().' pembayaran',
+            'pokok' => $this->rupiah((float) $records->sum('principal_portion')),
+            'jasa' => $this->rupiah((float) $records->sum('interest_portion')),
+            'jumlah' => $this->rupiah((float) $records->sum('amount')),
+        ]);
+    }
+
+    private function migrasiJadwalPembayaran(): Collection
+    {
+        $records = LoanSchedule::query()
+            ->whereHas('loan')
+            ->with(['loan.member'])
+            ->get()
+            ->sortBy([
+                fn (LoanSchedule $a, LoanSchedule $b) => strcmp((string) $a->loan?->member?->member_number, (string) $b->loan?->member?->member_number),
+                fn (LoanSchedule $a, LoanSchedule $b) => strcmp((string) $a->loan?->loan_number, (string) $b->loan?->loan_number),
+                fn (LoanSchedule $a, LoanSchedule $b) => $a->installment_number <=> $b->installment_number,
+            ])
+            ->values();
+
+        $kosong = array_fill_keys(array_keys(LaporanRegistry::columnsFor('migrasi_jadwal_pembayaran')), '');
+        $sisa = fn (LoanSchedule $row) => (float) $row->total_amount - (float) $row->paid_amount;
+
+        $rows = $this->kelompokkanPerAnggota(
+            $records,
+            fn (LoanSchedule $row) => $row->loan?->member_id,
+            fn (LoanSchedule $row) => [
+                'no_pinjaman' => $row->loan->loan_number ?? '-',
+                'nama_anggota' => $row->loan->member->name ?? '-',
+                'angsuran_ke' => (string) $row->installment_number,
+                'jatuh_tempo' => $row->due_date->format('d-m-Y'),
+                'pokok' => $this->rupiah((float) $row->principal_amount),
+                'jasa' => $this->rupiah((float) $row->interest_amount),
+                'total' => $this->rupiah((float) $row->total_amount),
+                'terbayar' => $this->rupiah((float) $row->paid_amount),
+                'sisa' => $this->rupiah($sisa($row)),
+                'status' => ucwords(str_replace('_', ' ', (string) $row->status)),
+            ],
+            fn (Collection $grup, int $jumlah) => [
+                ...$kosong,
+                'nama_anggota' => 'SUB TOTAL '.($grup->first()->loan->member->name ?? '-'),
+                '_gaya' => self::GAYA_RINGKASAN,
+                'angsuran_ke' => (string) $jumlah,
+                'pokok' => $this->rupiah((float) $grup->sum('principal_amount')),
+                'jasa' => $this->rupiah((float) $grup->sum('interest_amount')),
+                'total' => $this->rupiah((float) $grup->sum('total_amount')),
+                'terbayar' => $this->rupiah((float) $grup->sum('paid_amount')),
+                'sisa' => $this->rupiah((float) $grup->sum($sisa)),
+            ],
+        );
+
+        return $rows->isEmpty() ? $rows : $rows->push([
+            ...$kosong,
+            'nama_anggota' => 'TOTAL SELURUH ANGGOTA',
+            '_gaya' => self::GAYA_RINGKASAN,
+            'angsuran_ke' => (string) $records->count(),
+            'pokok' => $this->rupiah((float) $records->sum('principal_amount')),
+            'jasa' => $this->rupiah((float) $records->sum('interest_amount')),
+            'total' => $this->rupiah((float) $records->sum('total_amount')),
+            'terbayar' => $this->rupiah((float) $records->sum('paid_amount')),
+            'sisa' => $this->rupiah((float) $records->sum($sisa)),
+        ]);
+    }
+    /**
+     * Laporan operasional dibulatkan ke rupiah penuh supaya kolomnya ringkas.
+     * Neraca dan Neraca Saldo memakai dua angka di belakang koma: saldo awal
+     * bawaan sistem lama menyimpan sen, dan kalau dibulatkan, jumlah kolomnya
+     * bisa meleset beberapa rupiah dari sub total -- pembaca laporan keuangan
+     * akan membacanya sebagai neraca yang tidak balance.
+     */
+    private function rupiah(float|string $amount, int $desimal = 0): string
+    {
+        return 'Rp '.number_format((float) $amount, $desimal, ',', '.');
     }
 
     private function anggota(): Collection
@@ -201,9 +837,10 @@ class LaporanController extends Controller
         ]);
     }
 
-    private function simpananRekening(): Collection
+    private function simpananRekening(bool $hanyaBersaldo = false): Collection
     {
         return SavingsAccount::query()
+            ->when($hanyaBersaldo, fn ($query) => $query->where('balance', '>', 0))
             ->with(['member', 'savingsProduct', 'branch'])
             ->orderByDesc('id')
             ->get()
@@ -236,9 +873,16 @@ class LaporanController extends Controller
             ]);
     }
 
-    private function pinjaman(): Collection
+    /**
+     * `loans` tidak menyimpan kolom sisa pokok — sisa dihitung dari jadwal
+     * angsuran. Untuk saringan cetak dipakai status `lunas`, yang justru lebih
+     * jujur di sini: status itu satu-satunya penanda pelunasan yang ikut
+     * tercetak, jadi pembaca bisa melihat sendiri kenapa baris tertentu absen.
+     */
+    private function pinjaman(bool $hanyaBersaldo = false): Collection
     {
         return Loan::query()
+            ->when($hanyaBersaldo, fn ($query) => $query->where('status', '!=', 'lunas'))
             ->with(['member', 'loanProduct', 'branch'])
             ->orderByDesc('id')
             ->get()
