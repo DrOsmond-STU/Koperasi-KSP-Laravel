@@ -77,15 +77,25 @@
             </table>
             <p class="{{ $neraca['is_balanced'] ? 'badge-ok' : 'badge-bad' }}">{{ $neraca['is_balanced'] ? 'Seimbang' : 'TIDAK SEIMBANG' }}</p>
         @endif
-        <form method="POST" action="{{ route('admin.laporan-keuangan.export') }}">
+        <form method="POST" action="{{ route('admin.laporan-keuangan.export') }}" style="display:inline-block; margin-right:10px;">
             @csrf
             <input type="hidden" name="report_kind" value="neraca">
             <input type="hidden" name="basis" value="{{ $basis }}">
             <input type="hidden" name="branch_id" value="{{ $selectedBranchId }}">
             <input type="hidden" name="as_of_date" value="{{ $asOfDate }}">
             <select name="format"><option value="pdf">PDF</option><option value="xlsx">Excel</option></select>
-            <button type="submit" class="btn-primary">Ekspor</button>
+            <button type="submit" class="btn-primary">Ekspor Stafel</button>
         </form>
+        {{-- Cetak Neraca dalam bentuk skontro (T-form Aset vs Kewajiban+
+             Modal). Reuse filter bar di atas — cakupan (Konsolidasi vs
+             Cabang) diambil dari `branch_id`, tanggal dari `as_of_date`,
+             basis dari `basis`. Landscape dipaksa di controller karena
+             dua kolom sisi-sisi tidak muat di portrait. --}}
+        <a class="btn-primary" style="text-decoration:none; display:inline-block;"
+           href="{{ route('admin.laporan-keuangan.print-scontro', ['basis' => $basis, 'branch_id' => $selectedBranchId, 'as_of_date' => $asOfDate]) }}"
+           target="_blank">
+            Cetak Neraca (Skontro)
+        </a>
     </div>
 
     <div class="panel">

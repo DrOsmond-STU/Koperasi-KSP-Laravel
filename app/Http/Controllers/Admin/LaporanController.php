@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Exports\GenericListExport;
 use App\Http\Controllers\Concerns\GeneratesPrintPdf;
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
 use App\Models\BusinessUnit;
 use App\Models\BusinessUnitTransaction;
 use App\Models\ChartOfAccount;
@@ -19,6 +20,7 @@ use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
 use App\Models\Member;
 use App\Models\MemberType;
+use App\Models\OpeningBalanceBatch;
 use App\Models\OpeningBalanceCoa;
 use App\Models\OpeningBalanceLoan;
 use App\Models\OpeningBalanceSaving;
@@ -342,6 +344,15 @@ class LaporanController extends Controller
      * berjalan), tapi bersumber dari OpeningBalanceCoa (batch saldo awal
      * yang di-import saat migrasi dari sistem lama).
      *
+     * Cakupan dikendalikan lewat query string:
+     *   - Tanpa `branch_id` (atau `branch_id=`) → Konsolidasi seluruh
+     *     cabang yang bisa diakses user.
+     *   - `?branch_id=X` → hanya batch cabang X.
+     * `cutoff_date` TIDAK bisa dipilih user karena saldo awal sebuah
+     * batch nilainya sudah terkunci per tanggal yang ditetapkan waktu
+     * lock (OpeningBalanceLockService); periode di cetakan diisi
+     * otomatis dari cutoff_date batch yang termuat.
+     *
      * Blade `prints.laporan.neraca-scontro` menerima `$balanceByCode`
      * (map kode akun → saldo positive-natural) dan membangun hierarki
      * sendiri via ChartOfAccount tree — sama persis dengan yang dipakai
@@ -350,27 +361,43 @@ class LaporanController extends Controller
      * konsisten antara "posisi keuangan hari ini" dan "posisi keuangan
      * pada saat migrasi".
      *
-     * Data OpeningBalanceCoa disimpan sebagai debit/kredit terpisah;
-     * dikonversi ke saldo "positive-natural" (positif di sisi normalnya)
-     * dengan formula yang sama seperti GeneralLedgerService::balanceFor()
-     * supaya blade tidak perlu tahu perbedaan sumbernya.
-     *
-     * Baris LABA_RUGI (Pendapatan/Beban) TIDAK dikeluarkan sendiri sebagai
-     * akun di neraca — mereka DIRINGKAS jadi "SHU Tahun Berjalan" dan
-     * ditambahkan ke akun ekuitas SHU (config koperasi.akun_shu_berjalan,
-     * default 3150). Tanpa langkah ini scontro tidak akan seimbang persis
-     * sebesar SHU: sisi Aset sudah memuat hasil dari Pendapatan (uang
-     * masuk) dan Beban (uang keluar), sementara sisi Ekuitas kekurangan
-     * angka SHU-nya karena tutup buku belum jalan — ini juga yang
-     * dilakukan saldoAwalCoa() untuk versi flat (lihat baris SHU
-     * synthetic-nya) dan FinancialReportEngine::neraca() untuk Neraca
-     * berjalan (metode shuBerjalan()).
+     * Baris LABA_RUGI (Pendapatan/Beban) TIDAK dikeluarkan sendiri
+     * sebagai akun di neraca — mereka DIRINGKAS jadi "SHU Tahun Berjalan"
+     * dan ditambahkan ke akun ekuitas SHU (config
+     * koperasi.akun_shu_berjalan, default 3150). Tanpa langkah ini
+     * scontro tidak akan seimbang persis sebesar SHU: sisi Aset sudah
+     * memuat hasil dari Pendapatan (uang masuk) dan Beban (uang keluar),
+     * sementara sisi Ekuitas kekurangan angka SHU-nya karena tutup buku
+     * belum jalan — ini juga yang dilakukan saldoAwalCoa() untuk versi
+     * flat dan FinancialReportEngine::neraca() untuk Neraca berjalan.
      */
     public function printSaldoAwalNeracaSkontro(Request $request): Response
     {
         $this->authorize('laporan.read');
 
-        $entries = OpeningBalanceCoa::query()->with('account')->get();
+        // Validasi hak akses cabang. `allowedBranchIds() === null` = super
+        // admin lintas cabang; array = daftar id yang boleh; kalau user
+        // request cabang di luar itu, tolak (jangan diam-diam pindah ke
+        // cabang lain karena angka Neraca sensitif).
+        $branchId = $request->integer('branch_id') ?: null;
+        $allowed = $request->user()->allowedBranchIds();
+        if ($branchId !== null && $allowed !== null && ! in_array($branchId, $allowed, true)) {
+            abort(403, 'Anda tidak memiliki akses ke cabang ini.');
+        }
+
+        // BranchScope pada OpeningBalanceBatch (trait BelongsToBranch)
+        // sudah mempersempit ke cabang yang boleh diakses; filter
+        // `branch_id` di sini menambah spesifikasi kalau user pilih
+        // satu cabang saja.
+        $batches = OpeningBalanceBatch::query()
+            ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
+            ->with('branch')
+            ->get();
+
+        $entries = OpeningBalanceCoa::query()
+            ->whereIn('opening_balance_batch_id', $batches->pluck('id'))
+            ->with('account')
+            ->get();
 
         $shuAccountCode = (string) config('koperasi.akun_shu_berjalan', '3150');
         $balanceByCode = [];
@@ -384,11 +411,10 @@ class LaporanController extends Controller
 
             $amount = (float) $line->amount;
 
-            // Baris LABA_RUGI diringkas jadi kontribusi ke SHU Tahun
-            // Berjalan (KREDIT-natural): position='kredit' menambah SHU
-            // (mis. Pendapatan), position='debit' mengurangi (mis. Beban).
-            // Formula ini identik dengan saldoAwalCoa() di server.
             if ($account->statement === 'LABA_RUGI') {
+                // Kontribusi ke SHU Tahun Berjalan — formula identik
+                // dengan saldoAwalCoa() versi flat: kredit → nambah,
+                // debit → mengurangi.
                 $shuFromLabaRugi += ($line->position === 'kredit' ? $amount : -$amount);
                 continue;
             }
@@ -397,8 +423,6 @@ class LaporanController extends Controller
                 continue;
             }
 
-            // Positive-natural: DEBIT-normal → +debit -kredit;
-            //                   KREDIT-normal → +kredit -debit.
             $isDebitNormal = $account->normal_balance === 'DEBIT';
             $delta = $isDebitNormal
                 ? ($line->position === 'debit' ? $amount : -$amount)
@@ -406,12 +430,33 @@ class LaporanController extends Controller
             $balanceByCode[$account->code] = ($balanceByCode[$account->code] ?? 0.0) + $delta;
         }
 
-        // Injeksi SHU dari Laba/Rugi ke akun SHU Tahun Berjalan. Kalau
-        // koperasi memang punya opening balance langsung di akun SHU
-        // (jarang tapi mungkin), kontribusinya ditambahkan — tidak
-        // menimpa — sehingga jumlahnya konsisten dengan flat report.
         if (round($shuFromLabaRugi, 2) !== 0.0) {
             $balanceByCode[$shuAccountCode] = ($balanceByCode[$shuAccountCode] ?? 0.0) + $shuFromLabaRugi;
+        }
+
+        // Meta cabang. Kalau branch_id kosong tapi user cuma punya akses
+        // 1 cabang, tetap tampilkan namanya, bukan "Konsolidasi" — supaya
+        // pembaca tahu ini bukan angka konsolidasi lintas cabang.
+        if ($branchId !== null) {
+            $branchName = optional(Branch::query()->find($branchId))->name ?? 'Cabang #'.$branchId;
+        } elseif ($batches->count() === 1) {
+            $branchName = optional($batches->first()->branch)->name ?? 'Cabang tunggal';
+        } else {
+            $branchName = 'Konsolidasi Seluruh Cabang ('.$batches->count().' batch)';
+        }
+
+        // Meta periode = cutoff_date batch. Sebuah batch punya satu
+        // cutoff, konsolidasi bisa multi-cutoff. Tampilkan tanggal unik
+        // atau range kalau tidak sama.
+        $cutoffs = $batches->pluck('cutoff_date')->filter()->map(fn ($d) => $d->toDateString())->unique()->sort()->values();
+        if ($cutoffs->isEmpty()) {
+            $periodeLabel = 'Belum ada batch saldo awal terdaftar';
+        } else {
+            $first = \Illuminate\Support\Carbon::parse($cutoffs->first())->translatedFormat('d M Y');
+            $last = \Illuminate\Support\Carbon::parse($cutoffs->last())->translatedFormat('d M Y');
+            $periodeLabel = $cutoffs->count() === 1
+                ? 'Cutoff '.$first
+                : 'Cutoff '.$first.' s/d '.$last;
         }
 
         $pdf = $this->renderPrintPdf('prints.laporan.neraca-scontro', [
@@ -419,14 +464,16 @@ class LaporanController extends Controller
             'balanceByCode' => $balanceByCode,
             'meta' => [
                 'sub_title' => 'Posisi keuangan pada saat migrasi data dari sistem lama',
-                'periode' => 'Saldo Awal Sistem',
-                'cabang' => 'Seluruh Cabang',
+                'periode' => $periodeLabel,
+                'cabang' => $branchName,
                 'petugas' => optional($request->user())->name ?? '-',
                 'tgl_cetak' => now(),
             ],
         ], orientationOverride: 'landscape');
 
-        return $pdf->stream('saldo-awal-neraca-scontro-'.now()->format('Ymd-His').'.pdf');
+        $slug = $branchId ? 'cab'.$branchId : 'konsolidasi';
+
+        return $pdf->stream('saldo-awal-neraca-scontro-'.$slug.'-'.now()->format('Ymd-His').'.pdf');
     }
 
     /**
