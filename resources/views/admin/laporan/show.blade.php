@@ -27,6 +27,14 @@
             <h2 style="margin: 0;">{{ $label }}</h2>
         </div>
         <div class="laporan-actions">
+            {{-- Cetak khusus bentuk skontro (T-form Aset di kiri, Kewajiban+
+                 Modal di kanan) — tampil hanya untuk dua modul Saldo Awal
+                 COA. Tombol ini melewati route/print/blade sendiri karena
+                 Export PDF generik meng-render datatable rata-tampilkan-
+                 layar, bukan tata letak Neraca berformat skontro. --}}
+            @if (in_array($module, ['saldo_awal_neraca', 'saldo_awal_neraca_saldo']))
+                <a href="{{ route('admin.laporan.saldo-awal-neraca.print-scontro') }}" class="btn-secondary">Cetak Neraca (Skontro)</a>
+            @endif
             <a href="{{ route('admin.laporan.export-pdf', $module) }}" class="btn-secondary" data-export>Export PDF</a>
             <a href="{{ route('admin.laporan.export-excel', $module) }}" class="btn-primary" data-export>Export Excel</a>
         </div>

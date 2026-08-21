@@ -12,10 +12,15 @@ use Barryvdh\DomPDF\PDF as PdfDocument;
  * PHP-side mechanism in dompdf), so the same admin-configured paper choice
  * applies uniformly across all ~20 print views without repeating this
  * match expression in each controller.
+ *
+ * $orientationOverride is a rare per-cetakan opt-out for reports that MUST
+ * render in a specific orientation regardless of the admin's default
+ * (misal: Neraca skontro selalu landscape karena dua kolom sisi-sisi
+ * tidak muat di portrait, meski default cetakan koperasi portrait).
  */
 trait GeneratesPrintPdf
 {
-    protected function renderPrintPdf(string $view, array $data = []): PdfDocument
+    protected function renderPrintPdf(string $view, array $data = [], ?string $orientationOverride = null): PdfDocument
     {
         $printSettings = app(PrintSettingsService::class)->current();
 
@@ -25,6 +30,8 @@ trait GeneratesPrintPdf
             default => 'a4',
         };
 
-        return Pdf::loadView($view, $data)->setPaper($paperSize, $printSettings->orientation);
+        $orientation = $orientationOverride ?? $printSettings->orientation;
+
+        return Pdf::loadView($view, $data)->setPaper($paperSize, $orientation);
     }
 }

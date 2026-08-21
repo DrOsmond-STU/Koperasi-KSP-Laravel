@@ -335,6 +335,66 @@ class LaporanController extends Controller
             Str::slug($module).'-'.now()->format('Ymd-His').'.xlsx',
         );
     }
+
+    /**
+     * Cetak Saldo Awal Neraca dalam BENTUK SKONTRO (horizontal/T-form) —
+     * kembar dengan FinancialReportController::printScontro() (Neraca
+     * berjalan), tapi bersumber dari OpeningBalanceCoa (batch saldo awal
+     * yang di-import saat migrasi dari sistem lama).
+     *
+     * Blade `prints.laporan.neraca-scontro` menerima `$balanceByCode`
+     * (map kode akun → saldo positive-natural) dan membangun hierarki
+     * sendiri via ChartOfAccount tree — sama persis dengan yang dipakai
+     * Neraca berjalan, sehingga tata letak, kolom kontra (Penyisihan
+     * Piutang, Akumulasi Penyusutan), dan sub-total per kelompok
+     * konsisten antara "posisi keuangan hari ini" dan "posisi keuangan
+     * pada saat migrasi".
+     *
+     * Data OpeningBalanceCoa disimpan sebagai debit/kredit terpisah;
+     * dikonversi ke saldo "positive-natural" (positif di sisi normalnya)
+     * dengan formula yang sama seperti GeneralLedgerService::balanceFor()
+     * supaya blade tidak perlu tahu perbedaan sumbernya.
+     */
+    public function printSaldoAwalNeracaSkontro(Request $request): Response
+    {
+        $this->authorize('laporan.read');
+
+        $entries = OpeningBalanceCoa::query()
+            ->with('account')
+            ->get()
+            ->filter(fn (OpeningBalanceCoa $line) => ($line->account?->statement ?? null) === 'NERACA');
+
+        $balanceByCode = [];
+        foreach ($entries as $line) {
+            $account = $line->account;
+            if (! $account) {
+                continue;
+            }
+            // Kontribusi ke "positive-natural balance":
+            //   DEBIT-normal: +debit, -kredit
+            //   KREDIT-normal: +kredit, -debit
+            $isDebitNormal = $account->normal_balance === 'DEBIT';
+            $delta = $isDebitNormal
+                ? ($line->position === 'debit' ? (float) $line->amount : -(float) $line->amount)
+                : ($line->position === 'kredit' ? (float) $line->amount : -(float) $line->amount);
+            $balanceByCode[$account->code] = ($balanceByCode[$account->code] ?? 0.0) + $delta;
+        }
+
+        $pdf = $this->renderPrintPdf('prints.laporan.neraca-scontro', [
+            'title' => 'Saldo Awal — Neraca (Bentuk Skontro)',
+            'balanceByCode' => $balanceByCode,
+            'meta' => [
+                'sub_title' => 'Posisi keuangan pada saat migrasi data dari sistem lama',
+                'periode' => 'Saldo Awal Sistem',
+                'cabang' => 'Seluruh Cabang',
+                'petugas' => optional($request->user())->name ?? '-',
+                'tgl_cetak' => now(),
+            ],
+        ], orientationOverride: 'landscape');
+
+        return $pdf->stream('saldo-awal-neraca-scontro-'.now()->format('Ymd-His').'.pdf');
+    }
+
     /**
      * @param  bool  $hanyaBersaldo  Buang baris bersaldo nol — lihat CATATAN_SARINGAN_CETAK.
      * @return Collection<int, array<string, mixed>>

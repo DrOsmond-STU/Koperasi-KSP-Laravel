@@ -1,199 +1,249 @@
 @extends('prints.layout')
 
-@section('title', 'Neraca (Bentuk Skontro)')
+@section('title', $title ?? 'Neraca (Bentuk Skontro)')
 
 @section('print-content')
     @php
-        // Pisahkan baris menurut sisi neraca. Sisi kiri = AKTIVA (ASET),
-        // sisi kanan = PASIVA (LIABILITAS + EKUITAS). Kedua sisi disusun
-        // berdampingan (bentuk skontro/horizontal/T-form) — kebalikan dari
-        // bentuk stafel (vertikal) yang dipakai admin.laporan-keuangan.pdf.
-        $aktivaRows = $data['rows']->filter(fn ($row) => $row['account']->type === 'ASET')->values();
-        $liabilitasRows = $data['rows']->filter(fn ($row) => $row['account']->type === 'LIABILITAS')->values();
-        $ekuitasRows = $data['rows']->filter(fn ($row) => $row['account']->type === 'EKUITAS')->values();
+        use App\Models\ChartOfAccount;
 
-        // Rakit sisi PASIVA sebagai daftar tersegmentasi: header LIABILITAS
-        // → baris-baris liabilitas → header EKUITAS → baris-baris ekuitas.
-        // Struktur ini dipakai untuk padding baris kosong agar tinggi
-        // kolom kiri & kanan seimbang tanpa memerlukan mesin layout multi
-        // kolom (dompdf tidak mendukung CSS `column-count` dengan baik).
-        $pasivaLines = [];
-        $pasivaLines[] = ['kind' => 'section', 'label' => 'LIABILITAS'];
-        foreach ($liabilitasRows as $row) {
-            $pasivaLines[] = ['kind' => 'row', 'row' => $row];
-        }
-        $pasivaLines[] = ['kind' => 'subtotal', 'label' => 'Sub-total Liabilitas', 'amount' => $data['total_liabilitas']];
-        $pasivaLines[] = ['kind' => 'section', 'label' => 'EKUITAS'];
-        foreach ($ekuitasRows as $row) {
-            $pasivaLines[] = ['kind' => 'row', 'row' => $row];
-        }
-        $pasivaLines[] = ['kind' => 'subtotal', 'label' => 'Sub-total Ekuitas', 'amount' => $data['total_ekuitas']];
+        // Muat SELURUH akun NERACA (postable + header non-postable). Header
+        // account (`is_postable=false`) tidak ada di $balanceByCode karena
+        // engine hanya mengembalikan leaf, tapi dibutuhkan sebagai baris
+        // sub-total per kelompok (Aset Lancar / Kas / Bank / dst) —
+        // sebagaimana lazim dicetak di Neraca skontro koperasi (contoh:
+        // "Posisi_Keuangan" export sistem lama).
+        $allCoa = ChartOfAccount::query()
+            ->where('statement', 'NERACA')
+            ->orderBy('code')
+            ->get();
 
-        // Sisi AKTIVA: satu header + baris-baris aset.
+        // Indeks anak per parent_code. Root (parent_code kosong) dikumpulkan
+        // di kunci '__ROOT__' supaya tidak bentrok dengan kode akun asli.
+        $childrenByParent = $allCoa->groupBy(fn ($a) => (string) ($a->parent_code ?: '__ROOT__'));
+
+        // Roll-up saldo: leaf pakai $balanceByCode (sudah "positive-natural"
+        // dari GeneralLedgerService::balanceFor()), non-leaf jumlah rekursif
+        // anak-anaknya. Untuk kontra-asset (Penyisihan Piutang / Akumulasi
+        // Penyusutan) yang normal_balance=KREDIT tapi type=ASET, tandanya
+        // dibalik ke NEGATIF supaya muncul mengurangi sisi Aset — persis
+        // seperti Excel contoh koperasi ("Penyisihan Piutang: -360jt"),
+        // yang tidak akan seimbang kalau angkanya positif.
+        $balanceOf = function (ChartOfAccount $account) use (&$balanceOf, $childrenByParent, $balanceByCode) {
+            if ($account->is_postable) {
+                $raw = (float) ($balanceByCode[$account->code] ?? 0);
+                $isContra = ($account->type === 'ASET' && $account->normal_balance === 'KREDIT')
+                    || (in_array($account->type, ['LIABILITAS', 'EKUITAS']) && $account->normal_balance === 'DEBIT');
+                return $isContra ? -$raw : $raw;
+            }
+            $sum = 0.0;
+            foreach ($childrenByParent->get($account->code, collect()) as $child) {
+                $sum += $balanceOf($child);
+            }
+            return $sum;
+        };
+
+        // Tree walk: hasilkan daftar baris ['level' => int, 'account' =>
+        // COA, 'amount' => float]. Level dipakai untuk indent kolom
+        // "Keterangan".
+        $walk = function (ChartOfAccount $node, int $level = 0) use (&$walk, $childrenByParent, $balanceOf) {
+            $out = [['level' => $level, 'account' => $node, 'amount' => $balanceOf($node)]];
+            foreach ($childrenByParent->get($node->code, collect()) as $child) {
+                foreach ($walk($child, $level + 1) as $row) {
+                    $out[] = $row;
+                }
+            }
+            return $out;
+        };
+
+        // Skip type-root sintetis (kode 1000/2000/3000 dari seeder default,
+        // atau akun apa pun yang nama-nya sama persis dengan tipenya —
+        // "ASET"/"LIABILITAS"/"EKUITAS" — dan bertindak sebagai wadah saja).
+        // Kalau sebuah koperasi TIDAK memakai type-root itu (mis. Aset
+        // Lancar langsung berada di level teratas dengan parent_code=null),
+        // fallback: pakai akun itu sendiri sebagai level 0.
+        $topRoots = $childrenByParent->get('__ROOT__', collect());
+        $isSynthTypeRoot = fn (ChartOfAccount $r) => ! $r->is_postable
+            && strcasecmp((string) $r->name, (string) $r->type) === 0
+            && $childrenByParent->has($r->code);
+
+        $rootsFor = function (array $types) use ($topRoots, $childrenByParent, $isSynthTypeRoot) {
+            $out = collect();
+            foreach ($topRoots->whereIn('type', $types) as $r) {
+                if ($isSynthTypeRoot($r)) {
+                    foreach ($childrenByParent->get($r->code) as $child) {
+                        $out->push($child);
+                    }
+                    continue;
+                }
+                $out->push($r);
+            }
+            return $out;
+        };
+
         $aktivaLines = [];
-        $aktivaLines[] = ['kind' => 'section', 'label' => 'AKTIVA'];
-        foreach ($aktivaRows as $row) {
-            $aktivaLines[] = ['kind' => 'row', 'row' => $row];
+        foreach ($rootsFor(['ASET']) as $r) {
+            foreach ($walk($r, 0) as $row) {
+                $aktivaLines[] = $row;
+            }
+        }
+        $pasivaLines = [];
+        foreach ($rootsFor(['LIABILITAS', 'EKUITAS']) as $r) {
+            foreach ($walk($r, 0) as $row) {
+                $pasivaLines[] = $row;
+            }
         }
 
-        // Padding agar tinggi kolom sama — baris kosong ditambahkan pada
-        // sisi yang lebih pendek.
+        // Total sisi = jumlah amount di level 0 (bukan menjumlah leaf) —
+        // supaya SUB TOTAL yang sudah dihitung roll-up dipakai apa adanya,
+        // tanpa risiko dobel hitung kontra.
+        $totalAktiva = collect($aktivaLines)->where('level', 0)->sum('amount');
+        $totalPasiva = collect($pasivaLines)->where('level', 0)->sum('amount');
+        $isBalanced = abs($totalAktiva - $totalPasiva) < 0.005;
+
+        // Samakan panjang kedua sisi supaya kolom kiri-kanan sejajar dalam
+        // satu tabel 4-kolom (Keterangan|Jumlah × 2), meniru layout Excel
+        // contoh dari koperasi. Yang lebih pendek dipadding dengan baris
+        // kosong.
         $maxRows = max(count($aktivaLines), count($pasivaLines));
-        while (count($aktivaLines) < $maxRows) {
-            $aktivaLines[] = ['kind' => 'blank'];
-        }
-        while (count($pasivaLines) < $maxRows) {
-            $pasivaLines[] = ['kind' => 'blank'];
+
+        $meta = $meta ?? [];
+        $petugas = $meta['petugas'] ?? optional(auth()->user())->name ?? '-';
+        $tglCetak = $meta['tgl_cetak'] ?? now();
+        if (! $tglCetak instanceof \DateTimeInterface) {
+            $tglCetak = \Illuminate\Support\Carbon::parse($tglCetak);
         }
 
-        $totalPasiva = bcadd($data['total_liabilitas'], $data['total_ekuitas'], 2);
-        $asOf = \Illuminate\Support\Carbon::parse($data['as_of_date'])->translatedFormat('d M Y');
+        $fmt = fn ($v) => number_format((float) $v, 2, ',', '.');
     @endphp
 
     <style>
-        .neraca-title { text-align: center; margin: 0 0 2px; font-size: 14pt; letter-spacing: 0.5px; }
-        .neraca-meta { text-align: center; margin: 0 0 12px; font-size: 9pt; color: #5C6E64; }
-        .scontro { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        .scontro > tbody > tr > td { vertical-align: top; padding: 0; }
-        .side { width: 50%; }
-        .side-inner { width: 100%; border-collapse: collapse; font-size: 9pt; }
-        .side-inner th, .side-inner td { border: 1px solid #D7E2DB; padding: 4px 6px; }
-        .side-inner thead th { background: #11543B; color: #fff; text-align: center; font-weight: 700; letter-spacing: 0.4px; }
-        .side-inner .col-akun { width: 65%; }
-        .side-inner .col-amount { width: 35%; text-align: right; font-variant-numeric: tabular-nums; }
-        .row-section td { background: #F4F7F4; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; font-size: 8.5pt; color: #11543B; }
-        .row-subtotal td { background: #FBFBF7; font-weight: 700; font-style: italic; color: #3D5A4B; }
-        .row-blank td { border-color: #E9EEEA; color: transparent; }
-        .row-blank td:before { content: "\00a0"; }
-        .row-total td { background: #11543B; color: #fff; font-weight: 700; font-size: 10pt; letter-spacing: 0.4px; }
-        .balance-note { margin-top: 8px; font-size: 8.5pt; text-align: center; color: #5C6E64; }
-        .balance-note.warn { color: #A63A2F; font-weight: 700; }
+        .n-title {
+            text-align: center; font-size: 14pt; font-weight: 700;
+            margin: 0 0 2px; letter-spacing: 0.5px;
+        }
+        .n-sub {
+            text-align: center; font-size: 9.5pt; margin: 0 0 8px; color: #3D5A4B;
+        }
+
+        .n-meta { width: 100%; margin: 0 0 10px; font-size: 9pt; border-collapse: collapse; }
+        .n-meta td { padding: 2px 4px; vertical-align: top; }
+        .n-meta .k { width: 90px; }
+        .n-meta .s { width: 8px; text-align: center; }
+
+        .scontro {
+            width: 100%; border-collapse: collapse; font-size: 9pt;
+            table-layout: fixed;
+        }
+        .scontro th, .scontro td {
+            border: 1px solid #8FA098; padding: 3px 6px; vertical-align: top;
+        }
+        .scontro thead th {
+            background: #11543B; color: #fff; text-align: center; font-weight: 700;
+            letter-spacing: 0.3px; font-size: 9.5pt;
+        }
+        .scontro thead tr.sub th {
+            background: #E3EDE6; color: #11543B; font-size: 9pt; font-weight: 700;
+            padding: 2px 6px;
+        }
+        .c-ket { width: 35%; }
+        .c-jml { width: 15%; text-align: right; font-variant-numeric: tabular-nums; }
+
+        /* Indent berjenjang. Level 0 = header kelompok (Aset Lancar, Modal, ...),
+           dicetak tebal & kapital. Level 1 = akun induk (Kas, Bank, Piutang,
+           Dana-Dana SHU, ...). Level 2+ = leaf (rekening/detail akun). */
+        .lv-0 { padding-left: 2px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.2px; }
+        .lv-0.c-jml { font-weight: 700; }
+        .lv-1 { padding-left: 14px; }
+        .lv-1.c-jml { font-weight: 600; }
+        .lv-2 { padding-left: 28px; }
+        .lv-3 { padding-left: 42px; }
+        .lv-blank td { border-color: #DDE5DF; color: transparent; }
+        .lv-blank td:before { content: "\00a0"; }
+
+        .row-total td {
+            background: #11543B; color: #fff; font-weight: 700; font-size: 10pt;
+            letter-spacing: 0.3px;
+        }
+        .row-total .c-jml { font-size: 10.5pt; }
+
+        .bal-note { margin-top: 8px; text-align: center; font-size: 9pt; color: #3D5A4B; }
+        .bal-note.warn { color: #A63A2F; font-weight: 700; }
     </style>
 
-    <h2 class="neraca-title">NERACA — BENTUK SKONTRO</h2>
-    <p class="neraca-meta">
-        {{ ($data['is_consolidated'] ?? false) ? 'Konsolidasi Seluruh Cabang' : ($branchName ?? 'Cabang') }}
-        &middot; per <strong>{{ $asOf }}</strong>
-        &middot; Basis: <strong>{{ strtoupper(str_replace('_', ' ', $data['basis'] ?? 'sak_ep')) }}</strong>
-    </p>
-
-    @if (($data['has_data'] ?? true) === false)
-        <p style="text-align:center; padding:20px; border:1px dashed #D7E2DB; color:#5C6E64;">
-            Tidak ada data neraca untuk tanggal ini.
-        </p>
-    @else
-        {{-- Bentuk skontro: dua kolom sisi-sisi. Kolom kiri AKTIVA,
-             kolom kanan PASIVA (LIABILITAS + EKUITAS). --}}
-        <table class="scontro">
-            <tbody>
-                <tr>
-                    {{-- ============ KOLOM KIRI: AKTIVA ============ --}}
-                    <td class="side" style="padding-right:6px;">
-                        <table class="side-inner">
-                            <thead>
-                                <tr>
-                                    <th colspan="2">AKTIVA</th>
-                                </tr>
-                                <tr>
-                                    <th class="col-akun" style="text-align:left; background:#F4F7F4; color:#11543B;">Akun</th>
-                                    <th class="col-amount" style="background:#F4F7F4; color:#11543B;">Saldo (Rp)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($aktivaLines as $line)
-                                    @switch($line['kind'])
-                                        @case('section')
-                                            {{-- header sudah di thead; sisa 'section' pada kolom aktiva tidak dipakai --}}
-                                            @break
-                                        @case('row')
-                                            @php $row = $line['row']; @endphp
-                                            <tr>
-                                                <td>
-                                                    {{ $row['account']->code }} &mdash; {{ $row['account']->name }}
-                                                    @if ($row['eliminated'])
-                                                        <span style="color:#9AA9A0; font-style:italic;">(dieliminasi RAK)</span>
-                                                    @endif
-                                                </td>
-                                                <td class="col-amount">{{ number_format((float) $row['balance'], 0, ',', '.') }}</td>
-                                            </tr>
-                                            @break
-                                        @case('blank')
-                                            <tr class="row-blank"><td></td><td class="col-amount"></td></tr>
-                                            @break
-                                    @endswitch
-                                @endforeach
-                                <tr class="row-total">
-                                    <td>TOTAL AKTIVA</td>
-                                    <td class="col-amount">{{ number_format((float) $data['total_aset'], 0, ',', '.') }}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </td>
-
-                    {{-- ============ KOLOM KANAN: PASIVA ============ --}}
-                    <td class="side" style="padding-left:6px;">
-                        <table class="side-inner">
-                            <thead>
-                                <tr>
-                                    <th colspan="2">PASIVA (LIABILITAS + EKUITAS)</th>
-                                </tr>
-                                <tr>
-                                    <th class="col-akun" style="text-align:left; background:#F4F7F4; color:#11543B;">Akun</th>
-                                    <th class="col-amount" style="background:#F4F7F4; color:#11543B;">Saldo (Rp)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($pasivaLines as $line)
-                                    @switch($line['kind'])
-                                        @case('section')
-                                            <tr class="row-section"><td colspan="2">{{ $line['label'] }}</td></tr>
-                                            @break
-                                        @case('row')
-                                            @php $row = $line['row']; @endphp
-                                            <tr>
-                                                <td>
-                                                    {{ $row['account']->code }} &mdash; {{ $row['account']->name }}
-                                                    @if ($row['eliminated'])
-                                                        <span style="color:#9AA9A0; font-style:italic;">(dieliminasi RAK)</span>
-                                                    @endif
-                                                </td>
-                                                <td class="col-amount">{{ number_format((float) $row['balance'], 0, ',', '.') }}</td>
-                                            </tr>
-                                            @break
-                                        @case('subtotal')
-                                            <tr class="row-subtotal">
-                                                <td>{{ $line['label'] }}</td>
-                                                <td class="col-amount">{{ number_format((float) $line['amount'], 0, ',', '.') }}</td>
-                                            </tr>
-                                            @break
-                                        @case('blank')
-                                            <tr class="row-blank"><td></td><td class="col-amount"></td></tr>
-                                            @break
-                                    @endswitch
-                                @endforeach
-                                <tr class="row-total">
-                                    <td>TOTAL PASIVA</td>
-                                    <td class="col-amount">{{ number_format((float) $totalPasiva, 0, ',', '.') }}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-
-        @php $isBalanced = $data['is_balanced'] ?? (bccomp((string) $data['total_aset'], (string) $totalPasiva, 2) === 0); @endphp
-        <p class="balance-note {{ $isBalanced ? '' : 'warn' }}">
-            @if ($isBalanced)
-                &#10003; Neraca SEIMBANG &mdash; Total Aktiva = Total Pasiva = Rp {{ number_format((float) $data['total_aset'], 0, ',', '.') }}
-            @else
-                &#9888; NERACA TIDAK SEIMBANG &mdash;
-                Aktiva Rp {{ number_format((float) $data['total_aset'], 0, ',', '.') }} vs
-                Pasiva Rp {{ number_format((float) $totalPasiva, 0, ',', '.') }}
-                (selisih Rp {{ number_format(abs((float) bcsub((string) $data['total_aset'], (string) $totalPasiva, 2)), 0, ',', '.') }})
-            @endif
-        </p>
+    <h2 class="n-title">{{ strtoupper($title ?? 'NERACA (BENTUK SKONTRO)') }}</h2>
+    @if (! empty($meta['sub_title']))
+        <p class="n-sub">{{ $meta['sub_title'] }}</p>
     @endif
+
+    <table class="n-meta">
+        <tr>
+            <td class="k">Periode</td><td class="s">:</td>
+            <td>{{ $meta['periode'] ?? '-' }}</td>
+            <td class="k">Petugas</td><td class="s">:</td>
+            <td>{{ $petugas }}</td>
+        </tr>
+        <tr>
+            <td class="k">Cabang</td><td class="s">:</td>
+            <td>{{ $meta['cabang'] ?? '-' }}</td>
+            <td class="k">Tgl. Dicetak</td><td class="s">:</td>
+            <td>{{ $tglCetak->format('d-m-Y H:i') }}</td>
+        </tr>
+    </table>
+
+    <table class="scontro">
+        <thead>
+            <tr>
+                <th colspan="2">ASET</th>
+                <th colspan="2">KEWAJIBAN DAN MODAL</th>
+            </tr>
+            <tr class="sub">
+                <th class="c-ket" style="text-align:left;">Keterangan</th>
+                <th class="c-jml">Jumlah</th>
+                <th class="c-ket" style="text-align:left;">Keterangan</th>
+                <th class="c-jml">Jumlah</th>
+            </tr>
+        </thead>
+        <tbody>
+            @for ($i = 0; $i < $maxRows; $i++)
+                @php
+                    $l = $aktivaLines[$i] ?? null;
+                    $r = $pasivaLines[$i] ?? null;
+                @endphp
+                <tr>
+                    @if ($l)
+                        <td class="c-ket lv-{{ min($l['level'], 3) }}">{{ $l['account']->name }}</td>
+                        <td class="c-jml lv-{{ min($l['level'], 3) }}">{{ $fmt($l['amount']) }}</td>
+                    @else
+                        <td class="c-ket lv-blank"></td>
+                        <td class="c-jml lv-blank"></td>
+                    @endif
+                    @if ($r)
+                        <td class="c-ket lv-{{ min($r['level'], 3) }}">{{ $r['account']->name }}</td>
+                        <td class="c-jml lv-{{ min($r['level'], 3) }}">{{ $fmt($r['amount']) }}</td>
+                    @else
+                        <td class="c-ket lv-blank"></td>
+                        <td class="c-jml lv-blank"></td>
+                    @endif
+                </tr>
+            @endfor
+            <tr class="row-total">
+                <td>TOTAL ASET</td>
+                <td class="c-jml">{{ $fmt($totalAktiva) }}</td>
+                <td>TOTAL KEWAJIBAN DAN MODAL</td>
+                <td class="c-jml">{{ $fmt($totalPasiva) }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p class="bal-note {{ $isBalanced ? '' : 'warn' }}">
+        @if ($isBalanced)
+            &#10003; Neraca SEIMBANG &mdash; Total Aset = Total Kewajiban dan Modal = Rp {{ $fmt($totalAktiva) }}
+        @else
+            &#9888; NERACA TIDAK SEIMBANG &mdash;
+            Aset Rp {{ $fmt($totalAktiva) }} vs Kewajiban+Modal Rp {{ $fmt($totalPasiva) }}
+            (selisih Rp {{ $fmt(abs($totalAktiva - $totalPasiva)) }})
+        @endif
+    </p>
 
     @include('prints.partials.signature-block', ['documentGroup' => 'laporan_keuangan'])
 @endsection
