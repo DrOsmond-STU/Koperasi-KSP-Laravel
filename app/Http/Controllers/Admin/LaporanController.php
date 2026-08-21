@@ -354,30 +354,64 @@ class LaporanController extends Controller
      * dikonversi ke saldo "positive-natural" (positif di sisi normalnya)
      * dengan formula yang sama seperti GeneralLedgerService::balanceFor()
      * supaya blade tidak perlu tahu perbedaan sumbernya.
+     *
+     * Baris LABA_RUGI (Pendapatan/Beban) TIDAK dikeluarkan sendiri sebagai
+     * akun di neraca — mereka DIRINGKAS jadi "SHU Tahun Berjalan" dan
+     * ditambahkan ke akun ekuitas SHU (config koperasi.akun_shu_berjalan,
+     * default 3150). Tanpa langkah ini scontro tidak akan seimbang persis
+     * sebesar SHU: sisi Aset sudah memuat hasil dari Pendapatan (uang
+     * masuk) dan Beban (uang keluar), sementara sisi Ekuitas kekurangan
+     * angka SHU-nya karena tutup buku belum jalan — ini juga yang
+     * dilakukan saldoAwalCoa() untuk versi flat (lihat baris SHU
+     * synthetic-nya) dan FinancialReportEngine::neraca() untuk Neraca
+     * berjalan (metode shuBerjalan()).
      */
     public function printSaldoAwalNeracaSkontro(Request $request): Response
     {
         $this->authorize('laporan.read');
 
-        $entries = OpeningBalanceCoa::query()
-            ->with('account')
-            ->get()
-            ->filter(fn (OpeningBalanceCoa $line) => ($line->account?->statement ?? null) === 'NERACA');
+        $entries = OpeningBalanceCoa::query()->with('account')->get();
 
+        $shuAccountCode = (string) config('koperasi.akun_shu_berjalan', '3150');
         $balanceByCode = [];
+        $shuFromLabaRugi = 0.0;
+
         foreach ($entries as $line) {
             $account = $line->account;
             if (! $account) {
                 continue;
             }
-            // Kontribusi ke "positive-natural balance":
-            //   DEBIT-normal: +debit, -kredit
-            //   KREDIT-normal: +kredit, -debit
+
+            $amount = (float) $line->amount;
+
+            // Baris LABA_RUGI diringkas jadi kontribusi ke SHU Tahun
+            // Berjalan (KREDIT-natural): position='kredit' menambah SHU
+            // (mis. Pendapatan), position='debit' mengurangi (mis. Beban).
+            // Formula ini identik dengan saldoAwalCoa() di server.
+            if ($account->statement === 'LABA_RUGI') {
+                $shuFromLabaRugi += ($line->position === 'kredit' ? $amount : -$amount);
+                continue;
+            }
+
+            if ($account->statement !== 'NERACA') {
+                continue;
+            }
+
+            // Positive-natural: DEBIT-normal → +debit -kredit;
+            //                   KREDIT-normal → +kredit -debit.
             $isDebitNormal = $account->normal_balance === 'DEBIT';
             $delta = $isDebitNormal
-                ? ($line->position === 'debit' ? (float) $line->amount : -(float) $line->amount)
-                : ($line->position === 'kredit' ? (float) $line->amount : -(float) $line->amount);
+                ? ($line->position === 'debit' ? $amount : -$amount)
+                : ($line->position === 'kredit' ? $amount : -$amount);
             $balanceByCode[$account->code] = ($balanceByCode[$account->code] ?? 0.0) + $delta;
+        }
+
+        // Injeksi SHU dari Laba/Rugi ke akun SHU Tahun Berjalan. Kalau
+        // koperasi memang punya opening balance langsung di akun SHU
+        // (jarang tapi mungkin), kontribusinya ditambahkan — tidak
+        // menimpa — sehingga jumlahnya konsisten dengan flat report.
+        if (round($shuFromLabaRugi, 2) !== 0.0) {
+            $balanceByCode[$shuAccountCode] = ($balanceByCode[$shuAccountCode] ?? 0.0) + $shuFromLabaRugi;
         }
 
         $pdf = $this->renderPrintPdf('prints.laporan.neraca-scontro', [
