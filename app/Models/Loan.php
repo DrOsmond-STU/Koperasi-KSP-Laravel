@@ -21,7 +21,7 @@ class Loan extends Model
         'loan_product_id',
         'loan_number',
         'principal_amount',
-        'tenor_months',
+        'tenor_days',
         'interest_rate_percentage',
         'provision_fee_amount',
         'required_approval_count',

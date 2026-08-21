@@ -37,7 +37,7 @@ class LoanApplicationController extends Controller
         $member = Member::query()->findOrFail($request->validated('member_id'));
         $product = LoanProduct::query()->findOrFail($request->validated('loan_product_id'));
         $principal = (float) $request->validated('principal_amount');
-        $tenor = (int) $request->validated('tenor_months');
+        $tenor = (int) $request->validated('tenor_days');
         $rate = $product->rateAt();
 
         return view('staf.pengajuan-pinjaman-simulasi', [
@@ -65,7 +65,7 @@ class LoanApplicationController extends Controller
             $member,
             $product,
             (float) $request->validated('principal_amount'),
-            (int) $request->validated('tenor_months'),
+            (int) $request->validated('tenor_days'),
             $member->branch_id,
             $request->user()->id,
         );

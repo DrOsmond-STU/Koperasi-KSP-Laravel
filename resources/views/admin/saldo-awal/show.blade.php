@@ -253,12 +253,12 @@
                         <input type="number" step="0.01" min="0" name="outstanding_interest">
                     </div>
                     <div>
-                        <label>Tenor (bulan)</label>
-                        <input type="number" min="1" name="tenor_months" required>
+                        <label>Tenor (hari)</label>
+                        <input type="number" min="1" name="tenor_days" required>
                     </div>
                     <div>
-                        <label>Sisa Tenor (bulan)</label>
-                        <input type="number" min="0" name="remaining_tenor_months" required>
+                        <label>Sisa Tenor (hari)</label>
+                        <input type="number" min="0" name="remaining_tenor_days" required>
                     </div>
                     <div>
                         <label>Angsuran ke-</label>
@@ -292,7 +292,7 @@
                 <button type="submit" class="btn-primary">Import CSV</button>
                 <a class="btn-secondary" href="{{ route('admin.saldo-awal.template', 'loans') }}">Unduh Template</a>
             </form>
-            <p class="field-guide">Kolom CSV: <code>kode_anggota, kode_produk_pinjaman, no_pinjaman_lama, tanggal_akad, plafon_awal, sisa_pokok, sisa_jasa_berjalan, tenor_bulan, sisa_tenor, angsuran_ke, tanggal_jatuh_tempo_berikutnya, kolektibilitas</code></p>
+            <p class="field-guide">Kolom CSV: <code>kode_anggota, kode_produk_pinjaman, no_pinjaman_lama, tanggal_akad, plafon_awal, sisa_pokok, sisa_jasa_berjalan, tenor_hari, sisa_tenor_hari, angsuran_ke, tanggal_jatuh_tempo_berikutnya, kolektibilitas</code></p>
         @endif
     </div>
 

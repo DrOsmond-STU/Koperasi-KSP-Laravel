@@ -46,7 +46,7 @@ class LoanRepaymentGatewayServiceTest extends TestCase
         $loan = Loan::factory()->create(['loan_product_id' => $product->id, 'status' => 'dicairkan']);
 
         LoanSchedule::query()->create([
-            'loan_id' => $loan->id, 'installment_number' => 1, 'due_date' => now()->addMonth(),
+            'loan_id' => $loan->id, 'installment_number' => 1, 'due_date' => now()->addDay(),
             'principal_amount' => 1000000, 'interest_amount' => 100000, 'total_amount' => 1100000,
             'paid_amount' => 0, 'status' => 'belum_bayar',
         ]);

@@ -94,7 +94,7 @@ class OpeningBalanceImportService
                 $rowErrors[] = "kode_produk_pinjaman \"{$row['kode_produk_pinjaman']}\" tidak ditemukan di Master Produk Pinjaman";
             }
 
-            foreach (['plafon_awal', 'sisa_pokok', 'sisa_jasa_berjalan', 'tenor_bulan', 'sisa_tenor', 'angsuran_ke'] as $numericField) {
+            foreach (['plafon_awal', 'sisa_pokok', 'sisa_jasa_berjalan', 'tenor_hari', 'sisa_tenor_hari', 'angsuran_ke'] as $numericField) {
                 if (! is_numeric($row[$numericField] ?? null)) {
                     $rowErrors[] = "{$numericField} harus berupa angka";
                 }
@@ -117,8 +117,8 @@ class OpeningBalanceImportService
                 'original_principal' => (float) $row['plafon_awal'],
                 'outstanding_principal' => (float) $row['sisa_pokok'],
                 'outstanding_interest' => (float) $row['sisa_jasa_berjalan'],
-                'tenor_months' => (int) $row['tenor_bulan'],
-                'remaining_tenor_months' => (int) $row['sisa_tenor'],
+                'tenor_days' => (int) $row['tenor_hari'],
+                'remaining_tenor_days' => (int) $row['sisa_tenor_hari'],
                 'next_installment_number' => (int) $row['angsuran_ke'],
                 'next_due_date' => $row['tanggal_jatuh_tempo_berikutnya'],
                 'collectibility' => self::COLLECTIBILITY_MAP[$collectibilityKey],

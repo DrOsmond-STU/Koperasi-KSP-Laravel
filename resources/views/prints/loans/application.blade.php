@@ -11,7 +11,7 @@
         <tr><td style="padding:3px 0;">No. Anggota</td><td style="padding:3px 0;">: {{ $loan->member->member_number }}</td></tr>
         <tr><td style="padding:3px 0;">Produk Pinjaman</td><td style="padding:3px 0;">: {{ $loan->loanProduct->name }}</td></tr>
         <tr><td style="padding:3px 0;">Plafon Diajukan</td><td style="padding:3px 0;">: Rp {{ number_format($loan->principal_amount, 0, ',', '.') }}</td></tr>
-        <tr><td style="padding:3px 0;">Tenor</td><td style="padding:3px 0;">: {{ $loan->tenor_months }} bulan</td></tr>
+        <tr><td style="padding:3px 0;">Tenor</td><td style="padding:3px 0;">: {{ $loan->tenor_days }} hari</td></tr>
         <tr><td style="padding:3px 0;">Tarif Jasa</td><td style="padding:3px 0;">: {{ $loan->interest_rate_percentage }}% / tahun</td></tr>
         <tr><td style="padding:3px 0;">Tanggal Pengajuan</td><td style="padding:3px 0;">: {{ optional($loan->submitted_at)->translatedFormat('d M Y') }}</td></tr>
         <tr><td style="padding:3px 0;">Status</td><td style="padding:3px 0;">: {{ ucfirst($loan->status) }}</td></tr>

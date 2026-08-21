@@ -27,7 +27,7 @@ class LoanServiceTest extends TestCase
 
     public function test_tenor_outside_product_range_is_rejected(): void
     {
-        $product = LoanProduct::factory()->create(['min_tenor_months' => 6, 'max_tenor_months' => 12]);
+        $product = LoanProduct::factory()->create(['min_tenor_days' => 6, 'max_tenor_days' => 12]);
         $member = Member::factory()->create();
         $user = User::factory()->create();
 
@@ -62,7 +62,7 @@ class LoanServiceTest extends TestCase
 
     public function test_originate_instantly_creates_a_dicairkan_loan_with_schedule(): void
     {
-        $product = LoanProduct::factory()->create(['min_plafon' => 0]);
+        $product = LoanProduct::factory()->create(['min_plafon' => 0, 'min_tenor_days' => 3, 'max_tenor_days' => 60]);
         $member = Member::factory()->create();
         $user = User::factory()->create();
 
@@ -88,7 +88,7 @@ class LoanServiceTest extends TestCase
 
     public function test_originate_instantly_rejects_out_of_range_tenor(): void
     {
-        $product = LoanProduct::factory()->create(['min_plafon' => 0, 'min_tenor_months' => 6, 'max_tenor_months' => 12]);
+        $product = LoanProduct::factory()->create(['min_plafon' => 0, 'min_tenor_days' => 6, 'max_tenor_days' => 12]);
         $member = Member::factory()->create();
         $user = User::factory()->create();
 

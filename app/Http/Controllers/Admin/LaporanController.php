@@ -248,7 +248,7 @@ class LaporanController extends Controller
                 'produk' => $loan->loanProduct->name ?? '-',
                 'cabang' => $loan->branch->name ?? '-',
                 'principal_amount' => $this->rupiah((float) $loan->principal_amount),
-                'tenor_months' => (string) $loan->tenor_months,
+                'tenor_days' => (string) $loan->tenor_days,
                 'status' => ucfirst($loan->status),
                 'collectibility' => (string) $loan->collectibility,
                 'disbursed_at' => optional($loan->disbursed_at)->format('d-m-Y') ?? '-',

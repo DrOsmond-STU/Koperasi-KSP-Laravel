@@ -44,8 +44,8 @@
                 <input type="number" step="0.01" name="principal_amount" required>
             </div>
             <div class="field">
-                <label>Tenor (bulan)</label>
-                <input type="number" name="tenor_months" required>
+                <label>Tenor (hari)</label>
+                <input type="number" name="tenor_days" min="1" required>
             </div>
             <button type="submit" class="btn-primary">Simulasikan Jadwal Angsuran</button>
         </form>

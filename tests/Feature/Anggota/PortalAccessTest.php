@@ -92,7 +92,7 @@ class PortalAccessTest extends TestCase
         [$user, $member] = $this->anggotaWithMember();
         $loan = Loan::factory()->create(['member_id' => $member->id, 'status' => 'dicairkan']);
         LoanSchedule::query()->create([
-            'loan_id' => $loan->id, 'installment_number' => 1, 'due_date' => now()->addMonth(),
+            'loan_id' => $loan->id, 'installment_number' => 1, 'due_date' => now()->addDay(),
             'principal_amount' => 100000, 'interest_amount' => 10000, 'total_amount' => 110000,
             'paid_amount' => 0, 'status' => 'belum_bayar',
         ]);
@@ -113,7 +113,7 @@ class PortalAccessTest extends TestCase
             'member_id' => $otherMember->id, // ignored — no such field is even validated
             'loan_product_id' => $product->id,
             'principal_amount' => 3000000,
-            'tenor_months' => 12,
+            'tenor_days' => 12,
         ]);
 
         $response->assertRedirect(route('portal.loan-application.create'));

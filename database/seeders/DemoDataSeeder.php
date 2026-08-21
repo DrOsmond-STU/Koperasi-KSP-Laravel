@@ -177,8 +177,8 @@ class DemoDataSeeder extends Seeder
                 'name' => 'Pinjaman Modal Usaha Demo',
                 'min_plafon' => 500000,
                 'max_plafon' => 50000000,
-                'min_tenor_months' => 3,
-                'max_tenor_months' => 24,
+                'min_tenor_days' => 7,
+                'max_tenor_days' => 180,
                 'calculation_method' => 'flat',
                 'provision_fee_percentage' => 1,
                 'penalty_percentage_per_day' => 0.1,
@@ -282,25 +282,25 @@ class DemoDataSeeder extends Seeder
         }
 
         // 1) Diajukan — belum diputuskan sama sekali.
-        $loanService->submitApplication($members[0], $product, 3000000, 6, $members[0]->branch_id, $this->petugasKredit->id);
+        $loanService->submitApplication($members[0], $product, 3000000, 30, $members[0]->branch_id, $this->petugasKredit->id);
 
         // 2) Ditolak.
-        $rejected = $loanService->submitApplication($members[1], $product, 2000000, 3, $members[1]->branch_id, $this->petugasKredit->id);
+        $rejected = $loanService->submitApplication($members[1], $product, 2000000, 15, $members[1]->branch_id, $this->petugasKredit->id);
         $approvalService->reject($rejected, $this->manajer, 'Riwayat angsuran sebelumnya kurang lancar.');
 
         // 3) Dicairkan, dengan 2 kali pembayaran angsuran sebagian.
-        $active1 = $loanService->submitApplication($members[2], $product, 5000000, 6, $members[2]->branch_id, $this->petugasKredit->id);
+        $active1 = $loanService->submitApplication($members[2], $product, 5000000, 30, $members[2]->branch_id, $this->petugasKredit->id);
         $approvalService->approve($active1, $this->manajer);
         $active1 = $active1->fresh();
         $firstInstallment = (float) $active1->schedules()->orderBy('installment_number')->first()->total_amount;
         $repaymentService->recordPayment($active1, $firstInstallment, $this->teller->id, 'Pembayaran angsuran ke-1');
 
         // 4) Dicairkan, belum ada pembayaran (untuk uji pengingat jatuh tempo).
-        $active2 = $loanService->submitApplication($members[3], $product, 8000000, 12, $members[3]->branch_id, $this->petugasKredit->id);
+        $active2 = $loanService->submitApplication($members[3], $product, 8000000, 60, $members[3]->branch_id, $this->petugasKredit->id);
         $approvalService->approve($active2, $this->bendahara);
 
         // 5) Di atas ambang approval (butuh 2 persetujuan berjenjang).
-        $bigLoan = $loanService->submitApplication($members[4], $product, 15000000, 24, $members[4]->branch_id, $this->petugasKredit->id);
+        $bigLoan = $loanService->submitApplication($members[4], $product, 15000000, 100, $members[4]->branch_id, $this->petugasKredit->id);
         $approvalService->approve($bigLoan, $this->manajer);
         $approvalService->approve($bigLoan->fresh(), $this->bendahara);
     }

@@ -93,7 +93,7 @@ class PosControllerTest extends TestCase
             'payment_method' => 'hutang',
             'member_id' => $member->id,
             'loan_product_id' => $loanProduct->id,
-            'tenor_months' => 6,
+            'tenor_days' => 6,
             'items' => [
                 ['product_id' => $product->id, 'qty' => 3],
             ],
@@ -122,7 +122,7 @@ class PosControllerTest extends TestCase
             ],
         ]);
 
-        $response->assertSessionHasErrors(['member_id', 'loan_product_id', 'tenor_months']);
+        $response->assertSessionHasErrors(['member_id', 'loan_product_id', 'tenor_days']);
     }
 
     public function test_hutang_sale_with_out_of_range_plafon_redirects_with_friendly_error(): void
@@ -151,7 +151,7 @@ class PosControllerTest extends TestCase
             'payment_method' => 'hutang',
             'member_id' => $member->id,
             'loan_product_id' => $loanProduct->id,
-            'tenor_months' => 6,
+            'tenor_days' => 6,
             'items' => [
                 ['product_id' => $product->id, 'qty' => 3],
             ],

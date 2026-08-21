@@ -77,7 +77,7 @@ class LoanApprovalServiceTest extends TestCase
             'created_by' => $creator->id,
             'required_approval_count' => 2,
             'principal_amount' => 10_000_000,
-            'tenor_months' => 10,
+            'tenor_days' => 10,
         ]);
 
         $service = app(LoanApprovalService::class);
@@ -126,7 +126,7 @@ class LoanApprovalServiceTest extends TestCase
             'created_by' => $creator->id,
             'required_approval_count' => 1,
             'principal_amount' => 5_000_000,
-            'tenor_months' => 12,
+            'tenor_days' => 12,
         ]);
 
         return app(LoanApprovalService::class)->approve($loan, $approver);
@@ -182,7 +182,7 @@ class LoanApprovalServiceTest extends TestCase
 
     public function test_cancelling_a_pos_originated_loan_without_its_own_journal_is_rejected(): void
     {
-        $product = LoanProduct::factory()->create(['min_plafon' => 0]);
+        $product = LoanProduct::factory()->create(['min_plafon' => 0, 'min_tenor_days' => 3, 'max_tenor_days' => 60]);
         $member = Member::factory()->create();
         $user = User::factory()->create();
 

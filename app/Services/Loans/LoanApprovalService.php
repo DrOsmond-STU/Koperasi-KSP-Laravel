@@ -114,7 +114,7 @@ class LoanApprovalService
 
         $schedule = $this->scheduleCalculator->calculate(
             $principal,
-            $loan->tenor_months,
+            $loan->tenor_days,
             (float) $loan->interest_rate_percentage,
             $product->calculation_method,
             now(),

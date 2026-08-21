@@ -38,7 +38,7 @@ class LoanApplicationController extends Controller
             $member,
             $product,
             (float) $request->validated('principal_amount'),
-            (int) $request->validated('tenor_months'),
+            (int) $request->validated('tenor_days'),
             $member->branch_id,
             $request->user()->id,
         );

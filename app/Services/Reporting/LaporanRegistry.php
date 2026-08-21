@@ -107,7 +107,7 @@ class LaporanRegistry
                     'produk' => 'Produk',
                     'cabang' => 'Cabang',
                     'principal_amount' => 'Pokok Pinjaman',
-                    'tenor_months' => 'Tenor (bln)',
+                    'tenor_days' => 'Tenor (hari)',
                     'status' => 'Status',
                     'collectibility' => 'Kolektibilitas',
                     'disbursed_at' => 'Tgl Cair',

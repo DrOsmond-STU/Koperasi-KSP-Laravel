@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\DB;
  * produk, snapshot tarif & jumlah approval yang dibutuhkan pada saat
  * pengajuan (bukan dihitung ulang nanti) agar perubahan produk di kemudian
  * hari tidak memengaruhi pengajuan yang sudah berjalan.
+ *
+ * Tenor bersatuan HARI (bukan bulan) — koperasi ini bermodel harian.
  */
 class LoanService
 {
@@ -22,22 +24,22 @@ class LoanService
         Member $member,
         LoanProduct $product,
         float $principal,
-        int $tenorMonths,
+        int $tenorDays,
         int $branchId,
         int $createdBy,
     ): Loan {
-        $this->assertWithinProductLimits($product, $principal, $tenorMonths);
+        $this->assertWithinProductLimits($product, $principal, $tenorDays);
 
         $rate = $product->rateAt();
 
-        return DB::transaction(function () use ($member, $product, $principal, $tenorMonths, $branchId, $createdBy, $rate) {
+        return DB::transaction(function () use ($member, $product, $principal, $tenorDays, $branchId, $createdBy, $rate) {
             return Loan::query()->create([
                 'branch_id' => $branchId,
                 'member_id' => $member->id,
                 'loan_product_id' => $product->id,
                 'loan_number' => $this->generateLoanNumber($product),
                 'principal_amount' => $principal,
-                'tenor_months' => $tenorMonths,
+                'tenor_days' => $tenorDays,
                 'interest_rate_percentage' => $rate?->rate_percentage ?? 0,
                 'required_approval_count' => $product->requiredApprovalCountFor($principal),
                 'status' => 'diajukan',
@@ -65,11 +67,11 @@ class LoanService
         Member $member,
         LoanProduct $product,
         float $principal,
-        int $tenorMonths,
+        int $tenorDays,
         int $branchId,
         int $createdBy,
     ): Loan {
-        $this->assertWithinProductLimits($product, $principal, $tenorMonths);
+        $this->assertWithinProductLimits($product, $principal, $tenorDays);
 
         $ratePercentage = (float) ($product->rateAt()?->rate_percentage ?? 0);
 
@@ -79,7 +81,7 @@ class LoanService
             'loan_product_id' => $product->id,
             'loan_number' => $this->generateLoanNumber($product),
             'principal_amount' => $principal,
-            'tenor_months' => $tenorMonths,
+            'tenor_days' => $tenorDays,
             'interest_rate_percentage' => $ratePercentage,
             'provision_fee_amount' => 0,
             'required_approval_count' => $product->requiredApprovalCountFor($principal),
@@ -90,7 +92,7 @@ class LoanService
             'disbursed_at' => now()->toDateString(),
         ]);
 
-        foreach ($this->scheduleCalculator->calculate($principal, $tenorMonths, $ratePercentage, $product->calculation_method, now()) as $row) {
+        foreach ($this->scheduleCalculator->calculate($principal, $tenorDays, $ratePercentage, $product->calculation_method, now()) as $row) {
             $loan->schedules()->create([
                 'installment_number' => $row['installment_number'],
                 'due_date' => $row['due_date'],
@@ -103,14 +105,14 @@ class LoanService
         return $loan->fresh('schedules');
     }
 
-    private function assertWithinProductLimits(LoanProduct $product, float $principal, int $tenorMonths): void
+    private function assertWithinProductLimits(LoanProduct $product, float $principal, int $tenorDays): void
     {
         if ($principal < (float) $product->min_plafon || $principal > (float) $product->max_plafon) {
             throw InvalidLoanApplicationException::plafonOutOfRange($principal, (float) $product->min_plafon, (float) $product->max_plafon);
         }
 
-        if ($tenorMonths < $product->min_tenor_months || $tenorMonths > $product->max_tenor_months) {
-            throw InvalidLoanApplicationException::tenorOutOfRange($tenorMonths, $product->min_tenor_months, $product->max_tenor_months);
+        if ($tenorDays < $product->min_tenor_days || $tenorDays > $product->max_tenor_days) {
+            throw InvalidLoanApplicationException::tenorOutOfRange($tenorDays, $product->min_tenor_days, $product->max_tenor_days);
         }
     }
 

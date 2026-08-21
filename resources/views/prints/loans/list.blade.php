@@ -26,7 +26,7 @@
                         <td>{{ $loan->loan_number }}</td>
                         <td>{{ $loan->loanProduct->name }}</td>
                         <td>Rp {{ number_format($loan->principal_amount, 0, ',', '.') }}</td>
-                        <td>{{ $loan->tenor_months }} bulan</td>
+                        <td>{{ $loan->tenor_days }} hari</td>
                         <td>{{ ucfirst($loan->status) }}</td>
                         <td>{{ optional($loan->disbursed_at)->format('d/m/Y') ?? '-' }}</td>
                     </tr>

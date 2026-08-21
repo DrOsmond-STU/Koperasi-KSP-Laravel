@@ -156,7 +156,7 @@ class PosSaleServiceTest extends TestCase
             $user->id,
             null,
             null,
-            ['member' => $member, 'loan_product' => $loanProduct, 'tenor_months' => 6],
+            ['member' => $member, 'loan_product' => $loanProduct, 'tenor_days' => 6],
         );
 
         $this->assertEquals('hutang', $sale->payment_method);
@@ -199,7 +199,7 @@ class PosSaleServiceTest extends TestCase
                 $user->id,
                 null,
                 null,
-                ['member' => $member, 'loan_product' => $loanProduct, 'tenor_months' => 6],
+                ['member' => $member, 'loan_product' => $loanProduct, 'tenor_days' => 6],
             );
         } finally {
             $this->assertDatabaseCount('pos_sales', 0);
@@ -217,7 +217,7 @@ class PosSaleServiceTest extends TestCase
         $product = $this->stockedProduct($branch->id);
         $user = User::factory()->create();
         $member = Member::factory()->create(['branch_id' => $branch->id]);
-        $loanProduct = LoanProduct::factory()->create(['min_plafon' => 0, 'min_tenor_months' => 3, 'max_tenor_months' => 12]);
+        $loanProduct = LoanProduct::factory()->create(['min_plafon' => 0, 'min_tenor_days' => 3, 'max_tenor_days' => 12]);
 
         $this->expectException(InvalidLoanApplicationException::class);
 
@@ -228,7 +228,7 @@ class PosSaleServiceTest extends TestCase
             $user->id,
             null,
             null,
-            ['member' => $member, 'loan_product' => $loanProduct, 'tenor_months' => 36],
+            ['member' => $member, 'loan_product' => $loanProduct, 'tenor_days' => 36],
         );
     }
 }

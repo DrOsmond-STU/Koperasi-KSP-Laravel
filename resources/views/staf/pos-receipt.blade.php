@@ -47,7 +47,7 @@
 
         @if ($sale->payment_method === 'hutang' && $sale->loan)
             <p class="muted">
-                Tenor: {{ $sale->loan->tenor_months }} bulan
+                Tenor: {{ $sale->loan->tenor_days }} hari
                 @if ($sale->loan->schedules->isNotEmpty())
                     — Angsuran pertama jatuh tempo {{ $sale->loan->schedules->first()->due_date->translatedFormat('d M Y') }}
                 @endif

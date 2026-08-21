@@ -27,7 +27,7 @@ class LoanFactory extends Factory
             'loan_product_id' => LoanProduct::factory(),
             'loan_number' => 'PINJ-'.$this->faker->unique()->numerify('########'),
             'principal_amount' => 5000000,
-            'tenor_months' => 12,
+            'tenor_days' => 30,
             'interest_rate_percentage' => 12.0,
             'required_approval_count' => 1,
             'status' => 'diajukan',

@@ -35,7 +35,7 @@ class CalendarServiceTest extends TestCase
         LoanSchedule::query()->create([
             'loan_id' => $loan->id,
             'installment_number' => 2,
-            'due_date' => $dueDate->copy()->addMonth(),
+            'due_date' => $dueDate->copy()->addDay(),
             'principal_amount' => 400000,
             'interest_amount' => 50000,
             'total_amount' => 450000,

@@ -58,7 +58,7 @@ class StafLoanRepaymentTest extends TestCase
             LoanSchedule::query()->create([
                 'loan_id' => $loan->id,
                 'installment_number' => $i,
-                'due_date' => now()->addMonths($i),
+                'due_date' => now()->addDays($i),
                 'principal_amount' => 1000000,
                 'interest_amount' => 100000,
                 'total_amount' => 1100000,

@@ -146,7 +146,7 @@ class MainDashboardServiceTest extends TestCase
         $laterSchedule = LoanSchedule::query()->create([
             'loan_id' => $loan->id,
             'installment_number' => 3,
-            'due_date' => now()->addMonths(2),
+            'due_date' => now()->addDays(2),
             'principal_amount' => 400000,
             'interest_amount' => 40000,
             'total_amount' => 440000,
@@ -156,7 +156,7 @@ class MainDashboardServiceTest extends TestCase
         $soonestSchedule = LoanSchedule::query()->create([
             'loan_id' => $loan->id,
             'installment_number' => 2,
-            'due_date' => now()->addMonth(),
+            'due_date' => now()->addDay(),
             'principal_amount' => 400000,
             'interest_amount' => 40000,
             'total_amount' => 440000,

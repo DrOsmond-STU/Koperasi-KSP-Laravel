@@ -31,8 +31,8 @@ class LoanProductControllerTest extends TestCase
             'name' => 'Pinjaman Modal Usaha',
             'min_plafon' => 500000,
             'max_plafon' => 20000000,
-            'min_tenor_months' => 3,
-            'max_tenor_months' => 24,
+            'min_tenor_days' => 3,
+            'max_tenor_days' => 24,
             'calculation_method' => 'flat',
             'initial_rate_percentage' => 12,
         ];
