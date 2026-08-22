@@ -229,7 +229,12 @@ class RetributionController extends Controller
     }
 
     /**
-     * Sama pola dengan DashboardController::resolveBranchId().
+     * Sama pola dengan DashboardController::resolveBranchId(), kecuali
+     * default-nya: modul Retribusi ini secara konsep terikat ke cabang
+     * "Unit Pengelola Fasilitas (UPF)" — begitu user belum memilih cabang
+     * lain secara eksplisit, tampilkan data cabang itu (bukan konsolidasi
+     * semua cabang), supaya KPI dashboard & pilihan Cabang di form
+     * Transaksi konsisten menunjuk cabang yang sama.
      */
     private function resolveBranchId(Request $request): ?int
     {
@@ -237,14 +242,39 @@ class RetributionController extends Controller
         $requested = $request->integer('branch_id') ?: null;
 
         if ($allowed === null) {
-            return $requested;
+            return $requested ?? $this->defaultUpfBranchId();
         }
 
         if ($requested !== null && ! in_array($requested, $allowed, true)) {
             abort(403, 'Anda tidak memiliki akses ke cabang ini.');
         }
 
-        return $requested ?? ($allowed[0] ?? null);
+        return $requested ?? $this->preferredAllowedBranchId($allowed);
+    }
+
+    /**
+     * Cabang "Unit Pengelola Fasilitas (UPF)" dicocokkan lewat nama
+     * (bukan id/code tetap) karena cabang ini didaftarkan langsung oleh
+     * pengurus lewat menu Master Cabang, bukan lewat seeder — tidak ada
+     * id/code yang bisa diasumsikan konsisten di semua instalasi.
+     */
+    private function defaultUpfBranchId(): ?int
+    {
+        return Branch::query()->where('name', 'LIKE', '%UPF%')->value('id');
+    }
+
+    /**
+     * @param  array<int, int>  $allowed
+     */
+    private function preferredAllowedBranchId(array $allowed): ?int
+    {
+        $upfId = $this->defaultUpfBranchId();
+
+        if ($upfId !== null && in_array($upfId, $allowed, true)) {
+            return $upfId;
+        }
+
+        return $allowed[0] ?? null;
     }
 
     private function availableBranches(Request $request)

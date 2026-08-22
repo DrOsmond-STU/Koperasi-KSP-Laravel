@@ -64,6 +64,44 @@ class RetributionControllerTest extends TestCase
         $index->assertSee('Ibu Sari');
     }
 
+    /**
+     * Modul Retribusi (UPF) secara konsep terikat ke cabang "Unit
+     * Pengelola Fasilitas (UPF)" — untuk user scope semua cabang, form
+     * Transaksi & KPI dashboard harus default ke cabang itu, bukan
+     * konsolidasi seluruh cabang (lihat RetributionController::
+     * resolveBranchId()).
+     */
+    public function test_transaction_form_defaults_branch_to_upf_for_unrestricted_user(): void
+    {
+        $upf = Branch::factory()->create(['name' => 'Unit Pengelola Fasilitas ( UPF )']);
+        Branch::factory()->create(['name' => 'Cabang Lain']);
+        $officer = $this->petugasUpf();
+
+        $response = $this->actingAs($officer)->get(route('staf.retribusi-upf.index'));
+
+        $response->assertOk();
+        $response->assertSee('<option value="'.$upf->id.'" selected>', false);
+    }
+
+    /**
+     * User dengan scope terbatas yang TIDAK punya akses ke cabang UPF
+     * tetap fallback ke cabang pertama yang diizinkan — tidak boleh
+     * default ke cabang yang bukan haknya.
+     */
+    public function test_transaction_form_falls_back_to_first_allowed_branch_when_upf_not_allowed(): void
+    {
+        Branch::factory()->create(['name' => 'Unit Pengelola Fasilitas ( UPF )']);
+        $ownBranch = Branch::factory()->create(['name' => 'Cabang Sendiri']);
+        $user = User::factory()->create(['two_factor_confirmed_at' => now()]);
+        $user->assignRole('petugas_upf');
+        UserBranchScope::query()->create(['user_id' => $user->id, 'scope_type' => 'single', 'single_branch_id' => $ownBranch->id]);
+
+        $response = $this->actingAs($user)->get(route('staf.retribusi-upf.index'));
+
+        $response->assertOk();
+        $response->assertSee('<option value="'.$ownBranch->id.'" selected>', false);
+    }
+
     public function test_role_without_permission_cannot_access_retribusi_upf(): void
     {
         $user = User::factory()->create(['two_factor_confirmed_at' => now()]);
