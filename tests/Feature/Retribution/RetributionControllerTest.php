@@ -45,12 +45,13 @@ class RetributionControllerTest extends TestCase
     {
         $officer = $this->petugasUpf();
         $branch = Branch::factory()->create();
-        $this->activateFullyAllocatedType();
+        $type = $this->activateFullyAllocatedType();
 
         $response = $this->actingAs($officer)->post(route('staf.retribusi-upf.store'), [
             'branch_id' => $branch->id,
             'payer_type' => 'umum',
             'payer_name' => 'Ibu Sari',
+            'retribution_type_id' => $type->id,
             'total_amount' => 75000,
             'payment_method' => 'tunai',
         ]);
@@ -87,12 +88,13 @@ class RetributionControllerTest extends TestCase
         $user = User::factory()->create(['two_factor_confirmed_at' => now()]);
         $user->assignRole('petugas_upf');
         UserBranchScope::query()->create(['user_id' => $user->id, 'scope_type' => 'single', 'single_branch_id' => $ownBranch->id]);
-        $this->activateFullyAllocatedType();
+        $type = $this->activateFullyAllocatedType();
 
         $response = $this->actingAs($user)->post(route('staf.retribusi-upf.store'), [
             'branch_id' => $otherBranch->id,
             'payer_type' => 'umum',
             'payer_name' => 'Ibu Sari',
+            'retribution_type_id' => $type->id,
             'total_amount' => 75000,
             'payment_method' => 'tunai',
         ]);
@@ -101,10 +103,17 @@ class RetributionControllerTest extends TestCase
         $this->assertDatabaseCount('retribution_transactions', 0);
     }
 
-    public function test_store_shows_domain_error_when_percentages_not_fully_allocated(): void
+    /**
+     * "Persentase belum 100%" sekarang cuma relevan untuk mode ANGGOTA
+     * (split otomatis ke seluruh jenis "split") — mode UMUM tidak lagi
+     * di-split, ia mewajibkan satu jenis 100% dipilih eksplisit (lihat
+     * RetributionService::assertUmumType()).
+     */
+    public function test_store_shows_domain_error_when_split_percentages_not_fully_allocated(): void
     {
         $officer = $this->petugasUpf();
         $branch = Branch::factory()->create();
+        $member = \App\Models\Member::factory()->create();
         RetributionType::factory()->create([
             'percentage' => 50,
             'coa_revenue_account_id' => ChartOfAccount::factory()->create()->id,
@@ -113,8 +122,8 @@ class RetributionControllerTest extends TestCase
 
         $response = $this->actingAs($officer)->post(route('staf.retribusi-upf.store'), [
             'branch_id' => $branch->id,
-            'payer_type' => 'umum',
-            'payer_name' => 'Ibu Sari',
+            'payer_type' => 'anggota',
+            'member_id' => $member->id,
             'total_amount' => 75000,
             'payment_method' => 'tunai',
         ]);
@@ -126,12 +135,13 @@ class RetributionControllerTest extends TestCase
 
     private function recordTransaction(User $officer, Branch $branch): \App\Models\RetributionTransaction
     {
-        $this->activateFullyAllocatedType();
+        $type = $this->activateFullyAllocatedType();
 
         $this->actingAs($officer)->post(route('staf.retribusi-upf.store'), [
             'branch_id' => $branch->id,
             'payer_type' => 'umum',
             'payer_name' => 'Ibu Sari',
+            'retribution_type_id' => $type->id,
             'total_amount' => 75000,
             'payment_method' => 'tunai',
         ]);

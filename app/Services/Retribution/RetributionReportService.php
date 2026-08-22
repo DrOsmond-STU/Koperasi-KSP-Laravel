@@ -57,69 +57,90 @@ class RetributionReportService
     }
 
     /**
-     * Rekap pendapatan UPF per periode (portrait) — dipakai
-     * RetributionController::printRekap() untuk kartu "Rekap Pendapatan UPF
-     * (Portrait)" di tab Laporan halaman Retribusi (UPF). Total & breakdown
-     * SELALU mengecualikan transaksi yang dibatalkan (cancelled_at bukan
-     * null) — beda dengan retribusiUpf() di atas, yang tidak menyaring
-     * cancelled_at karena baris yang dibatalkan tetap perlu tampil di sana
-     * sebagai jejak audit per transaksi.
+     * Rekap ringkas periode: total kas masuk + breakdown per jenis
+     * retribusi (nama, jumlah baris terpakai, total nilai) — dipakai oleh
+     * cetakan portrait "Rekap Pendapatan UPF" (periode harian s/d bulanan).
      *
-     * Breakdown mendaftar SEMUA jenis retribusi aktif (bukan cuma yang
-     * kebagian transaksi pada periode ini) supaya pengurus melihat cakupan
-     * lengkap tarif yang berlaku — jenis yang tidak bertransaksi tampil
-     * dengan angka nol.
+     * Sumbernya `retribution_transaction_lines` (yang di-snapshot per
+     * transaksi) di-join ke header supaya bisa difilter branch/tanggal;
+     * transaksi yang dibatalkan (`cancelled_at IS NOT NULL`) DIKELUARKAN
+     * — jumlahnya sudah tercermin di jurnal pembalik dan tidak lagi
+     * jadi pendapatan.
      *
      * @param  array{branch_id?: int|null, period_start: string, period_end: string}  $filters
-     * @return array{period_start: string, period_end: string, transaction_count: int, transaction_count_umum: int, transaction_count_anggota: int, total_cash_in: float, breakdown: array<int, array{name: string, count: int, total: float}>}
+     * @return array{
+     *     period_start: string,
+     *     period_end: string,
+     *     branch_id: int|null,
+     *     transaction_count: int,
+     *     transaction_count_umum: int,
+     *     transaction_count_anggota: int,
+     *     total_cash_in: float,
+     *     breakdown: array<int, array{name: string, count: int, total: float}>,
+     * }
      */
     public function rekapPendapatan(array $filters): array
     {
         $branchId = $filters['branch_id'] ?? null;
+        $start = $filters['period_start'];
+        $end = $filters['period_end'];
 
-        $transactionTotals = RetributionTransaction::query()
+        $baseTx = RetributionTransaction::query()
             ->whereNull('cancelled_at')
-            ->when($branchId, fn ($q, $id) => $q->where('branch_id', $id))
-            ->where('transaction_date', '>=', $filters['period_start'])
-            ->where('transaction_date', '<=', $filters['period_end'])
-            ->selectRaw("COUNT(*) as total_count, SUM(CASE WHEN payer_type = 'umum' THEN 1 ELSE 0 END) as umum_count, SUM(CASE WHEN payer_type = 'anggota' THEN 1 ELSE 0 END) as anggota_count, COALESCE(SUM(total_amount), 0) as total_cash_in")
-            ->first();
+            ->where('transaction_date', '>=', $start)
+            ->where('transaction_date', '<=', $end)
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
 
-        $lineSummaryByTypeId = RetributionTransactionLine::query()
+        $totalCashIn = (float) (clone $baseTx)->sum('total_amount');
+        $transactionCount = (clone $baseTx)->count();
+        $transactionCountUmum = (clone $baseTx)->where('payer_type', 'umum')->count();
+        $transactionCountAnggota = (clone $baseTx)->where('payer_type', 'anggota')->count();
+
+        $counted = RetributionTransactionLine::query()
             ->join('retribution_transactions', 'retribution_transactions.id', '=', 'retribution_transaction_lines.retribution_transaction_id')
             ->whereNull('retribution_transactions.cancelled_at')
-            ->when($branchId, fn ($q, $id) => $q->where('retribution_transactions.branch_id', $id))
-            ->where('retribution_transactions.transaction_date', '>=', $filters['period_start'])
-            ->where('retribution_transactions.transaction_date', '<=', $filters['period_end'])
-            ->selectRaw('retribution_transaction_lines.retribution_type_id, COUNT(*) as line_count, COALESCE(SUM(retribution_transaction_lines.amount), 0) as line_total')
-            ->groupBy('retribution_transaction_lines.retribution_type_id')
+            ->where('retribution_transactions.transaction_date', '>=', $start)
+            ->where('retribution_transactions.transaction_date', '<=', $end)
+            ->when($branchId, fn ($q) => $q->where('retribution_transactions.branch_id', $branchId))
+            ->selectRaw('retribution_transaction_lines.retribution_type_name as name, COUNT(*) as line_count, SUM(retribution_transaction_lines.amount) as total')
+            ->groupBy('retribution_transaction_lines.retribution_type_name')
             ->get()
-            ->keyBy('retribution_type_id');
+            ->map(fn ($row) => [
+                'name' => (string) $row->name,
+                'count' => (int) $row->line_count,
+                'total' => (float) $row->total,
+            ])
+            ->keyBy('name');
 
-        $breakdown = RetributionType::query()
+        // Setiap jenis retribusi yang aktif harus tetap tampil — kalau
+        // periode ini belum ada transaksi untuk jenisnya, tampilkan
+        // barisnya dengan count 0 & total Rp 0 (permintaan pengurus:
+        // rekap harus menunjukkan seluruh jenis retribusi yang berlaku,
+        // bukan hanya yang bertransaksi). Nama diambil dari master supaya
+        // ejaan konsisten dengan pengaturan terkini.
+        $activeTypeNames = RetributionType::query()
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->orderBy('id')
-            ->get()
-            ->map(function (RetributionType $type) use ($lineSummaryByTypeId) {
-                $summary = $lineSummaryByTypeId->get($type->id);
+            ->pluck('name');
 
-                return [
-                    'name' => $type->name,
-                    'count' => (int) ($summary->line_count ?? 0),
-                    'total' => (float) ($summary->line_total ?? 0),
-                ];
-            })
-            ->values()
-            ->all();
+        $nonZero = $counted->values()->sortByDesc('total')->values();
+
+        $zeroRows = $activeTypeNames
+            ->reject(fn (string $name) => $counted->has($name))
+            ->map(fn (string $name) => ['name' => $name, 'count' => 0, 'total' => 0.0])
+            ->values();
+
+        $breakdown = $nonZero->concat($zeroRows)->values()->all();
 
         return [
-            'period_start' => $filters['period_start'],
-            'period_end' => $filters['period_end'],
-            'transaction_count' => (int) $transactionTotals->total_count,
-            'transaction_count_umum' => (int) $transactionTotals->umum_count,
-            'transaction_count_anggota' => (int) $transactionTotals->anggota_count,
-            'total_cash_in' => (float) $transactionTotals->total_cash_in,
+            'period_start' => $start,
+            'period_end' => $end,
+            'branch_id' => $branchId,
+            'transaction_count' => $transactionCount,
+            'transaction_count_umum' => $transactionCountUmum,
+            'transaction_count_anggota' => $transactionCountAnggota,
+            'total_cash_in' => $totalCashIn,
             'breakdown' => $breakdown,
         ];
     }

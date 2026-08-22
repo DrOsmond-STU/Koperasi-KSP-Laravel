@@ -28,10 +28,27 @@ class StoreRetributionTransactionRequest extends FormRequest
             'payer_type' => ['required', Rule::in(['umum', 'anggota'])],
             'payer_name' => ['required_if:payer_type,umum', 'nullable', 'string', 'max:150'],
             'member_id' => ['required_if:payer_type,anggota', 'nullable', Rule::exists('members', 'id')],
+            'retribution_type_id' => [
+                'required_if:payer_type,umum',
+                'nullable',
+                Rule::exists('retribution_types', 'id')->where('is_active', true),
+            ],
             'total_amount' => ['required', 'numeric', 'min:0.01'],
             'payment_method' => ['required', Rule::in(['tunai', 'transfer'])],
             'description' => ['nullable', 'string', 'max:255'],
             'transaction_date' => ['nullable', 'date'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function attributes(): array
+    {
+        return [
+            'retribution_type_id' => 'Jenis Retribusi',
+            'member_id' => 'Anggota (Kios/Blok)',
+            'payer_name' => 'Nama Pembayar',
         ];
     }
 }

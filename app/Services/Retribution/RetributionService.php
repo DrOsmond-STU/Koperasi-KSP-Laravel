@@ -12,14 +12,27 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Pencatatan retribusi harian (UPF) — satu nilai total dipecah otomatis ke
- * seluruh jenis retribusi aktif sesuai persentase (RetributionSplitCalculator)
- * lalu dijurnal sekaligus lewat JournalEngine (single writer, tidak ada
- * logika posting terpisah di sini — pola sama seperti UpfService/PosSaleService).
+ * Pencatatan retribusi harian (UPF).
+ *
+ * Ada dua mode transaksi:
+ *  - UMUM     : petugas memilih SATU jenis retribusi (percentage = 100%).
+ *               Jurnal = 1 baris kredit (akun pendapatan jenis tsb) + 1
+ *               baris debit ke akun kas KAS AO RIDWAN (UPF). Tidak ada
+ *               pembagian otomatis.
+ *  - ANGGOTA  : total dipecah otomatis ke seluruh jenis retribusi "split"
+ *               (percentage < 100, jumlah persentasenya = 100) via
+ *               RetributionSplitCalculator, mirror pola SHU/UPF lama.
+ *
+ * Jurnal LAWAN (debit) untuk kedua mode diarahkan ke akun kas khusus
+ * petugas UPF (code 1101600 - KAS AO RIDWAN (UPF)) — fallback ke akun
+ * kas umum (1101) hanya bila 1101600 belum ada (misal DB sangat lama
+ * yang belum ke-migrate).
  */
 class RetributionService
 {
-    private const DEFAULT_CASH_ACCOUNT_CODE = '1101';
+    private const DEFAULT_CASH_ACCOUNT_CODE = '1101600';
+
+    private const FALLBACK_CASH_ACCOUNT_CODE = '1101';
 
     public function __construct(private readonly JournalEngine $journalEngine) {}
 
@@ -33,32 +46,45 @@ class RetributionService
         int $createdBy,
         ?string $description = null,
         ?\DateTimeInterface $date = null,
+        ?RetributionType $retributionType = null,
     ): RetributionTransaction {
-        $activeTypes = RetributionType::query()
-            ->where('is_active', true)
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->get();
-
-        $this->assertHasActiveTypes($activeTypes);
-        $this->assertFullyAllocated($activeTypes);
-        $this->assertAllHaveRevenueAccount($activeTypes);
-
         $entryDate = $date ?? now();
+        $isAnggota = $payerType === 'anggota';
+
+        if ($isAnggota) {
+            $activeSplitTypes = $this->splitTypes();
+            $this->assertHasActiveSplitTypes($activeSplitTypes);
+            $this->assertSplitTypesFullyAllocated($activeSplitTypes);
+            $this->assertAllHaveRevenueAccount($activeSplitTypes);
+            $useTypes = $activeSplitTypes;
+            $selectedType = null;
+        } else {
+            $selectedType = $retributionType?->fresh() ?? $retributionType;
+            $this->assertUmumType($selectedType);
+            $useTypes = new Collection([$selectedType]);
+        }
 
         return DB::transaction(function () use (
             $branchId, $payerType, $payerName, $member, $totalAmount,
-            $paymentMethod, $createdBy, $description, $entryDate, $activeTypes,
+            $paymentMethod, $createdBy, $description, $entryDate,
+            $useTypes, $isAnggota, $selectedType,
         ) {
             $totalCents = (int) round($totalAmount * 100);
 
-            $splits = RetributionSplitCalculator::split(
-                $totalCents,
-                $activeTypes->map(fn (RetributionType $type) => ['id' => $type->id, 'percentage' => $type->percentage])->all(),
-            );
-            $splitsByTypeId = collect($splits)->keyBy('id');
+            if ($isAnggota) {
+                $splits = RetributionSplitCalculator::split(
+                    $totalCents,
+                    $useTypes->map(fn (RetributionType $type) => ['id' => $type->id, 'percentage' => $type->percentage])->all(),
+                );
+                $splitsByTypeId = collect($splits)->keyBy('id');
+            } else {
+                // Umum → seluruh nilai masuk ke satu jenis retribusi terpilih.
+                $splitsByTypeId = collect([
+                    $selectedType->id => ['id' => $selectedType->id, 'amount_cents' => $totalCents],
+                ]);
+            }
 
-            $creditLines = $activeTypes->map(fn (RetributionType $type) => [
+            $creditLines = $useTypes->map(fn (RetributionType $type) => [
                 'chart_of_account_id' => $type->coa_revenue_account_id,
                 'debit' => 0,
                 'credit' => $splitsByTypeId[$type->id]['amount_cents'] / 100,
@@ -69,12 +95,16 @@ class RetributionService
                 ['chart_of_account_id' => $this->cashAccountId(), 'debit' => $totalCents / 100, 'credit' => 0],
             ];
 
-            $resolvedPayerName = $payerType === 'anggota' ? $member->name : $payerName;
+            $resolvedPayerName = $isAnggota ? $member->name : $payerName;
+
+            $description = $isAnggota
+                ? "Retribusi UPF (Anggota) — {$resolvedPayerName} ({$useTypes->count()} jenis retribusi)"
+                : "Retribusi UPF (Umum) — {$resolvedPayerName} / {$selectedType->name}";
 
             $entry = $this->journalEngine->post([
                 'branch_id' => $branchId,
                 'entry_date' => $entryDate->format('Y-m-d'),
-                'description' => "Retribusi UPF — {$resolvedPayerName} ({$activeTypes->count()} jenis retribusi)",
+                'description' => $description,
                 'created_by' => $createdBy,
                 'lines' => $lines,
             ]);
@@ -86,6 +116,7 @@ class RetributionService
                 'payer_type' => $payerType,
                 'payer_name' => $resolvedPayerName,
                 'member_id' => $member?->id,
+                'retribution_type_id' => $isAnggota ? null : $selectedType->id,
                 'total_amount' => $totalCents / 100,
                 'payment_method' => $paymentMethod,
                 'description' => $description,
@@ -93,11 +124,11 @@ class RetributionService
                 'created_by' => $createdBy,
             ]);
 
-            foreach ($activeTypes as $type) {
+            foreach ($useTypes as $type) {
                 $transaction->lines()->create([
                     'retribution_type_id' => $type->id,
                     'retribution_type_name' => $type->name,
-                    'percentage_applied' => $type->percentage,
+                    'percentage_applied' => $isAnggota ? $type->percentage : 100,
                     'chart_of_account_id' => $type->coa_revenue_account_id,
                     'amount' => $splitsByTypeId[$type->id]['amount_cents'] / 100,
                 ]);
@@ -108,26 +139,45 @@ class RetributionService
     }
 
     /**
+     * Ambil semua jenis retribusi aktif yang persentasenya < 100 —
+     * inilah baris "split" untuk transaksi Anggota.
+     *
+     * @return Collection<int, RetributionType>
+     */
+    private function splitTypes(): Collection
+    {
+        return RetributionType::query()
+            ->where('is_active', true)
+            ->where('percentage', '<', 100)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
      * @param  Collection<int, RetributionType>  $activeTypes
      */
-    private function assertHasActiveTypes(Collection $activeTypes): void
+    private function assertHasActiveSplitTypes(Collection $activeTypes): void
     {
         if ($activeTypes->isEmpty()) {
-            throw RetributionException::noActiveTypes();
+            throw RetributionException::noActiveSplitTypes();
         }
     }
 
     /**
      * @param  Collection<int, RetributionType>  $activeTypes
      */
-    private function assertFullyAllocated(Collection $activeTypes): void
+    private function assertSplitTypesFullyAllocated(Collection $activeTypes): void
     {
-        $total = $activeTypes->reduce(
-            fn (string $carry, RetributionType $type) => bcadd($carry, (string) $type->percentage, 2),
-            '0.00',
-        );
+        // Persentase disimpan sebagai DECIMAL(5,2) — precisi 2 desimal.
+        // Menghitung di ranah "basis points" (nilai×100) memberi integer
+        // eksak sehingga Σpersentase = 100.00 setara Σbp = 10000 tanpa
+        // ketergantungan pada ekstensi bcmath dan tanpa risiko float
+        // rounding.
+        $totalBasisPoints = $activeTypes->sum(fn (RetributionType $type) => (int) round(((float) $type->percentage) * 100));
 
-        if (bccomp($total, '100.00', 2) !== 0) {
+        if ($totalBasisPoints !== 10000) {
+            $total = number_format($totalBasisPoints / 100, 2, '.', '');
             throw RetributionException::percentagesNotFullyAllocated($total);
         }
     }
@@ -141,6 +191,26 @@ class RetributionService
 
         if ($offender !== null) {
             throw RetributionException::missingRevenueAccount($offender->name);
+        }
+    }
+
+    private function assertUmumType(?RetributionType $type): void
+    {
+        if ($type === null) {
+            throw RetributionException::umumTypeMissing();
+        }
+
+        if (! $type->is_active) {
+            throw RetributionException::umumTypeInactive($type->name);
+        }
+
+        // Basis-point comparison (percentage×100) — hindari bcmath & float.
+        if ((int) round(((float) $type->percentage) * 100) !== 10000) {
+            throw RetributionException::umumTypeNotFull($type->name, (string) $type->percentage);
+        }
+
+        if ($type->coa_revenue_account_id === null) {
+            throw RetributionException::missingRevenueAccount($type->name);
         }
     }
 
@@ -181,6 +251,14 @@ class RetributionService
 
     private function cashAccountId(): int
     {
-        return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->value('id');
+        $id = ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->value('id');
+
+        if ($id !== null) {
+            return $id;
+        }
+
+        // Fallback (backward compat) — production DB yang belum ke-migrate
+        // untuk baris 1101600 akan tetap bisa memposting ke akun kas umum.
+        return ChartOfAccount::query()->where('code', self::FALLBACK_CASH_ACCOUNT_CODE)->value('id');
     }
 }

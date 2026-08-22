@@ -320,7 +320,7 @@ class CetakanSmokeTest extends TestCase
         $user = $this->printTester();
         $branch = Branch::factory()->create();
 
-        RetributionType::factory()->create([
+        $type = RetributionType::factory()->create([
             'percentage' => 100,
             'coa_revenue_account_id' => ChartOfAccount::factory()->create()->id,
             'is_active' => true,
@@ -334,6 +334,7 @@ class CetakanSmokeTest extends TestCase
             totalAmount: 50000,
             paymentMethod: 'tunai',
             createdBy: $user->id,
+            retributionType: $type,
         );
 
         $this->assertPdf($this->actingAs($user)->get(route('staf.retribusi-upf.print-harian')));
@@ -344,7 +345,7 @@ class CetakanSmokeTest extends TestCase
         $user = $this->printTester();
         $branch = Branch::factory()->create();
 
-        RetributionType::factory()->create([
+        $type = RetributionType::factory()->create([
             'percentage' => 100,
             'coa_revenue_account_id' => ChartOfAccount::factory()->create()->id,
             'is_active' => true,
@@ -358,6 +359,7 @@ class CetakanSmokeTest extends TestCase
             totalAmount: 50000,
             paymentMethod: 'tunai',
             createdBy: $user->id,
+            retributionType: $type,
         );
 
         $this->assertPdf($this->actingAs($user)->get(route('staf.retribusi-upf.print-rekap', [

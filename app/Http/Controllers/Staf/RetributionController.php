@@ -46,14 +46,20 @@ class RetributionController extends Controller
 
     public function store(StoreRetributionTransactionRequest $request): RedirectResponse
     {
-        $member = $request->validated('payer_type') === 'anggota'
+        $payerType = $request->validated('payer_type');
+
+        $member = $payerType === 'anggota'
             ? Member::query()->findOrFail($request->validated('member_id'))
+            : null;
+
+        $retributionType = $payerType === 'umum' && $request->filled('retribution_type_id')
+            ? RetributionType::query()->findOrFail($request->validated('retribution_type_id'))
             : null;
 
         try {
             $transaction = $this->retributionService->record(
                 branchId: (int) $request->validated('branch_id'),
-                payerType: $request->validated('payer_type'),
+                payerType: $payerType,
                 payerName: $request->validated('payer_name'),
                 member: $member,
                 totalAmount: (float) $request->validated('total_amount'),
@@ -61,6 +67,7 @@ class RetributionController extends Controller
                 createdBy: $request->user()->id,
                 description: $request->validated('description'),
                 date: $request->filled('transaction_date') ? Carbon::parse($request->validated('transaction_date')) : null,
+                retributionType: $retributionType,
             );
         } catch (RetributionException $exception) {
             return redirect()->route('staf.retribusi-upf.index', ['tab' => 'transaksi'])->with('error', $exception->getMessage());
@@ -133,20 +140,23 @@ class RetributionController extends Controller
     }
 
     /**
-     * Rekap Pendapatan UPF (portrait) — total kas masuk & breakdown per
-     * jenis retribusi untuk suatu rentang periode bebas (preset hari
-     * ini/2 hari/1 minggu/1 bulan diisi di sisi klien). Beda dengan
-     * printHarian() di atas (satu tanggal, ttd Petugas UPF harian): ini
-     * rentang tanggal, dan totalnya SELALU mengecualikan transaksi yang
-     * dibatalkan — lihat RetributionReportService::rekapPendapatan().
+     * Cetak "Rekap Pendapatan UPF" (potrait, periode fleksibel harian s/d
+     * bulanan). Menampilkan breakdown per jenis retribusi + total kas
+     * masuk. Reuse RetributionReportService::rekapPendapatan().
      */
     public function printRekap(Request $request): Response
     {
         $this->authorize('retribusi_upf.read');
 
         $branchId = $this->resolveBranchId($request);
-        $periodStart = $request->string('period_start')->value() ?: now()->toDateString();
-        $periodEnd = $request->string('period_end')->value() ?: now()->toDateString();
+        $periodStart = $request->date('period_start')?->toDateString() ?: now()->startOfMonth()->toDateString();
+        $periodEnd = $request->date('period_end')?->toDateString() ?: now()->toDateString();
+
+        // Guard: kalau end < start, swap otomatis supaya cetakan tetap
+        // masuk akal dan tidak menampilkan hasil kosong yang membingungkan.
+        if ($periodEnd < $periodStart) {
+            [$periodStart, $periodEnd] = [$periodEnd, $periodStart];
+        }
 
         $rekap = $this->reportService->rekapPendapatan([
             'branch_id' => $branchId,
@@ -157,9 +167,9 @@ class RetributionController extends Controller
         $pdf = $this->renderPrintPdf('prints.laporan.upf-rekap', [
             'rekap' => $rekap,
             'branch' => $branchId ? Branch::query()->find($branchId) : null,
-        ]);
+        ], orientationOverride: 'portrait');
 
-        return $pdf->download('rekap-upf-'.$periodStart.'-sd-'.$periodEnd.'.pdf');
+        return $pdf->download('rekap-upf-'.$periodStart.'_sd_'.$periodEnd.'.pdf');
     }
 
     /**
@@ -168,19 +178,45 @@ class RetributionController extends Controller
     private function baseViewData(Request $request): array
     {
         $branchId = $this->resolveBranchId($request);
-        $activeTypes = RetributionType::query()->where('is_active', true)->orderBy('sort_order')->orderBy('id')->get();
+        $activeTypes = RetributionType::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+
+        // Jenis retribusi "split" (persentase < 100, dijumlahkan harus 100)
+        // dipakai untuk pembagian otomatis transaksi Anggota. Jenis "umum"
+        // (persentase = 100) dipakai per-transaksi Umum (dipilih satu).
+        $splitTypes = $activeTypes->filter(fn (RetributionType $type) => (float) $type->percentage < 100)->values();
+        $umumTypes = $activeTypes->filter(fn (RetributionType $type) => (float) $type->percentage >= 100)->values();
+
+        // Anggota untuk retribusi (Kios/Blok). Kalau master data KIOS/BLOK
+        // sudah terisi di produksi, kita batasi ke sana; kalau kosong (mis.
+        // production baru, master data belum di-set), fallback ke semua
+        // anggota yang belum "keluar" — supaya daftar tidak pernah kosong
+        // dan petugas tetap bisa memilih pembayar.
+        $membersQuery = Member::query()
+            ->whereIn('status', ['aktif', 'calon', 'nonaktif'])
+            ->orderBy('name');
+
+        $hasKiosBlokMembers = (clone $membersQuery)
+            ->whereHas('memberType', fn ($q) => $q->whereIn('code', ['KIOS', 'BLOK']))
+            ->exists();
+
+        if ($hasKiosBlokMembers) {
+            $membersQuery->whereHas('memberType', fn ($q) => $q->whereIn('code', ['KIOS', 'BLOK']));
+        }
 
         return [
             'summary' => $this->dashboardService->summary($branchId),
             'branches' => $this->availableBranches($request),
             'selectedBranchId' => $branchId,
             'activeTypes' => $activeTypes,
+            'splitTypes' => $splitTypes,
+            'umumTypes' => $umumTypes,
+            'splitPercentageTotal' => $splitTypes->sum('percentage'),
             'activePercentageTotal' => $activeTypes->sum('percentage'),
-            'members' => Member::query()
-                ->whereHas('memberType', fn ($q) => $q->whereIn('code', ['KIOS', 'BLOK']))
-                ->where('status', 'aktif')
-                ->orderBy('name')
-                ->get(),
+            'members' => $membersQuery->with('memberType')->get(),
             'recentTransactions' => RetributionTransaction::query()
                 ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
                 ->with(['lines', 'branch'])

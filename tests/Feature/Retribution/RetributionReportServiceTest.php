@@ -4,6 +4,7 @@ namespace Tests\Feature\Retribution;
 
 use App\Models\Branch;
 use App\Models\ChartOfAccount;
+use App\Models\Member;
 use App\Models\RetributionType;
 use App\Models\User;
 use App\Services\Reporting\ReportBuilderService;
@@ -20,9 +21,15 @@ class RetributionReportServiceTest extends TestCase
 
     private ?RetributionType $kam = null;
 
+    /**
+     * Dua jenis "split" (60/40, jumlah 100%) — pakai payer ANGGOTA supaya
+     * keduanya kebagian baris otomatis (lihat docblock RetributionService:
+     * UMUM sekarang wajib memilih satu jenis 100%, tidak lagi di-split ke
+     * seluruh jenis aktif).
+     */
     private function recordSampleTransaction(): void
     {
-        ChartOfAccount::factory()->create(['code' => '1101']);
+        ChartOfAccount::factory()->create(['code' => '1101600']);
         $this->keb = RetributionType::factory()->create([
             'name' => 'Retribusi Kebersihan',
             'percentage' => 60,
@@ -37,12 +44,13 @@ class RetributionReportServiceTest extends TestCase
         ]);
         $branch = Branch::factory()->create();
         $user = User::factory()->create();
+        $member = Member::factory()->create(['name' => 'Ibu Sari']);
 
         app(RetributionService::class)->record(
             branchId: $branch->id,
-            payerType: 'umum',
-            payerName: 'Ibu Sari',
-            member: null,
+            payerType: 'anggota',
+            payerName: null,
+            member: $member,
             totalAmount: 100000,
             paymentMethod: 'tunai',
             createdBy: $user->id,
@@ -117,8 +125,8 @@ class RetributionReportServiceTest extends TestCase
         ]);
 
         $this->assertSame(1, $rekap['transaction_count']);
-        $this->assertSame(1, $rekap['transaction_count_umum']);
-        $this->assertSame(0, $rekap['transaction_count_anggota']);
+        $this->assertSame(0, $rekap['transaction_count_umum']);
+        $this->assertSame(1, $rekap['transaction_count_anggota']);
         $this->assertEquals(100000.0, $rekap['total_cash_in']);
 
         $breakdownByName = collect($rekap['breakdown'])->keyBy('name');
