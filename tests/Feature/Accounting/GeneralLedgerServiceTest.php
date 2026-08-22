@@ -5,6 +5,8 @@ namespace Tests\Feature\Accounting;
 use App\Models\Branch;
 use App\Models\ChartOfAccount;
 use App\Models\Member;
+use App\Models\OpeningBalanceBatch;
+use App\Models\OpeningBalanceCoa;
 use App\Models\SavingsAccount;
 use App\Models\SavingsProduct;
 use App\Models\User;
@@ -107,6 +109,116 @@ class GeneralLedgerServiceTest extends TestCase
         $this->assertEquals('1000000.00', $lines->first()['running_balance'], 'Saldo awal periode = mutasi sebelum bulan ini');
         $this->assertEquals('Setoran bulan ini', $lines->last()['description']);
         $this->assertEquals('1250000.00', $lines->last()['running_balance'], 'Saldo akhir = saldo awal + mutasi bulan ini');
+    }
+
+    /**
+     * Regresi untuk "Perhitungan neraca juga harus memperhitungkan saldo
+     * awal dari migrasi smik": sebuah batch DRAFT (belum pernah dikunci,
+     * jadi belum pernah dijurnal — OpeningBalanceLockService::lock()
+     * belum jalan) masih harus terlihat di balanceFor(), karena Neraca
+     * membaca lewat balanceFor(), bukan langsung dari OpeningBalanceCoa.
+     * Sebelum perbaikan ini, akun tanpa mutasi baru sejak migrasi akan
+     * tampak bersaldo nol di Neraca — persis keluhan pengguna.
+     */
+    public function test_balance_for_includes_migrated_opening_balance_even_when_batch_is_draft(): void
+    {
+        $cash = ChartOfAccount::factory()->create(['normal_balance' => 'DEBIT']);
+        $branch = Branch::factory()->create();
+
+        $batch = OpeningBalanceBatch::query()->create([
+            'branch_id' => $branch->id,
+            'cutoff_date' => '2026-07-31',
+            'status' => 'draft',
+        ]);
+
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $cash->id,
+            'position' => 'debit',
+            'amount' => 5000000,
+        ]);
+
+        // Tidak ada transaksi apa pun setelah migrasi.
+        $balance = app(GeneralLedgerService::class)->balanceFor($cash, $branch->id, '2026-08-31');
+
+        $this->assertEquals('5000000.00', $balance);
+    }
+
+    /**
+     * Kebalikan dari test di atas: batch yang SUDAH dikunci (jurnal
+     * pembukaannya sudah diposting, source_type=OpeningBalanceBatch)
+     * tidak boleh terhitung dua kali — sekali dari journal_lines, sekali
+     * lagi dari OpeningBalanceCoa.
+     */
+    public function test_balance_for_does_not_double_count_locked_batch_opening_journal(): void
+    {
+        $cash = ChartOfAccount::factory()->create(['normal_balance' => 'DEBIT']);
+        $contra = ChartOfAccount::factory()->create();
+        $branch = Branch::factory()->create();
+        $user = User::factory()->create();
+
+        $batch = OpeningBalanceBatch::query()->create([
+            'branch_id' => $branch->id,
+            'cutoff_date' => '2026-07-31',
+            'status' => 'locked',
+            'locked_by' => $user->id,
+            'locked_at' => now(),
+        ]);
+
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $cash->id,
+            'position' => 'debit',
+            'amount' => 5000000,
+        ]);
+
+        // Simulasi OpeningBalanceLockService::postOpeningJournal().
+        app(JournalEngine::class)->post([
+            'branch_id' => $branch->id,
+            'entry_date' => '2026-07-31',
+            'description' => 'Jurnal pembukaan migrasi saldo awal (batch #'.$batch->id.')',
+            'created_by' => $user->id,
+            'source' => $batch,
+            'lines' => [
+                ['chart_of_account_id' => $cash->id, 'debit' => 5000000, 'credit' => 0],
+                ['chart_of_account_id' => $contra->id, 'debit' => 0, 'credit' => 5000000],
+            ],
+        ]);
+
+        $balance = app(GeneralLedgerService::class)->balanceFor($cash, $branch->id, '2026-08-31');
+
+        // Bukan 10.000.000 (5jt OpeningBalanceCoa + 5jt jurnal yang sudah
+        // diposting) — harus tetap 5jt persis.
+        $this->assertEquals('5000000.00', $balance);
+    }
+
+    /**
+     * Saldo migrasi tidak boleh "berlaku surut" sebelum cutoff_date-nya
+     * sendiri — melihat saldo per tanggal sebelum migrasi terjadi harus
+     * tetap nol, bukan ikut memuat migrasi yang secara kronologis belum
+     * "terjadi" pada tanggal itu.
+     */
+    public function test_balance_for_excludes_migration_before_its_own_cutoff_date(): void
+    {
+        $cash = ChartOfAccount::factory()->create(['normal_balance' => 'DEBIT']);
+        $branch = Branch::factory()->create();
+
+        $batch = OpeningBalanceBatch::query()->create([
+            'branch_id' => $branch->id,
+            'cutoff_date' => '2026-07-31',
+            'status' => 'draft',
+        ]);
+
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $cash->id,
+            'position' => 'debit',
+            'amount' => 5000000,
+        ]);
+
+        $balance = app(GeneralLedgerService::class)->balanceFor($cash, $branch->id, '2026-06-30');
+
+        $this->assertEquals('0.00', $balance);
     }
 
     public function test_reconcile_savings_liability_matches_ledger_with_account_details(): void

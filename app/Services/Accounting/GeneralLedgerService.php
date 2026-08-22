@@ -4,6 +4,8 @@ namespace App\Services\Accounting;
 
 use App\Models\ChartOfAccount;
 use App\Models\JournalLine;
+use App\Models\OpeningBalanceBatch;
+use App\Models\OpeningBalanceCoa;
 use App\Models\SavingsAccount;
 use Illuminate\Support\Collection;
 
@@ -12,6 +14,25 @@ use Illuminate\Support\Collection;
  * journal_lines, scoped per cabang or konsolidasi. Balances are always
  * computed here, never cached (same principle as every other ledger read
  * in this app).
+ *
+ * balanceFor() menggabungkan DUA sumber, bukan cuma journal_lines: mutasi
+ * ledger biasa, PLUS saldo awal migrasi SMIK dari OpeningBalanceCoa (lewat
+ * openingBalanceFor()) untuk setiap OpeningBalanceBatch yang cutoff_date-nya
+ * sudah lewat. Ini disengaja, bukan sekadar penyederhanaan — status batch
+ * (draft/locked) TIDAK relevan untuk apakah saldo migrasinya kelihatan di
+ * sini: OpeningBalanceLockService::lock() baru menjurnal (posting ke
+ * journal_lines) saat batch dikunci, jadi kalau balanceFor() hanya baca
+ * journal_lines, akun yang belum ada mutasi baru sejak migrasi akan
+ * tampak bersaldo nol padahal seharusnya menampilkan saldo migrasi —
+ * persis keluhan "kalau transaksi kosong, saldo yang tampil harusnya
+ * saldo awal" pada Neraca/Neraca Saldo bulanan.
+ *
+ * Supaya batch yang SUDAH dikunci tidak terhitung dua kali (sekali dari
+ * jurnal pembukaannya, sekali lagi dari openingBalanceFor()), jurnal
+ * pembukaan migrasi (source_type=OpeningBalanceBatch, lihat
+ * OpeningBalanceLockService::postOpeningJournal()) dikeluarkan dari sum
+ * journal_lines di sini — dua sumber itu saling eksklusif per definisi,
+ * bukan cuma kebetulan tidak tumpang tindih.
  */
 class GeneralLedgerService
 {
@@ -23,9 +44,10 @@ class GeneralLedgerService
      * kas/bank yang punya mutasi sebelum periode tampak seolah mulai
      * dari nol.
      *
-     * Saldo awal dihitung ulang tiap panggilan lewat balanceFor() (agregasi
-     * semua journal_lines <= periodStart - 1 hari), sama seperti prinsip
-     * "balances always computed, never cached" di kelas ini.
+     * Saldo awal dihitung ulang tiap panggilan lewat balanceFor() (ledger +
+     * saldo migrasi, lihat catatan kelas di atas, per periodStart - 1
+     * hari), sama seperti prinsip "balances always computed, never
+     * cached" di kelas ini.
      *
      * @return Collection<int, array{date: string, description: string, debit: string, credit: string, running_balance: string, is_opening: bool}>
      */
@@ -92,11 +114,57 @@ class GeneralLedgerService
             ->whereHas('journalEntry', function ($query) use ($branchId, $asOfDate) {
                 $query->whereDate('entry_date', '<=', $asOfDate);
 
+                // Jurnal pembukaan migrasi dikeluarkan dari sini — lihat
+                // catatan kelas di atas. Kontribusinya ditambahkan
+                // eksplisit lewat openingBalanceFor() di bawah.
+                $query->where(function ($q) {
+                    $q->whereNull('source_type')->orWhere('source_type', '!=', OpeningBalanceBatch::class);
+                });
+
                 if ($branchId !== null) {
                     $query->where('branch_id', $branchId);
                 }
             })
             ->selectRaw('COALESCE(SUM(debit), 0) as total_debit, COALESCE(SUM(credit), 0) as total_credit')
+            ->first();
+
+        $ledgerBalance = $isDebitNormal
+            ? bcsub((string) $sums->total_debit, (string) $sums->total_credit, 2)
+            : bcsub((string) $sums->total_credit, (string) $sums->total_debit, 2);
+
+        return bcadd($ledgerBalance, $this->openingBalanceFor($account, $branchId, $asOfDate), 2);
+    }
+
+    /**
+     * Kontribusi saldo awal migrasi SMIK untuk satu akun, dari
+     * OpeningBalanceCoa — dihitung untuk SEMUA OpeningBalanceBatch yang
+     * cutoff_date-nya <= $asOfDate (draft maupun locked, lihat catatan
+     * kelas), supaya melihat saldo per tanggal SEBELUM cutoff tidak ikut
+     * memasukkan migrasi yang secara kronologis belum "terjadi".
+     *
+     * BranchScope pada OpeningBalanceBatch (trait BelongsToBranch) sudah
+     * mempersempit ke cabang yang boleh diakses user — sama seperti
+     * journal_lines di balanceFor() di atas — jadi $branchId=null untuk
+     * user yang scope-nya dibatasi tetap otomatis terbatas, bukan bocor
+     * ke cabang lain.
+     */
+    private function openingBalanceFor(ChartOfAccount $account, ?int $branchId, string $asOfDate): string
+    {
+        $batchIds = OpeningBalanceBatch::query()
+            ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
+            ->whereDate('cutoff_date', '<=', $asOfDate)
+            ->pluck('id');
+
+        if ($batchIds->isEmpty()) {
+            return '0.00';
+        }
+
+        $isDebitNormal = $account->normal_balance === 'DEBIT';
+
+        $sums = OpeningBalanceCoa::query()
+            ->where('chart_of_account_id', $account->id)
+            ->whereIn('opening_balance_batch_id', $batchIds)
+            ->selectRaw("COALESCE(SUM(CASE WHEN position = 'debit' THEN amount ELSE 0 END), 0) as total_debit, COALESCE(SUM(CASE WHEN position = 'kredit' THEN amount ELSE 0 END), 0) as total_credit")
             ->first();
 
         return $isDebitNormal

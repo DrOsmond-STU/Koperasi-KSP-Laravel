@@ -5,6 +5,8 @@ namespace Tests\Feature\Reporting;
 use App\Models\AccountingPeriod;
 use App\Models\Branch;
 use App\Models\ChartOfAccount;
+use App\Models\OpeningBalanceBatch;
+use App\Models\OpeningBalanceCoa;
 use App\Models\User;
 use App\Services\Accounting\JournalEngine;
 use App\Services\Reporting\FinancialReportEngine;
@@ -50,6 +52,51 @@ class FinancialReportEngineTest extends TestCase
 
         $this->assertTrue($neraca['is_balanced']);
         $this->assertEquals('5000000.00', $neraca['total_aset']);
+        $this->assertTrue($neraca['has_data']);
+    }
+
+    /**
+     * Regresi langsung untuk keluhan pengguna: "kalau transaksi kosong
+     * berarti saldo yang ditampilkan adalah saldo awal ... Perhitungan
+     * neraca juga harus memperhitungkan saldo awal dari migrasi smik."
+     * Sebuah batch migrasi DRAFT (belum dikunci lewat
+     * OpeningBalanceLockService, jadi belum pernah dijurnal) harus tetap
+     * terlihat di Neraca — GeneralLedgerService::balanceFor() yang
+     * menjembataninya (lihat GeneralLedgerServiceTest untuk cakupan
+     * detail per-skenario draft/locked/sebelum-cutoff).
+     */
+    public function test_neraca_reflects_migrated_opening_balance_with_zero_transactions(): void
+    {
+        $branch = Branch::factory()->create();
+        $aset = ChartOfAccount::factory()->create(['type' => 'ASET', 'statement' => 'NERACA', 'normal_balance' => 'DEBIT']);
+        $ekuitas = ChartOfAccount::factory()->create(['type' => 'EKUITAS', 'statement' => 'NERACA', 'normal_balance' => 'KREDIT']);
+
+        $batch = OpeningBalanceBatch::query()->create([
+            'branch_id' => $branch->id,
+            'cutoff_date' => '2026-07-31',
+            'status' => 'draft',
+        ]);
+
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $aset->id,
+            'position' => 'debit',
+            'amount' => 5000000,
+        ]);
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $ekuitas->id,
+            'position' => 'kredit',
+            'amount' => 5000000,
+        ]);
+
+        // Tidak ada satu jurnal pun diposting — cabang ini belum ada
+        // transaksi baru sama sekali sejak migrasi.
+        $neraca = app(FinancialReportEngine::class)->neraca($branch->id, '2026-08-31');
+
+        $this->assertTrue($neraca['is_balanced']);
+        $this->assertEquals('5000000.00', $neraca['total_aset']);
+        $this->assertEquals('5000000.00', $neraca['total_ekuitas']);
         $this->assertTrue($neraca['has_data']);
     }
 
