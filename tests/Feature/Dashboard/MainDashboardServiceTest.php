@@ -3,9 +3,12 @@
 namespace Tests\Feature\Dashboard;
 
 use App\Models\Branch;
+use App\Models\ChartOfAccount;
 use App\Models\Loan;
 use App\Models\LoanSchedule;
 use App\Models\Member;
+use App\Models\OpeningBalanceBatch;
+use App\Models\OpeningBalanceCoa;
 use App\Models\SavingsAccount;
 use App\Models\User;
 use App\Services\Accounting\JournalEngine;
@@ -121,6 +124,46 @@ class MainDashboardServiceTest extends TestCase
         $summary = app(MainDashboardService::class)->summary($branch->id);
 
         $this->assertEquals(380000, $summary['shu_running']); // 500,000 - 120,000
+    }
+
+    /**
+     * Regresi untuk "kalau laba rugi atau shu berjalan ya berjalan saja,
+     * migrasi tidak terhitung, kecuali ... shu tahun berjalan berarti data
+     * migrasi ikut terhitung": shu_running di Dashboard ini SECARA
+     * DEFINISI adalah akumulasi Pendapatan-Beban sejak awal ledger
+     * (bukan Laba Rugi per periode), jadi HARUS ikut memuat migrasi —
+     * termasuk saat batch-nya masih draft (belum pernah dikunci/dijurnal).
+     * Lihat catatan lengkap di MainDashboardService::shuBreakdown().
+     */
+    public function test_shu_running_includes_migrated_opening_balance_even_when_batch_is_draft(): void
+    {
+        $branch = Branch::factory()->create();
+        $pendapatan = ChartOfAccount::query()->where('code', '4101')->firstOrFail();
+        $beban = ChartOfAccount::query()->where('code', '5201')->firstOrFail();
+
+        $batch = OpeningBalanceBatch::query()->create([
+            'branch_id' => $branch->id,
+            'cutoff_date' => '2026-07-31',
+            'status' => 'draft',
+        ]);
+
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $pendapatan->id,
+            'position' => 'kredit',
+            'amount' => 500000,
+        ]);
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $beban->id,
+            'position' => 'debit',
+            'amount' => 120000,
+        ]);
+
+        // Tidak ada satu jurnal pun diposting sejak migrasi.
+        $summary = app(MainDashboardService::class)->summary($branch->id);
+
+        $this->assertEquals(380000, $summary['shu_running']); // 500.000 - 120.000, dari migrasi
     }
 
     public function test_due_installments_lists_unpaid_schedules_ordered_by_due_date(): void

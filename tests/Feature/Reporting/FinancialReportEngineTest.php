@@ -100,6 +100,45 @@ class FinancialReportEngineTest extends TestCase
         $this->assertTrue($neraca['has_data']);
     }
 
+    /**
+     * Pelengkap test di atas, untuk baris SHU Tahun Berjalan (akun 3150,
+     * diisi lewat shuBerjalan() — bukan balanceFor() langsung, lihat
+     * computeNeraca()): ini PERSIS "shu tahun berjalan berarti data
+     * migrasi ikut terhitung" dari klarifikasi pengguna, dibedakan dari
+     * Laba Rugi per periode (test_laba_rugi_per_periode_excludes_
+     * migrated_opening_balance di bawah) yang sengaja tidak memuatnya.
+     */
+    public function test_neraca_shu_berjalan_row_includes_migrated_pendapatan_beban(): void
+    {
+        $branch = Branch::factory()->create();
+        ChartOfAccount::factory()->create(['code' => '3150', 'type' => 'EKUITAS', 'statement' => 'NERACA', 'normal_balance' => 'KREDIT']);
+        $pendapatan = ChartOfAccount::factory()->create(['type' => 'PENDAPATAN', 'statement' => 'LABA_RUGI', 'normal_balance' => 'KREDIT']);
+        $beban = ChartOfAccount::factory()->create(['type' => 'BEBAN', 'statement' => 'LABA_RUGI', 'normal_balance' => 'DEBIT']);
+
+        $batch = OpeningBalanceBatch::query()->create([
+            'branch_id' => $branch->id,
+            'cutoff_date' => '2026-07-31',
+            'status' => 'draft',
+        ]);
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $pendapatan->id,
+            'position' => 'kredit',
+            'amount' => 9000000,
+        ]);
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $beban->id,
+            'position' => 'debit',
+            'amount' => 6000000,
+        ]);
+
+        $neraca = app(FinancialReportEngine::class)->neraca($branch->id, '2026-08-31');
+
+        $shuRow = collect($neraca['rows'])->firstWhere('account.code', '3150');
+        $this->assertEquals('3000000.00', $shuRow['balance']); // 9jt - 6jt, dari migrasi
+    }
+
     public function test_neraca_eliminates_rak_account_only_when_consolidated(): void
     {
         $branchA = Branch::factory()->create();
@@ -147,6 +186,56 @@ class FinancialReportEngineTest extends TestCase
 
         $labaRugi = app(FinancialReportEngine::class)->labaRugi($branch->id, '2026-05-01', '2026-05-31');
 
+        $this->assertEquals('300000.00', $labaRugi['total_pendapatan']);
+        $this->assertEquals('100000.00', $labaRugi['total_beban']);
+        $this->assertEquals('200000.00', $labaRugi['shu']);
+    }
+
+    /**
+     * Regresi untuk "kalau laba rugi atau shu berjalan ya berjalan saja,
+     * migrasi tidak terhitung": Laba Rugi per PERIODE (beda dengan SHU
+     * Tahun Berjalan di Neraca, lihat test_neraca_reflects_migrated_
+     * opening_balance_with_zero_transactions di atas) sengaja TIDAK
+     * memuat saldo migrasi — periodMovement() murni menjumlahkan mutasi
+     * journal_lines dalam rentang tanggal yang diminta, tidak pernah
+     * memanggil balanceFor()/openingBalanceFor(). Migrasi yang cutoff-nya
+     * jatuh SEBELUM periode yang dilihat memang tidak relevan di sini.
+     */
+    public function test_laba_rugi_per_periode_excludes_migrated_opening_balance(): void
+    {
+        $branch = Branch::factory()->create();
+        $user = User::factory()->create();
+        $pendapatan = ChartOfAccount::factory()->create(['type' => 'PENDAPATAN', 'statement' => 'LABA_RUGI', 'normal_balance' => 'KREDIT']);
+        $beban = ChartOfAccount::factory()->create(['type' => 'BEBAN', 'statement' => 'LABA_RUGI', 'normal_balance' => 'DEBIT']);
+        $kas = ChartOfAccount::factory()->create(['normal_balance' => 'DEBIT']);
+
+        $batch = OpeningBalanceBatch::query()->create([
+            'branch_id' => $branch->id,
+            'cutoff_date' => '2026-07-31',
+            'status' => 'draft',
+        ]);
+        OpeningBalanceCoa::query()->create([
+            'opening_balance_batch_id' => $batch->id,
+            'chart_of_account_id' => $pendapatan->id,
+            'position' => 'kredit',
+            'amount' => 9000000,
+        ]);
+
+        // Mutasi Agustus 2026 yang sesungguhnya — inilah satu-satunya
+        // yang boleh masuk ke Laba Rugi periode Agustus.
+        $this->postEntry($branch->id, $user->id, '2026-08-10', [
+            ['chart_of_account_id' => $kas->id, 'debit' => 300000, 'credit' => 0],
+            ['chart_of_account_id' => $pendapatan->id, 'debit' => 0, 'credit' => 300000],
+        ]);
+        $this->postEntry($branch->id, $user->id, '2026-08-15', [
+            ['chart_of_account_id' => $beban->id, 'debit' => 100000, 'credit' => 0],
+            ['chart_of_account_id' => $kas->id, 'debit' => 0, 'credit' => 100000],
+        ]);
+
+        $labaRugi = app(FinancialReportEngine::class)->labaRugi($branch->id, '2026-08-01', '2026-08-31');
+
+        // Bukan 9.300.000 (migrasi + mutasi Agustus) — harus persis mutasi
+        // Agustus saja.
         $this->assertEquals('300000.00', $labaRugi['total_pendapatan']);
         $this->assertEquals('100000.00', $labaRugi['total_beban']);
         $this->assertEquals('200000.00', $labaRugi['shu']);
