@@ -3,6 +3,7 @@
 namespace App\Services\Retribution;
 
 use App\Models\RetributionTransaction;
+use App\Models\RetributionTransactionLine;
 use App\Models\RetributionType;
 use Illuminate\Support\Collection;
 
@@ -53,5 +54,73 @@ class RetributionReportService
 
             return $row;
         });
+    }
+
+    /**
+     * Rekap pendapatan UPF per periode (portrait) — dipakai
+     * RetributionController::printRekap() untuk kartu "Rekap Pendapatan UPF
+     * (Portrait)" di tab Laporan halaman Retribusi (UPF). Total & breakdown
+     * SELALU mengecualikan transaksi yang dibatalkan (cancelled_at bukan
+     * null) — beda dengan retribusiUpf() di atas, yang tidak menyaring
+     * cancelled_at karena baris yang dibatalkan tetap perlu tampil di sana
+     * sebagai jejak audit per transaksi.
+     *
+     * Breakdown mendaftar SEMUA jenis retribusi aktif (bukan cuma yang
+     * kebagian transaksi pada periode ini) supaya pengurus melihat cakupan
+     * lengkap tarif yang berlaku — jenis yang tidak bertransaksi tampil
+     * dengan angka nol.
+     *
+     * @param  array{branch_id?: int|null, period_start: string, period_end: string}  $filters
+     * @return array{period_start: string, period_end: string, transaction_count: int, transaction_count_umum: int, transaction_count_anggota: int, total_cash_in: float, breakdown: array<int, array{name: string, count: int, total: float}>}
+     */
+    public function rekapPendapatan(array $filters): array
+    {
+        $branchId = $filters['branch_id'] ?? null;
+
+        $transactionTotals = RetributionTransaction::query()
+            ->whereNull('cancelled_at')
+            ->when($branchId, fn ($q, $id) => $q->where('branch_id', $id))
+            ->where('transaction_date', '>=', $filters['period_start'])
+            ->where('transaction_date', '<=', $filters['period_end'])
+            ->selectRaw("COUNT(*) as total_count, SUM(CASE WHEN payer_type = 'umum' THEN 1 ELSE 0 END) as umum_count, SUM(CASE WHEN payer_type = 'anggota' THEN 1 ELSE 0 END) as anggota_count, COALESCE(SUM(total_amount), 0) as total_cash_in")
+            ->first();
+
+        $lineSummaryByTypeId = RetributionTransactionLine::query()
+            ->join('retribution_transactions', 'retribution_transactions.id', '=', 'retribution_transaction_lines.retribution_transaction_id')
+            ->whereNull('retribution_transactions.cancelled_at')
+            ->when($branchId, fn ($q, $id) => $q->where('retribution_transactions.branch_id', $id))
+            ->where('retribution_transactions.transaction_date', '>=', $filters['period_start'])
+            ->where('retribution_transactions.transaction_date', '<=', $filters['period_end'])
+            ->selectRaw('retribution_transaction_lines.retribution_type_id, COUNT(*) as line_count, COALESCE(SUM(retribution_transaction_lines.amount), 0) as line_total')
+            ->groupBy('retribution_transaction_lines.retribution_type_id')
+            ->get()
+            ->keyBy('retribution_type_id');
+
+        $breakdown = RetributionType::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->map(function (RetributionType $type) use ($lineSummaryByTypeId) {
+                $summary = $lineSummaryByTypeId->get($type->id);
+
+                return [
+                    'name' => $type->name,
+                    'count' => (int) ($summary->line_count ?? 0),
+                    'total' => (float) ($summary->line_total ?? 0),
+                ];
+            })
+            ->values()
+            ->all();
+
+        return [
+            'period_start' => $filters['period_start'],
+            'period_end' => $filters['period_end'],
+            'transaction_count' => (int) $transactionTotals->total_count,
+            'transaction_count_umum' => (int) $transactionTotals->umum_count,
+            'transaction_count_anggota' => (int) $transactionTotals->anggota_count,
+            'total_cash_in' => (float) $transactionTotals->total_cash_in,
+            'breakdown' => $breakdown,
+        ];
     }
 }

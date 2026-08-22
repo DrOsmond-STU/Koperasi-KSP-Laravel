@@ -95,4 +95,56 @@ class RetributionReportServiceTest extends TestCase
             'period_end' => now()->addDay()->toDateString(),
         ]);
     }
+
+    public function test_rekap_pendapatan_totals_and_breaks_down_by_active_type(): void
+    {
+        $this->recordSampleTransaction();
+
+        // Jenis retribusi ketiga yang aktif tapi belum pernah bertransaksi —
+        // harus tetap muncul di breakdown dengan angka nol (lihat docblock
+        // rekapPendapatan()).
+        $belumTerpakai = RetributionType::factory()->create([
+            'name' => 'Retribusi Sampah',
+            'percentage' => 0,
+            'coa_revenue_account_id' => ChartOfAccount::factory()->create()->id,
+            'is_active' => true,
+        ]);
+
+        $rekap = app(RetributionReportService::class)->rekapPendapatan([
+            'branch_id' => null,
+            'period_start' => now()->subDay()->toDateString(),
+            'period_end' => now()->addDay()->toDateString(),
+        ]);
+
+        $this->assertSame(1, $rekap['transaction_count']);
+        $this->assertSame(1, $rekap['transaction_count_umum']);
+        $this->assertSame(0, $rekap['transaction_count_anggota']);
+        $this->assertEquals(100000.0, $rekap['total_cash_in']);
+
+        $breakdownByName = collect($rekap['breakdown'])->keyBy('name');
+        $this->assertEquals(60000.0, $breakdownByName['Retribusi Kebersihan']['total']);
+        $this->assertEquals(1, $breakdownByName['Retribusi Kebersihan']['count']);
+        $this->assertEquals(40000.0, $breakdownByName['Retribusi Keamanan']['total']);
+        $this->assertEquals(0.0, $breakdownByName[$belumTerpakai->name]['total']);
+        $this->assertEquals(0, $breakdownByName[$belumTerpakai->name]['count']);
+    }
+
+    public function test_rekap_pendapatan_excludes_cancelled_transactions(): void
+    {
+        $this->recordSampleTransaction();
+        $trx = \App\Models\RetributionTransaction::query()->where('payer_name', 'Ibu Sari')->firstOrFail();
+        $canceller = User::factory()->create();
+
+        app(\App\Services\Retribution\RetributionService::class)->reverseTransaction($trx, 'Salah catat', $canceller->id);
+
+        $rekap = app(RetributionReportService::class)->rekapPendapatan([
+            'branch_id' => null,
+            'period_start' => now()->subDay()->toDateString(),
+            'period_end' => now()->addDay()->toDateString(),
+        ]);
+
+        $this->assertSame(0, $rekap['transaction_count']);
+        $this->assertEquals(0.0, $rekap['total_cash_in']);
+        $this->assertEquals(0.0, collect($rekap['breakdown'])->firstWhere('name', 'Retribusi Kebersihan')['total']);
+    }
 }

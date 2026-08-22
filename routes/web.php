@@ -408,6 +408,8 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('staf.retribusi-upf.laporan');
     Route::get('/staf/retribusi-upf/cetak-harian', [RetributionController::class, 'printHarian'])
         ->name('staf.retribusi-upf.print-harian');
+    Route::get('/staf/retribusi-upf/cetak-rekap', [RetributionController::class, 'printRekap'])
+        ->name('staf.retribusi-upf.print-rekap');
     Route::post('/staf/retribusi-upf/{transaction}/batalkan', [RetributionController::class, 'cancel'])
         ->name('staf.retribusi-upf.cancel');
 

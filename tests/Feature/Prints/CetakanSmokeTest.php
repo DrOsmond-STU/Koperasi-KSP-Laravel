@@ -339,6 +339,34 @@ class CetakanSmokeTest extends TestCase
         $this->assertPdf($this->actingAs($user)->get(route('staf.retribusi-upf.print-harian')));
     }
 
+    public function test_retribusi_upf_rekap_print(): void
+    {
+        $user = $this->printTester();
+        $branch = Branch::factory()->create();
+
+        RetributionType::factory()->create([
+            'percentage' => 100,
+            'coa_revenue_account_id' => ChartOfAccount::factory()->create()->id,
+            'is_active' => true,
+        ]);
+
+        app(\App\Services\Retribution\RetributionService::class)->record(
+            branchId: $branch->id,
+            payerType: 'umum',
+            payerName: 'Ibu Sari',
+            member: null,
+            totalAmount: 50000,
+            paymentMethod: 'tunai',
+            createdBy: $user->id,
+        );
+
+        $this->assertPdf($this->actingAs($user)->get(route('staf.retribusi-upf.print-rekap', [
+            'period_start' => now()->subDay()->toDateString(),
+            'period_end' => now()->addDay()->toDateString(),
+            'branch_id' => $branch->id,
+        ])));
+    }
+
     public function test_unit_usaha_print(): void
     {
         $user = $this->printTester();
