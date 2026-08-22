@@ -89,12 +89,19 @@ class LoanRepaymentService
         ];
     }
 
+    /**
+     * $date = tanggal pembayaran SEBENARNYA (mis. staf menyusulkan angsuran
+     * lama yang belum tercatat) — default ke hari ini kalau tidak diisi.
+     * Dipakai untuk loan_repayments.transaction_date DAN entry_date jurnal,
+     * supaya keduanya selalu konsisten (mirror pola RetributionService::record()).
+     */
     public function recordPayment(
         Loan $loan,
         float $amount,
         int $createdBy,
         ?string $description = null,
         ?string $idempotencyKey = null,
+        ?\DateTimeInterface $date = null,
     ): LoanRepayment {
         if ($loan->status !== 'dicairkan') {
             throw LoanRepaymentException::notActive($loan->status);
@@ -109,7 +116,9 @@ class LoanRepaymentService
             );
         }
 
-        return DB::transaction(function () use ($loan, $amount, $createdBy, $description, $idempotencyKey, $plan) {
+        $entryDate = $date ?? now();
+
+        return DB::transaction(function () use ($loan, $amount, $createdBy, $description, $idempotencyKey, $plan, $entryDate) {
             foreach ($plan['allocations'] as $allocation) {
                 $schedule = LoanSchedule::query()->lockForUpdate()->findOrFail($allocation['schedule_id']);
 
@@ -148,13 +157,14 @@ class LoanRepaymentService
                 'principal_portion' => $plan['total_principal'],
                 'interest_portion' => $plan['total_interest'],
                 'balance_after' => round($plan['outstanding_before'] - $amount, 2),
+                'transaction_date' => $entryDate->format('Y-m-d'),
                 'created_by' => $createdBy,
                 'description' => $description,
             ]);
 
             $entry = $this->journalEngine->post([
                 'branch_id' => $loan->branch_id,
-                'entry_date' => now()->toDateString(),
+                'entry_date' => $entryDate->format('Y-m-d'),
                 'description' => $description ?? "Pembayaran angsuran {$loan->loan_number}",
                 'created_by' => $createdBy,
                 'source' => $repayment,

@@ -115,6 +115,30 @@ class StafLoanRepaymentTest extends TestCase
         ]);
     }
 
+    /**
+     * Regresi: form Catat Angsuran sebelumnya tidak punya field tanggal sama
+     * sekali — staf yang menyusulkan angsuran lama tidak bisa mencatat
+     * tanggal pembayaran yang sebenarnya, jadi semuanya tercatat "hari ini".
+     */
+    public function test_petugas_kredit_can_backdate_a_repayment_via_transaction_date(): void
+    {
+        $user = $this->petugasKredit();
+        $loan = $this->disbursedLoanWithThreeInstallments();
+        $paidOn = now()->subDays(5)->toDateString();
+
+        $response = $this->actingAs($user)->post(route('staf.angsuran.store'), [
+            'loan_id' => $loan->id,
+            'amount' => 1100000,
+            'transaction_date' => $paidOn,
+        ]);
+
+        $response->assertRedirect(route('staf.angsuran.create'));
+        $this->assertDatabaseHas('loan_repayments', [
+            'loan_id' => $loan->id,
+            'transaction_date' => $paidOn,
+        ]);
+    }
+
     public function test_overpayment_is_rejected_with_a_friendly_error(): void
     {
         $user = $this->petugasKredit();

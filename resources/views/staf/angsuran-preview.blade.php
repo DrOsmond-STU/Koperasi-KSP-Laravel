@@ -19,6 +19,7 @@
     <div class="panel">
         <p>Anggota: <strong>{{ $loan->member->name }}</strong></p>
         <p>Nominal Bayar: <strong>Rp {{ number_format($amount, 0, ',', '.') }}</strong></p>
+        <p>Tanggal Bayar: <strong>{{ \Illuminate\Support\Carbon::parse($transactionDate)->translatedFormat('d M Y') }}</strong></p>
 
         <table class="alloc-table">
             <thead><tr><th>Angsuran ke-</th><th>Pokok</th><th>Jasa</th><th>Total Dialokasikan</th></tr></thead>
@@ -44,6 +45,7 @@
             <input type="hidden" name="loan_id" value="{{ $loan->id }}">
             <input type="hidden" name="amount" value="{{ $amount }}">
             <input type="hidden" name="description" value="{{ $description }}">
+            <input type="hidden" name="transaction_date" value="{{ $transactionDate }}">
             <button type="submit" class="btn-primary">Konfirmasi &amp; Simpan</button>
             <a href="{{ route('staf.angsuran.create') }}" class="btn-ghost">Batal</a>
         </form>

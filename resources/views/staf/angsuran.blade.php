@@ -50,6 +50,14 @@
                     <input type="number" step="0.01" name="amount" value="{{ old('amount') }}" required>
                 </div>
                 <div class="field">
+                    <label>Tanggal Bayar</label>
+                    <input type="date" name="transaction_date" value="{{ old('transaction_date', now()->toDateString()) }}" max="{{ now()->toDateString() }}" required>
+                    <p style="color: var(--muted); font-size: 11px; margin: 6px 0 0;">
+                        Ganti tanggal ini kalau sedang menyusulkan angsuran lama yang belum sempat dicatat —
+                        jangan biarkan bertanggal hari ini kalau pembayarannya terjadi di hari lain.
+                    </p>
+                </div>
+                <div class="field">
                     <label>Keterangan (opsional)</label>
                     <input type="text" name="description" value="{{ old('description') }}">
                 </div>

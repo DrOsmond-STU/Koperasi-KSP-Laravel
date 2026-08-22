@@ -24,6 +24,7 @@ class LoanRepayment extends Model
         'principal_portion',
         'interest_portion',
         'balance_after',
+        'transaction_date',
         'journal_entry_id',
         'created_by',
         'description',
@@ -40,6 +41,7 @@ class LoanRepayment extends Model
             'principal_portion' => 'decimal:2',
             'interest_portion' => 'decimal:2',
             'balance_after' => 'decimal:2',
+            'transaction_date' => 'date',
             'cancelled_at' => 'datetime',
         ];
     }
@@ -47,6 +49,16 @@ class LoanRepayment extends Model
     public function isCancelled(): bool
     {
         return $this->cancelled_at !== null;
+    }
+
+    /**
+     * Tanggal pembayaran untuk ditampilkan — transaction_date kalau ada,
+     * fallback ke created_at untuk baris lama (sebelum kolom ini ada, atau
+     * hasil migrasi riwayat pembayaran) yang tidak punya tanggal asli lagi.
+     */
+    public function displayDate(): \Illuminate\Support\Carbon
+    {
+        return $this->transaction_date ?? $this->created_at;
     }
 
     public function loan(): BelongsTo

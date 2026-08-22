@@ -9,6 +9,7 @@ use App\Models\Loan;
 use App\Models\LoanRepayment;
 use App\Services\Loans\LoanRepaymentService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
@@ -65,6 +66,7 @@ class LoanRepaymentController extends Controller
             'loan' => $loan,
             'amount' => $amount,
             'description' => $request->validated('description'),
+            'transactionDate' => $request->validated('transaction_date') ?: now()->toDateString(),
             'plan' => $plan,
         ]);
     }
@@ -73,6 +75,7 @@ class LoanRepaymentController extends Controller
     {
         $loan = Loan::query()->findOrFail($request->validated('loan_id'));
         $idempotencyKey = $request->input('idempotency_key') ?: (string) Str::uuid();
+        $transactionDate = $request->validated('transaction_date');
 
         try {
             $repayment = $this->repayments->recordPayment(
@@ -81,6 +84,7 @@ class LoanRepaymentController extends Controller
                 $request->user()->id,
                 $request->validated('description'),
                 $idempotencyKey,
+                $transactionDate ? Carbon::parse($transactionDate) : null,
             );
         } catch (LoanRepaymentException $exception) {
             return back()->withErrors(['amount' => $exception->getMessage()])->withInput();

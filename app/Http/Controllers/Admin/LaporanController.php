@@ -1082,7 +1082,7 @@ class LaporanController extends Controller
             ->latest('id')
             ->get()
             ->map(fn (LoanRepayment $repayment) => [
-                'tanggal' => $repayment->created_at->format('d-m-Y H:i'),
+                'tanggal' => $repayment->displayDate()->format('d-m-Y'),
                 'loan_number' => $repayment->loan->loan_number ?? '-',
                 'member_name' => $repayment->loan->member->name ?? '-',
                 'cabang' => $repayment->branch->name ?? '-',
