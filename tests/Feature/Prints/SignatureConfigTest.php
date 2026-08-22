@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\UserBranchScope;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -36,7 +37,33 @@ class SignatureConfigTest extends TestCase
 
         $this->assertDatabaseHas('document_signature_slots', ['document_group' => 'jurnal_umum']);
         $this->assertDatabaseHas('document_signature_slots', ['document_group' => 'pengajuan_pinjaman']);
-        $this->assertEquals(10, DocumentSignatureSlot::query()->distinct('document_group')->count('document_group'));
+        $this->assertDatabaseHas('document_signature_slots', ['document_group' => 'laporan_keuangan', 'label' => 'Disusun oleh (Bendahara)']);
+        $this->assertEquals(11, DocumentSignatureSlot::query()->distinct('document_group')->count('document_group'));
+    }
+
+    /**
+     * Regresi untuk bug produksi: kode sudah mendaftarkan grup dokumen baru
+     * (laporan_keuangan) di DEFAULT_SLOTS/StoreSignatureSlotRequest, tapi
+     * di satu instalasi migration ALTER penambah nilai ENUM-nya belum
+     * sempat dijalankan — insert default slot gagal (SQLSTATE 1265) dan
+     * SELURUH halaman /admin/pengaturan/tanda-tangan 500, bukan cuma grup
+     * yang bermasalah. Simulasikan kondisi "DB lama" itu di sini dan
+     * pastikan index() tetap 200, cukup menyembunyikan grup yang belum
+     * didukung skema (lihat SignatureConfigController::
+     * supportedDocumentGroups()).
+     */
+    public function test_index_does_not_500_when_db_enum_is_missing_a_newer_document_group(): void
+    {
+        DB::statement("ALTER TABLE document_signature_slots MODIFY document_group ENUM('pengajuan_pinjaman', 'pengajuan_penarikan', 'kas_keluar', 'kas_masuk', 'jurnal_umum', 'dokumen_gudang', 'aktiva_tetap', 'laporan_kas_bank', 'laporan_upf', 'unit_usaha') NOT NULL");
+
+        $admin = $this->adminSistem();
+
+        $response = $this->actingAs($admin)->get(route('admin.pengaturan.tanda-tangan.index'));
+
+        $response->assertOk();
+        $response->assertDontSee('laporan_keuangan');
+        $this->assertDatabaseHas('document_signature_slots', ['document_group' => 'jurnal_umum']);
+        $this->assertDatabaseMissing('document_signature_slots', ['document_group' => 'laporan_keuangan']);
     }
 
     public function test_admin_can_add_and_update_a_signatory(): void
