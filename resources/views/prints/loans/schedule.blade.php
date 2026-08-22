@@ -54,7 +54,7 @@
         <tbody>
             @forelse ($repayments as $repayment)
                 <tr>
-                    <td>{{ $repayment->displayDate()->translatedFormat('d M Y') }}</td>
+                    <td>{{ $repayment->paidOn()->translatedFormat('d M Y') }}</td>
                     <td>Rp {{ number_format($repayment->amount, 0, ',', '.') }}</td>
                     <td>Rp {{ number_format($repayment->principal_portion, 0, ',', '.') }}</td>
                     <td>Rp {{ number_format($repayment->interest_portion, 0, ',', '.') }}</td>

@@ -51,7 +51,7 @@
                 </div>
                 <div class="field">
                     <label>Tanggal Bayar</label>
-                    <input type="date" name="transaction_date" value="{{ old('transaction_date', now()->toDateString()) }}" max="{{ now()->toDateString() }}" required>
+                    <input type="date" name="paid_at" value="{{ old('paid_at', now()->toDateString()) }}" max="{{ now()->toDateString() }}" required>
                     <p style="color: var(--muted); font-size: 11px; margin: 6px 0 0;">
                         Ganti tanggal ini kalau sedang menyusulkan angsuran lama yang belum sempat dicatat —
                         jangan biarkan bertanggal hari ini kalau pembayarannya terjadi di hari lain.

@@ -92,8 +92,8 @@ class LoanRepaymentService
     /**
      * $date = tanggal pembayaran SEBENARNYA (mis. staf menyusulkan angsuran
      * lama yang belum tercatat) — default ke hari ini kalau tidak diisi.
-     * Dipakai untuk loan_repayments.transaction_date DAN entry_date jurnal,
-     * supaya keduanya selalu konsisten (mirror pola RetributionService::record()).
+     * Dipakai untuk loan_repayments.paid_at DAN entry_date jurnal, supaya
+     * keduanya selalu konsisten (mirror pola RetributionService::record()).
      */
     public function recordPayment(
         Loan $loan,
@@ -157,7 +157,7 @@ class LoanRepaymentService
                 'principal_portion' => $plan['total_principal'],
                 'interest_portion' => $plan['total_interest'],
                 'balance_after' => round($plan['outstanding_before'] - $amount, 2),
-                'transaction_date' => $entryDate->format('Y-m-d'),
+                'paid_at' => $entryDate->format('Y-m-d'),
                 'created_by' => $createdBy,
                 'description' => $description,
             ]);

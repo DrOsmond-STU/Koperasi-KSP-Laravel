@@ -24,7 +24,8 @@ class LoanRepayment extends Model
         'principal_portion',
         'interest_portion',
         'balance_after',
-        'transaction_date',
+        'paid_at',
+        'migrated_at',
         'journal_entry_id',
         'created_by',
         'description',
@@ -41,7 +42,8 @@ class LoanRepayment extends Model
             'principal_portion' => 'decimal:2',
             'interest_portion' => 'decimal:2',
             'balance_after' => 'decimal:2',
-            'transaction_date' => 'date',
+            'paid_at' => 'date',
+            'migrated_at' => 'datetime',
             'cancelled_at' => 'datetime',
         ];
     }
@@ -52,13 +54,13 @@ class LoanRepayment extends Model
     }
 
     /**
-     * Tanggal pembayaran untuk ditampilkan — transaction_date kalau ada,
-     * fallback ke created_at untuk baris lama (sebelum kolom ini ada, atau
-     * hasil migrasi riwayat pembayaran) yang tidak punya tanggal asli lagi.
+     * Tanggal pembayaran untuk ditampilkan — paid_at kalau ada, fallback ke
+     * created_at untuk baris lama (sebelum kolom ini ada) yang tidak punya
+     * tanggal asli lagi.
      */
-    public function displayDate(): \Illuminate\Support\Carbon
+    public function paidOn(): \Illuminate\Support\Carbon
     {
-        return $this->transaction_date ?? $this->created_at;
+        return $this->paid_at ?? $this->created_at;
     }
 
     public function loan(): BelongsTo

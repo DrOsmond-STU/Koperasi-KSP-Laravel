@@ -166,13 +166,14 @@ class LoanRepaymentServiceTest extends TestCase
     }
 
     /**
-     * Regresi: sebelum ada parameter $date, transaction_date tidak ada sama
-     * sekali dan "Tanggal Bayar" di semua laporan/PDF selalu diambil dari
-     * created_at (kapan baris DICATAT, bukan kapan pembayaran itu terjadi)
-     * — untuk angsuran yang disusulkan mundur, ini membuat tanggalnya ikut
-     * "hari ini" alih-alih tanggal pembayaran sebenarnya.
+     * Regresi: sebelum ada parameter $date, form Catat Angsuran tidak punya
+     * cara mengisi paid_at — "Tanggal Bayar" di semua laporan/PDF selalu
+     * jatuh ke created_at (kapan baris DICATAT, bukan kapan pembayaran itu
+     * terjadi) via LoanRepayment::paidOn(), sehingga angsuran yang
+     * disusulkan mundur ikut bertanggal "hari ini" alih-alih tanggal
+     * pembayaran sebenarnya.
      */
-    public function test_backdated_payment_sets_transaction_date_and_matching_journal_entry_date(): void
+    public function test_backdated_payment_sets_paid_at_and_matching_journal_entry_date(): void
     {
         $loan = $this->disbursedLoanWithThreeInstallments();
         $payer = User::factory()->create();
@@ -182,18 +183,18 @@ class LoanRepaymentServiceTest extends TestCase
             $loan, 1100000, $payer->id, null, null, $paidOn,
         );
 
-        $this->assertTrue($repayment->transaction_date->isSameDay($paidOn));
+        $this->assertTrue($repayment->paid_at->isSameDay($paidOn));
         $this->assertTrue($repayment->journalEntry->entry_date->isSameDay($paidOn));
     }
 
     /** Tanpa $date eksplisit, tetap default ke hari ini (perilaku lama tidak berubah). */
-    public function test_payment_without_explicit_date_defaults_transaction_date_to_today(): void
+    public function test_payment_without_explicit_date_defaults_paid_at_to_today(): void
     {
         $loan = $this->disbursedLoanWithThreeInstallments();
         $payer = User::factory()->create();
 
         $repayment = app(LoanRepaymentService::class)->recordPayment($loan, 1100000, $payer->id);
 
-        $this->assertTrue($repayment->transaction_date->isToday());
+        $this->assertTrue($repayment->paid_at->isToday());
     }
 }

@@ -66,7 +66,7 @@ class LoanRepaymentController extends Controller
             'loan' => $loan,
             'amount' => $amount,
             'description' => $request->validated('description'),
-            'transactionDate' => $request->validated('transaction_date') ?: now()->toDateString(),
+            'paidAt' => $request->validated('paid_at') ?: now()->toDateString(),
             'plan' => $plan,
         ]);
     }
@@ -75,7 +75,7 @@ class LoanRepaymentController extends Controller
     {
         $loan = Loan::query()->findOrFail($request->validated('loan_id'));
         $idempotencyKey = $request->input('idempotency_key') ?: (string) Str::uuid();
-        $transactionDate = $request->validated('transaction_date');
+        $paidAt = $request->validated('paid_at');
 
         try {
             $repayment = $this->repayments->recordPayment(
@@ -84,7 +84,7 @@ class LoanRepaymentController extends Controller
                 $request->user()->id,
                 $request->validated('description'),
                 $idempotencyKey,
-                $transactionDate ? Carbon::parse($transactionDate) : null,
+                $paidAt ? Carbon::parse($paidAt) : null,
             );
         } catch (LoanRepaymentException $exception) {
             return back()->withErrors(['amount' => $exception->getMessage()])->withInput();

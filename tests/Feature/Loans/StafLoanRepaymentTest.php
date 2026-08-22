@@ -120,7 +120,7 @@ class StafLoanRepaymentTest extends TestCase
      * sekali — staf yang menyusulkan angsuran lama tidak bisa mencatat
      * tanggal pembayaran yang sebenarnya, jadi semuanya tercatat "hari ini".
      */
-    public function test_petugas_kredit_can_backdate_a_repayment_via_transaction_date(): void
+    public function test_petugas_kredit_can_backdate_a_repayment_via_paid_at(): void
     {
         $user = $this->petugasKredit();
         $loan = $this->disbursedLoanWithThreeInstallments();
@@ -129,13 +129,13 @@ class StafLoanRepaymentTest extends TestCase
         $response = $this->actingAs($user)->post(route('staf.angsuran.store'), [
             'loan_id' => $loan->id,
             'amount' => 1100000,
-            'transaction_date' => $paidOn,
+            'paid_at' => $paidOn,
         ]);
 
         $response->assertRedirect(route('staf.angsuran.create'));
         $this->assertDatabaseHas('loan_repayments', [
             'loan_id' => $loan->id,
-            'transaction_date' => $paidOn,
+            'paid_at' => $paidOn,
         ]);
     }
 

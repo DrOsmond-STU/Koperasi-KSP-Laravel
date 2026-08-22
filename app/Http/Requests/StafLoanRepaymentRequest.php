@@ -27,7 +27,7 @@ class StafLoanRepaymentRequest extends FormRequest
             'loan_id' => ['required', 'integer', Rule::exists('loans', 'id')],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'description' => ['nullable', 'string', 'max:255'],
-            'transaction_date' => ['nullable', 'date'],
+            'paid_at' => ['nullable', 'date'],
         ];
     }
 }
