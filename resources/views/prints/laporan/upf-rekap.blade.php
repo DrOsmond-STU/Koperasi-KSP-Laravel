@@ -102,7 +102,9 @@
         </tr>
         <tr>
             <td style="padding:3px 0; font-size:8pt; color:#5C6E64;">Akun Kas Lawan</td>
-            <td style="padding:3px 0; font-size:8pt; color:#5C6E64;">: 1101600 — KAS AO RIDWAN (UPF)</td>
+            <td style="padding:3px 0; font-size:8pt; color:#5C6E64;">
+                : @if ($cashAccount) {{ $cashAccount->code }} — {{ $cashAccount->name }} @else — @endif
+            </td>
         </tr>
     </table>
 

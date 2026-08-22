@@ -251,14 +251,23 @@ class RetributionService
 
     private function cashAccountId(): int
     {
-        $id = ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->value('id');
+        return $this->cashAccount()->id;
+    }
 
-        if ($id !== null) {
-            return $id;
-        }
-
-        // Fallback (backward compat) — production DB yang belum ke-migrate
-        // untuk baris 1101600 akan tetap bisa memposting ke akun kas umum.
-        return ChartOfAccount::query()->where('code', self::FALLBACK_CASH_ACCOUNT_CODE)->value('id');
+    /**
+     * Akun kas lawan (debit) untuk transaksi retribusi UPF — dipakai juga
+     * oleh halaman Transaksi (preview jurnal) dan cetakan Rekap/Harian UPF
+     * untuk MENAMPILKAN kode+nama akun. Sengaja diekspos sebagai method
+     * publik terpisah dari cashAccountId() supaya tampilan itu SELALU
+     * mengikuti data live di Bagan Akun (kode ATAU nama akun bisa berubah
+     * kapan saja lewat menu Master Bagan Akun) — jangan pernah tulis ulang
+     * kode/nama akun ini sebagai teks statis di controller/view manapun.
+     */
+    public function cashAccount(): ?ChartOfAccount
+    {
+        return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->first()
+            // Fallback (backward compat) — production DB yang belum ke-migrate
+            // untuk baris 1101600 akan tetap bisa memposting ke akun kas umum.
+            ?? ChartOfAccount::query()->where('code', self::FALLBACK_CASH_ACCOUNT_CODE)->first();
     }
 }

@@ -167,6 +167,7 @@ class RetributionController extends Controller
         $pdf = $this->renderPrintPdf('prints.laporan.upf-rekap', [
             'rekap' => $rekap,
             'branch' => $branchId ? Branch::query()->find($branchId) : null,
+            'cashAccount' => $this->retributionService->cashAccount(),
         ], orientationOverride: 'portrait');
 
         return $pdf->download('rekap-upf-'.$periodStart.'_sd_'.$periodEnd.'.pdf');
@@ -225,6 +226,7 @@ class RetributionController extends Controller
                 ->limit(20)
                 ->get(),
             'staticColumns' => ReportTypeRegistry::columnsFor('retribusi_upf'),
+            'cashAccount' => $this->retributionService->cashAccount(),
         ];
     }
 

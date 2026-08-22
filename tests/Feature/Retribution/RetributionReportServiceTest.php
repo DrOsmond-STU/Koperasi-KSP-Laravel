@@ -29,7 +29,12 @@ class RetributionReportServiceTest extends TestCase
      */
     private function recordSampleTransaction(): void
     {
-        ChartOfAccount::factory()->create(['code' => '1101600']);
+        // updateOrCreate: migration add_kas_ao_ridwan_upf_to_chart_of_accounts
+        // sudah menyisipkan baris 1101600 di setiap DB test segar.
+        ChartOfAccount::query()->updateOrCreate(
+            ['code' => '1101600'],
+            ['name' => 'KAS AO RIDWAN (UPF)', 'type' => 'ASET', 'normal_balance' => 'DEBIT', 'is_postable' => true, 'statement' => 'NERACA'],
+        );
         $this->keb = RetributionType::factory()->create([
             'name' => 'Retribusi Kebersihan',
             'percentage' => 60,

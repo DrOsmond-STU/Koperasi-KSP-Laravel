@@ -236,4 +236,28 @@ class RetributionControllerTest extends TestCase
 
         $this->assertNotNull($trx->fresh()->cancelled_at);
     }
+
+    /**
+     * Regresi: nama akun kas lawan (panel Preview Jurnal & JS live preview)
+     * dulu tertulis statis "KAS AO RIDWAN (UPF)" di view — begitu admin
+     * mengganti nama akun 1101600 lewat Master Bagan Akun, halaman
+     * Transaksi harus ikut menampilkan nama barunya, bukan teks lama.
+     */
+    public function test_transaction_page_shows_live_cash_account_name_not_hardcoded(): void
+    {
+        // ChartOfAccountsSeeder (di setUp()) tidak membuat baris ini — yang
+        // menyisipkannya adalah migration add_kas_ao_ridwan_upf_to_chart_of_accounts,
+        // jadi di sini kita UPDATE nama akunnya (bukan create baru).
+        \App\Models\ChartOfAccount::query()->updateOrCreate(
+            ['code' => '1101600'],
+            ['name' => 'KAS AO JAYA BUDIMAN (UPF)', 'type' => 'ASET', 'normal_balance' => 'DEBIT', 'is_postable' => true, 'statement' => 'NERACA'],
+        );
+        $officer = $this->petugasUpf();
+
+        $response = $this->actingAs($officer)->get(route('staf.retribusi-upf.index'));
+
+        $response->assertOk();
+        $response->assertSee('KAS AO JAYA BUDIMAN (UPF)');
+        $response->assertDontSee('KAS AO RIDWAN');
+    }
 }

@@ -374,7 +374,8 @@
                     <p class="error-msg" style="margin-top:12px;">⚠ Belum ada jenis retribusi <em>split</em> (persentase &lt; 100%) yang aktif — transaksi <strong>Anggota</strong> belum tersedia. Tambahkan di menu <em>Pengaturan → Jenis Retribusi</em>.</p>
                 @endif
                 <p class="preview-empty" style="margin-top:14px; font-size:11px;">
-                    Jurnal LAWAN (debit) diarahkan ke akun kas <strong>1101600 — KAS AO RIDWAN (UPF)</strong>.
+                    Jurnal LAWAN (debit) diarahkan ke akun kas
+                    <strong>@if ($cashAccount) {{ $cashAccount->code }} — {{ $cashAccount->name }} @else (belum di-set) @endif</strong>.
                 </p>
             </div>
         </div>
@@ -585,7 +586,7 @@
                 ]);
             @endphp
             var splitTypes = @json($splitTypesForJs);
-            var cashAccountLabel = 'KAS AO RIDWAN (UPF) (1101600)';
+            var cashAccountLabel = {{ Js::from($cashAccount ? "{$cashAccount->name} ({$cashAccount->code})" : 'Kas') }};
 
             function splitCents(totalCents, types) {
                 var rows = types.map(function (t) {

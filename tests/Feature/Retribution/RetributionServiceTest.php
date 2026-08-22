@@ -22,9 +22,26 @@ class RetributionServiceTest extends TestCase
 {
     use RefreshDatabase;
 
+    /**
+     * updateOrCreate, bukan factory()->create() polos — migration
+     * 2026_08_20_100000_add_kas_ao_ridwan_upf_to_chart_of_accounts sudah
+     * menyisipkan baris 1101600 di setiap DB test segar (RefreshDatabase
+     * menjalankan SEMUA migration terlepas dari seeder apa yang dipanggil
+     * test ini), jadi create() polos akan bentrok unique constraint.
+     */
     private function cashAccount(): ChartOfAccount
     {
-        return ChartOfAccount::factory()->create(['code' => '1101600']);
+        return ChartOfAccount::query()->updateOrCreate(
+            ['code' => '1101600'],
+            [
+                'name' => 'KAS AO RIDWAN (UPF)',
+                'type' => 'ASET',
+                'group' => 'Aset Lancar',
+                'normal_balance' => 'DEBIT',
+                'is_postable' => true,
+                'statement' => 'NERACA',
+            ],
+        );
     }
 
     /**
@@ -349,5 +366,45 @@ class RetributionServiceTest extends TestCase
 
         $this->assertEquals('Pembeli Lepas', $transaction->payer_name);
         $this->assertNull($transaction->member_id);
+    }
+
+    // ================= cashAccount() =================
+
+    /**
+     * Regresi: kode/nama akun kas lawan yang ditampilkan di form Transaksi
+     * & cetakan Rekap/Harian UPF HARUS ikut berubah begitu akun 1101600
+     * diedit lewat Master Bagan Akun — sebelumnya nama akun ("KAS AO
+     * RIDWAN (UPF)") tertulis statis di beberapa view, jadi tidak ikut
+     * berubah walau nama akun sudah diganti admin.
+     */
+    public function test_cash_account_reflects_live_chart_of_account_name(): void
+    {
+        // updateOrCreate: baris 1101600 sudah ada dari migration
+        // add_kas_ao_ridwan_upf_to_chart_of_accounts — di sini kita ganti
+        // namanya, meniru admin yang mengedit lewat Master Bagan Akun.
+        ChartOfAccount::query()->updateOrCreate(
+            ['code' => '1101600'],
+            ['name' => 'KAS AO JAYA BUDIMAN (UPF)', 'type' => 'ASET', 'normal_balance' => 'DEBIT', 'is_postable' => true, 'statement' => 'NERACA'],
+        );
+
+        $account = app(RetributionService::class)->cashAccount();
+
+        $this->assertNotNull($account);
+        $this->assertSame('1101600', $account->code);
+        $this->assertSame('KAS AO JAYA BUDIMAN (UPF)', $account->name);
+    }
+
+    public function test_cash_account_falls_back_to_legacy_cash_code_when_1101600_missing(): void
+    {
+        // 1101600 dihapus dulu supaya fallback ke 1101 benar-benar diuji —
+        // migration selalu menyisipkannya di DB test segar (lihat catatan
+        // di helper cashAccount() di atas).
+        ChartOfAccount::query()->where('code', '1101600')->delete();
+        ChartOfAccount::factory()->create(['code' => '1101', 'name' => 'Kas']);
+
+        $account = app(RetributionService::class)->cashAccount();
+
+        $this->assertNotNull($account);
+        $this->assertSame('1101', $account->code);
     }
 }
