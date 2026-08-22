@@ -12,6 +12,7 @@ use App\Models\JournalEntry;
 use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Models\LoanSchedule;
+use App\Models\Member;
 use App\Models\Product;
 use App\Models\RetributionType;
 use App\Models\SavingsAccount;
@@ -85,6 +86,53 @@ class CetakanSmokeTest extends TestCase
         Loan::factory()->create(['status' => 'dicairkan']);
 
         $this->assertPdf($this->actingAs($user)->get(route('admin.print.savings.index')));
+        $this->assertPdf($this->actingAs($user)->get(route('admin.print.loans.index')));
+    }
+
+    /**
+     * Regresi untuk permintaan "laporan pinjaman per anggota gabungan
+     * historis pembayaran": filter `status` harus benar-benar menyaring
+     * ANGGOTA (bukan cuma pinjamannya jadi kosong), dan halaman harus
+     * merender saldo outstanding + riwayat pembayaran tanpa error.
+     *
+     * Asersi isi tetap lewat query, bukan scraping teks dari PDF — dompdf
+     * meng-compress content stream-nya (FlateDecode) secara default, jadi
+     * nama anggota tidak muncul sebagai teks polos di response body.
+     */
+    public function test_loans_list_print_filters_by_status(): void
+    {
+        $user = $this->printTester();
+
+        $paidOffLoan = $this->disbursedLoanWithThreeInstallments();
+        app(LoanRepaymentService::class)->recordPayment($paidOffLoan, 3300000, $user->id);
+        $this->assertEquals('lunas', $paidOffLoan->fresh()->status);
+
+        $activeLoan = $this->disbursedLoanWithThreeInstallments();
+        app(LoanRepaymentService::class)->recordPayment($activeLoan, 1100000, $user->id);
+        $this->assertEquals('dicairkan', $activeLoan->fresh()->status);
+
+        // Query yang sama persis dengan yang dipakai PrintLoanController::
+        // index() untuk memutuskan anggota mana yang ikut tercetak —
+        // memverifikasi whereHas('loans', status=X) benar-benar menyaring
+        // ANGGOTA (bukan cuma daftar pinjamannya jadi kosong).
+        $aktifMemberIds = Member::query()
+            ->whereHas('loans', fn ($q) => $q->where('status', 'dicairkan'))
+            ->pluck('id');
+        $this->assertTrue($aktifMemberIds->contains($activeLoan->member_id));
+        $this->assertFalse($aktifMemberIds->contains($paidOffLoan->member_id));
+
+        $lunasMemberIds = Member::query()
+            ->whereHas('loans', fn ($q) => $q->where('status', 'lunas'))
+            ->pluck('id');
+        $this->assertTrue($lunasMemberIds->contains($paidOffLoan->member_id));
+        $this->assertFalse($lunasMemberIds->contains($activeLoan->member_id));
+
+        $this->assertPdf($this->actingAs($user)->get(route('admin.print.loans.index', ['status' => 'aktif'])));
+        $this->assertPdf($this->actingAs($user)->get(route('admin.print.loans.index', ['status' => 'lunas'])));
+
+        // status=semua (default, tanpa parameter): menjaga kompatibilitas
+        // dengan link "Cetak Pinjaman" per baris anggota di
+        // admin.anggota.index yang tidak mengirim `status` sama sekali.
         $this->assertPdf($this->actingAs($user)->get(route('admin.print.loans.index')));
     }
 
