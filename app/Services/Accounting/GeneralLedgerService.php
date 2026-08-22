@@ -16,10 +16,24 @@ use Illuminate\Support\Collection;
 class GeneralLedgerService
 {
     /**
-     * @return Collection<int, array{date: string, description: string, debit: string, credit: string, running_balance: string}>
+     * Kartu buku besar per akun: saldo awal periode + mutasi dalam periode +
+     * running balance yang bergerak dari saldo awal. Baris pertama selalu
+     * saldo awal sintetik (is_opening=true, debit/credit=0) supaya cetakan
+     * dan layar konsisten dengan konvensi buku besar — tanpa itu akun
+     * kas/bank yang punya mutasi sebelum periode tampak seolah mulai
+     * dari nol.
+     *
+     * Saldo awal dihitung ulang tiap panggilan lewat balanceFor() (agregasi
+     * semua journal_lines <= periodStart - 1 hari), sama seperti prinsip
+     * "balances always computed, never cached" di kelas ini.
+     *
+     * @return Collection<int, array{date: string, description: string, debit: string, credit: string, running_balance: string, is_opening: bool}>
      */
     public function linesFor(ChartOfAccount $account, ?int $branchId, string $periodStart, string $periodEnd): Collection
     {
+        $openingAsOf = \Illuminate\Support\Carbon::parse($periodStart)->subDay()->toDateString();
+        $opening = $this->balanceFor($account, $branchId, $openingAsOf);
+
         $lines = JournalLine::query()
             ->where('chart_of_account_id', $account->id)
             ->whereHas('journalEntry', function ($query) use ($branchId, $periodStart, $periodEnd) {
@@ -37,24 +51,36 @@ class GeneralLedgerService
             ])
             ->values();
 
-        $running = '0.00';
+        $running = $opening;
         $isDebitNormal = $account->normal_balance === 'DEBIT';
 
-        return $lines->map(function (JournalLine $line) use (&$running, $isDebitNormal) {
+        $result = collect([[
+            'date' => $periodStart,
+            'description' => 'Saldo Awal Periode',
+            'debit' => '0.00',
+            'credit' => '0.00',
+            'running_balance' => $opening,
+            'is_opening' => true,
+        ]]);
+
+        foreach ($lines as $line) {
             $delta = $isDebitNormal
                 ? bcsub((string) $line->debit, (string) $line->credit, 2)
                 : bcsub((string) $line->credit, (string) $line->debit, 2);
 
             $running = bcadd($running, $delta, 2);
 
-            return [
+            $result->push([
                 'date' => $line->journalEntry->entry_date->toDateString(),
                 'description' => $line->journalEntry->description,
                 'debit' => (string) $line->debit,
                 'credit' => (string) $line->credit,
                 'running_balance' => $running,
-            ];
-        });
+                'is_opening' => false,
+            ]);
+        }
+
+        return $result;
     }
 
     public function balanceFor(ChartOfAccount $account, ?int $branchId, string $asOfDate): string

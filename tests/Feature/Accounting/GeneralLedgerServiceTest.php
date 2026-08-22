@@ -53,8 +53,60 @@ class GeneralLedgerServiceTest extends TestCase
 
         $lines = app(GeneralLedgerService::class)->linesFor($cash, $branch->id, now()->startOfMonth()->toDateString(), now()->toDateString());
 
-        $this->assertCount(2, $lines);
+        // Baris pertama = saldo awal sintetik (nol karena tidak ada mutasi
+        // sebelum periode); dua berikutnya = mutasi periode.
+        $this->assertCount(3, $lines);
+        $this->assertTrue($lines->first()['is_opening']);
+        $this->assertEquals('0.00', $lines->first()['running_balance']);
         $this->assertEquals('150000.00', $lines->last()['running_balance']);
+    }
+
+    /**
+     * Bug regression: sebelum perbaikan, kartu buku besar mulai dari saldo
+     * nol untuk akun Kas/Bank yang punya mutasi sebelum periode. Setelah
+     * perbaikan, baris pertama = "Saldo Awal Periode" dengan saldo aktual
+     * per (periodStart - 1 hari), dan running_balance mutasi periode
+     * dihitung dari titik itu, bukan nol.
+     */
+    public function test_opening_balance_row_carries_over_activity_before_period(): void
+    {
+        $cash = ChartOfAccount::factory()->create(['normal_balance' => 'DEBIT']);
+        $contra = ChartOfAccount::factory()->create();
+        $branch = Branch::factory()->create();
+        $user = User::factory()->create();
+
+        // Mutasi bulan lalu — harus jadi bagian saldo awal, bukan baris
+        // mutasi.
+        app(JournalEngine::class)->post([
+            'branch_id' => $branch->id,
+            'entry_date' => now()->subMonth()->toDateString(),
+            'description' => 'Setoran bulan lalu',
+            'created_by' => $user->id,
+            'lines' => [
+                ['chart_of_account_id' => $cash->id, 'debit' => 1000000, 'credit' => 0],
+                ['chart_of_account_id' => $contra->id, 'debit' => 0, 'credit' => 1000000],
+            ],
+        ]);
+        // Mutasi bulan ini — masuk ke daftar mutasi, running_balance
+        // dihitung dari saldo awal 1.000.000.
+        app(JournalEngine::class)->post([
+            'branch_id' => $branch->id,
+            'entry_date' => now()->toDateString(),
+            'description' => 'Setoran bulan ini',
+            'created_by' => $user->id,
+            'lines' => [
+                ['chart_of_account_id' => $cash->id, 'debit' => 250000, 'credit' => 0],
+                ['chart_of_account_id' => $contra->id, 'debit' => 0, 'credit' => 250000],
+            ],
+        ]);
+
+        $lines = app(GeneralLedgerService::class)->linesFor($cash, $branch->id, now()->startOfMonth()->toDateString(), now()->toDateString());
+
+        $this->assertCount(2, $lines, 'Saldo awal + 1 mutasi bulan ini');
+        $this->assertTrue($lines->first()['is_opening']);
+        $this->assertEquals('1000000.00', $lines->first()['running_balance'], 'Saldo awal periode = mutasi sebelum bulan ini');
+        $this->assertEquals('Setoran bulan ini', $lines->last()['description']);
+        $this->assertEquals('1250000.00', $lines->last()['running_balance'], 'Saldo akhir = saldo awal + mutasi bulan ini');
     }
 
     public function test_reconcile_savings_liability_matches_ledger_with_account_details(): void
