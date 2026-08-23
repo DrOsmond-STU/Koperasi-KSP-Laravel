@@ -91,9 +91,11 @@ class CetakanSmokeTest extends TestCase
 
     /**
      * Regresi untuk permintaan "cetakan simpanan tambahkan total angsuran
-     * pinjaman": total per anggota harus menjumlahkan SELURUH pinjaman
-     * anggota itu (bukan cuma satu) dan mengecualikan pembayaran yang
-     * dibatalkan — sesuai LoanRepayment::isCancelled().
+     * pinjaman" + "tambahkan total simpanan": total angsuran per anggota
+     * harus menjumlahkan SELURUH pinjaman anggota itu (bukan cuma satu) dan
+     * mengecualikan pembayaran yang dibatalkan — sesuai
+     * LoanRepayment::isCancelled(); total simpanan harus menjumlahkan
+     * SELURUH rekening anggota itu (bukan cuma satu).
      *
      * Asersi lewat query, bukan scraping teks PDF (lihat catatan di
      * test_loans_list_print_filters_by_status di atas).
@@ -105,7 +107,8 @@ class CetakanSmokeTest extends TestCase
         $loanSatu = $this->disbursedLoanWithThreeInstallments();
         $member = $loanSatu->member;
         $loanDua = $this->disbursedLoanWithThreeInstallments(['member_id' => $member->id]);
-        SavingsAccount::factory()->create(['member_id' => $member->id]);
+        SavingsAccount::factory()->create(['member_id' => $member->id, 'balance' => 300000]);
+        SavingsAccount::factory()->create(['member_id' => $member->id, 'balance' => 450000]);
 
         app(LoanRepaymentService::class)->recordPayment($loanSatu, 1100000, $user->id);
         app(LoanRepaymentService::class)->recordPayment($loanDua, 550000, $user->id);
@@ -119,6 +122,11 @@ class CetakanSmokeTest extends TestCase
             ->reject(fn ($repayment) => $repayment->isCancelled())
             ->sum('amount');
         $this->assertEquals(1650000, $totalDiangsur);
+
+        // Sama persis dengan yang dipakai prints.savings.list untuk
+        // menghitung total simpanan.
+        $totalSimpanan = $member->savingsAccounts()->get()->sum('balance');
+        $this->assertEquals(750000, $totalSimpanan);
 
         $this->assertPdf($this->actingAs($user)->get(route('admin.print.savings.index', ['member_id' => $member->id])));
     }

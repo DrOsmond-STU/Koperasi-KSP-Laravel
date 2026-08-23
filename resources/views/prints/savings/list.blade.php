@@ -31,6 +31,9 @@
                 @endforelse
             </tbody>
         </table>
+        <p style="font-size:9pt; margin:0 0 2px; font-weight:600;">
+            Total Simpanan — Seluruh Rekening: Rp {{ number_format($member->savingsAccounts->sum('balance'), 0, ',', '.') }}
+        </p>
         <p style="font-size:9pt; margin:0 0 16px; font-weight:600;">
             Total Sudah Dibayar (Diangsur) — Seluruh Pinjaman: Rp {{ number_format($member->total_diangsur, 0, ',', '.') }}
         </p>
