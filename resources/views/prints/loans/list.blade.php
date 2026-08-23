@@ -25,6 +25,8 @@
             @php
                 $sisaPokok = (float) $loan->schedules->sum('principal_amount') - (float) $loan->schedules->sum('paid_principal_amount');
                 $sisaJasa = (float) $loan->schedules->sum('interest_amount') - (float) $loan->schedules->sum('paid_interest_amount');
+                $repaymentsBerlaku = $loan->repayments->reject(fn ($repayment) => $repayment->isCancelled());
+                $totalDibayar = $repaymentsBerlaku->sum('amount');
             @endphp
             <table class="data-table" style="margin-bottom: 4px;">
                 <thead>
@@ -35,6 +37,7 @@
                         <th>Tenor</th>
                         <th>Status</th>
                         <th>Tgl Cair</th>
+                        <th>Sudah Dibayar</th>
                         <th>Sisa Pokok</th>
                         <th>Sisa Jasa</th>
                     </tr>
@@ -47,6 +50,7 @@
                         <td>{{ $loan->tenor_months }} bulan</td>
                         <td>{{ ucfirst($loan->status) }}</td>
                         <td>{{ optional($loan->disbursed_at)->format('d/m/Y') ?? '-' }}</td>
+                        <td>Rp {{ number_format($totalDibayar, 0, ',', '.') }}</td>
                         <td>Rp {{ number_format($sisaPokok, 0, ',', '.') }}</td>
                         <td>Rp {{ number_format($sisaJasa, 0, ',', '.') }}</td>
                     </tr>
@@ -78,6 +82,17 @@
                         <tr><td colspan="5">Belum ada pembayaran angsuran.</td></tr>
                     @endforelse
                 </tbody>
+                @if ($repaymentsBerlaku->isNotEmpty())
+                    <tfoot>
+                        <tr>
+                            <td style="font-weight:600;">Total Sudah Dibayar</td>
+                            <td style="font-weight:600;">Rp {{ number_format($totalDibayar, 0, ',', '.') }}</td>
+                            <td style="font-weight:600;">Rp {{ number_format($repaymentsBerlaku->sum('principal_portion'), 0, ',', '.') }}</td>
+                            <td style="font-weight:600;">Rp {{ number_format($repaymentsBerlaku->sum('interest_portion'), 0, ',', '.') }}</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                @endif
             </table>
         @empty
             <p style="font-size:9pt; color:#5C6E64; margin:0 0 16px;">Belum ada pinjaman.</p>

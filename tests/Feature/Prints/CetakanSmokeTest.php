@@ -149,6 +149,11 @@ class CetakanSmokeTest extends TestCase
         app(LoanRepaymentService::class)->recordPayment($paidOffLoan, 3300000, $user->id);
         $this->assertEquals('lunas', $paidOffLoan->fresh()->status);
 
+        // Sama persis dengan yang dipakai prints.loans.list untuk
+        // menghitung "Sudah Dibayar" / "Total Sudah Dibayar".
+        $totalDibayar = $paidOffLoan->repayments->reject(fn ($r) => $r->isCancelled())->sum('amount');
+        $this->assertEquals(3300000, $totalDibayar);
+
         $activeLoan = $this->disbursedLoanWithThreeInstallments();
         app(LoanRepaymentService::class)->recordPayment($activeLoan, 1100000, $user->id);
         $this->assertEquals('dicairkan', $activeLoan->fresh()->status);
