@@ -90,38 +90,21 @@ class CetakanSmokeTest extends TestCase
     }
 
     /**
-     * Regresi untuk permintaan "cetakan simpanan tambahkan total angsuran
-     * pinjaman" + "tambahkan total simpanan": total angsuran per anggota
-     * harus menjumlahkan SELURUH pinjaman anggota itu (bukan cuma satu) dan
-     * mengecualikan pembayaran yang dibatalkan — sesuai
-     * LoanRepayment::isCancelled(); total simpanan harus menjumlahkan
-     * SELURUH rekening anggota itu (bukan cuma satu).
+     * Regresi untuk permintaan "cetakan simpanan tambahkan total simpanan":
+     * totalnya harus menjumlahkan SELURUH rekening anggota itu (bukan cuma
+     * satu). Total angsuran pinjaman sengaja TIDAK ditampilkan di cetakan
+     * ini (diminta dihapus lagi — laporan simpanan cukup soal simpanan).
      *
      * Asersi lewat query, bukan scraping teks PDF (lihat catatan di
      * test_loans_list_print_filters_by_status di atas).
      */
-    public function test_savings_print_totals_repayments_across_all_loans_excluding_cancelled(): void
+    public function test_savings_print_totals_balance_across_all_accounts(): void
     {
         $user = $this->printTester();
 
-        $loanSatu = $this->disbursedLoanWithThreeInstallments();
-        $member = $loanSatu->member;
-        $loanDua = $this->disbursedLoanWithThreeInstallments(['member_id' => $member->id]);
+        $member = Member::factory()->create();
         SavingsAccount::factory()->create(['member_id' => $member->id, 'balance' => 300000]);
         SavingsAccount::factory()->create(['member_id' => $member->id, 'balance' => 450000]);
-
-        app(LoanRepaymentService::class)->recordPayment($loanSatu, 1100000, $user->id);
-        app(LoanRepaymentService::class)->recordPayment($loanDua, 550000, $user->id);
-        $dibatalkan = app(LoanRepaymentService::class)->recordPayment($loanDua, 550000, $user->id);
-        $dibatalkan->update(['cancelled_at' => now(), 'cancelled_by' => $user->id, 'cancellation_reason' => 'uji regresi']);
-
-        // Query yang sama persis dengan yang dipakai PrintSavingsController::
-        // index() untuk menghitung total_diangsur.
-        $totalDiangsur = $member->loans()->with('repayments')->get()
-            ->flatMap(fn ($loan) => $loan->repayments)
-            ->reject(fn ($repayment) => $repayment->isCancelled())
-            ->sum('amount');
-        $this->assertEquals(1650000, $totalDiangsur);
 
         // Sama persis dengan yang dipakai prints.savings.list untuk
         // menghitung total simpanan.
