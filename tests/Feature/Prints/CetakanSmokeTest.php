@@ -90,6 +90,40 @@ class CetakanSmokeTest extends TestCase
     }
 
     /**
+     * Regresi untuk permintaan "cetakan simpanan tambahkan total angsuran
+     * pinjaman": total per anggota harus menjumlahkan SELURUH pinjaman
+     * anggota itu (bukan cuma satu) dan mengecualikan pembayaran yang
+     * dibatalkan — sesuai LoanRepayment::isCancelled().
+     *
+     * Asersi lewat query, bukan scraping teks PDF (lihat catatan di
+     * test_loans_list_print_filters_by_status di atas).
+     */
+    public function test_savings_print_totals_repayments_across_all_loans_excluding_cancelled(): void
+    {
+        $user = $this->printTester();
+
+        $loanSatu = $this->disbursedLoanWithThreeInstallments();
+        $member = $loanSatu->member;
+        $loanDua = $this->disbursedLoanWithThreeInstallments(['member_id' => $member->id]);
+        SavingsAccount::factory()->create(['member_id' => $member->id]);
+
+        app(LoanRepaymentService::class)->recordPayment($loanSatu, 1100000, $user->id);
+        app(LoanRepaymentService::class)->recordPayment($loanDua, 550000, $user->id);
+        $dibatalkan = app(LoanRepaymentService::class)->recordPayment($loanDua, 550000, $user->id);
+        $dibatalkan->update(['cancelled_at' => now(), 'cancelled_by' => $user->id, 'cancellation_reason' => 'uji regresi']);
+
+        // Query yang sama persis dengan yang dipakai PrintSavingsController::
+        // index() untuk menghitung total_diangsur.
+        $totalDiangsur = $member->loans()->with('repayments')->get()
+            ->flatMap(fn ($loan) => $loan->repayments)
+            ->reject(fn ($repayment) => $repayment->isCancelled())
+            ->sum('amount');
+        $this->assertEquals(1650000, $totalDiangsur);
+
+        $this->assertPdf($this->actingAs($user)->get(route('admin.print.savings.index', ['member_id' => $member->id])));
+    }
+
+    /**
      * Regresi untuk permintaan "laporan pinjaman per anggota gabungan
      * historis pembayaran": filter `status` harus benar-benar menyaring
      * ANGGOTA (bukan cuma pinjamannya jadi kosong), dan halaman harus
@@ -162,10 +196,13 @@ class CetakanSmokeTest extends TestCase
         $this->assertPdf($this->actingAs($user)->get(route('admin.print.withdrawal-request.show', $withdrawalRequest)));
     }
 
-    private function disbursedLoanWithThreeInstallments(): Loan
+    private function disbursedLoanWithThreeInstallments(array $overrides = []): Loan
     {
         $product = LoanProduct::factory()->create();
-        $loan = Loan::factory()->create(['loan_product_id' => $product->id, 'status' => 'dicairkan', 'principal_amount' => 3000000]);
+        $loan = Loan::factory()->create(array_merge(
+            ['loan_product_id' => $product->id, 'status' => 'dicairkan', 'principal_amount' => 3000000],
+            $overrides,
+        ));
 
         for ($i = 1; $i <= 3; $i++) {
             LoanSchedule::query()->create([
