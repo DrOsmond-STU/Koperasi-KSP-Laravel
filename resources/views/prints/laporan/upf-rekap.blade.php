@@ -57,14 +57,18 @@
             </tr>
         </thead>
         <tbody>
-            {{-- Daftar SEMUA jenis retribusi aktif (dijamin oleh
-                 RetributionReportService::rekapPendapatan) — jenis yang
-                 tidak bertransaksi tetap tampil dengan angka nol supaya
-                 pengurus melihat cakupan lengkap tarif yang berlaku. --}}
-            @php $breakdownTotal = 0; @endphp
-            @forelse ($rekap['breakdown'] as $i => $row)
+            {{-- RetributionReportService::rekapPendapatan() mengembalikan
+                 SEMUA jenis retribusi aktif (termasuk yang nol, count=0)
+                 supaya datanya tetap lengkap untuk pemakaian lain. Di
+                 cetakan ini baris nol disaring keluar — permintaan: hanya
+                 jenis yang benar-benar ada nilainya yang ditampilkan. --}}
+            @php
+                $breakdownRows = collect($rekap['breakdown'])->filter(fn ($row) => (float) $row['total'] > 0)->values();
+                $breakdownTotal = 0;
+            @endphp
+            @forelse ($breakdownRows as $i => $row)
                 @php $breakdownTotal += $row['total']; @endphp
-                <tr @if ($row['count'] === 0) style="color:#5C6E64;" @endif>
+                <tr>
                     <td style="text-align:center;">{{ $i + 1 }}</td>
                     <td>{{ $row['name'] }}</td>
                     <td style="text-align:right;">{{ number_format($row['count'], 0, ',', '.') }}</td>
@@ -73,16 +77,20 @@
             @empty
                 <tr>
                     <td colspan="4" style="text-align:center; color:#5C6E64;">
-                        Belum ada jenis retribusi aktif. Silakan tambahkan
-                        di menu Pengaturan &raquo; Jenis Retribusi.
+                        @if (empty($rekap['breakdown']))
+                            Belum ada jenis retribusi aktif. Silakan tambahkan
+                            di menu Pengaturan &raquo; Jenis Retribusi.
+                        @else
+                            Tidak ada transaksi retribusi pada periode ini.
+                        @endif
                     </td>
                 </tr>
             @endforelse
-            @if (! empty($rekap['breakdown']))
+            @if ($breakdownRows->isNotEmpty())
                 <tr style="background:#F4F7F4;">
                     <td colspan="2" style="text-align:right; font-weight:700;">Total</td>
                     <td style="text-align:right; font-weight:700;">
-                        {{ number_format(collect($rekap['breakdown'])->sum('count'), 0, ',', '.') }}
+                        {{ number_format($breakdownRows->sum('count'), 0, ',', '.') }}
                     </td>
                     <td style="text-align:right; font-weight:700;">
                         {{ number_format($breakdownTotal, 0, ',', '.') }}

@@ -373,12 +373,24 @@ class CetakanSmokeTest extends TestCase
         $this->assertPdf($this->actingAs($user)->get(route('staf.retribusi-upf.print-harian')));
     }
 
+    /**
+     * Regresi untuk permintaan "cetakan rekap: jenis retribusi yang nol
+     * di-hide, cukup yang ada nilainya saja": RetributionReportService
+     * tetap mengembalikan SEMUA jenis aktif (termasuk yang nol) — filternya
+     * ada di view (prints.laporan.upf-rekap), bukan di service, supaya
+     * data lengkap tetap tersedia untuk pemakaian lain.
+     */
     public function test_retribusi_upf_rekap_print(): void
     {
         $user = $this->printTester();
         $branch = Branch::factory()->create();
 
-        $type = RetributionType::factory()->create([
+        $typeBertransaksi = RetributionType::factory()->create([
+            'percentage' => 100,
+            'coa_revenue_account_id' => ChartOfAccount::factory()->create()->id,
+            'is_active' => true,
+        ]);
+        $typeTanpaTransaksi = RetributionType::factory()->create([
             'percentage' => 100,
             'coa_revenue_account_id' => ChartOfAccount::factory()->create()->id,
             'is_active' => true,
@@ -392,8 +404,24 @@ class CetakanSmokeTest extends TestCase
             totalAmount: 50000,
             paymentMethod: 'tunai',
             createdBy: $user->id,
-            retributionType: $type,
+            retributionType: $typeBertransaksi,
         );
+
+        $rekap = app(\App\Services\Retribution\RetributionReportService::class)->rekapPendapatan([
+            'branch_id' => $branch->id,
+            'period_start' => now()->subDay()->toDateString(),
+            'period_end' => now()->addDay()->toDateString(),
+        ]);
+
+        // Service: kedua jenis tetap ada di breakdown, termasuk yang nol.
+        $this->assertCount(2, $rekap['breakdown']);
+        $this->assertTrue(collect($rekap['breakdown'])->contains(fn ($row) => $row['name'] === $typeTanpaTransaksi->name && $row['total'] == 0));
+
+        // View: yang nol disaring keluar — sama persis filter yang
+        // dipakai prints.laporan.upf-rekap.
+        $breakdownRows = collect($rekap['breakdown'])->filter(fn ($row) => (float) $row['total'] > 0)->values();
+        $this->assertCount(1, $breakdownRows);
+        $this->assertEquals($typeBertransaksi->name, $breakdownRows->first()['name']);
 
         $this->assertPdf($this->actingAs($user)->get(route('staf.retribusi-upf.print-rekap', [
             'period_start' => now()->subDay()->toDateString(),
