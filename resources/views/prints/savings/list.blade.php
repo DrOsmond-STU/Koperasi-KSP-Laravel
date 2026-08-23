@@ -8,7 +8,7 @@
     <p style="font-size:8pt; color:#5C6E64; margin:0 0 14px;">Dicetak: {{ $generatedAt->translatedFormat('d M Y H:i') }}</p>
 
     @foreach ($members as $member)
-        <table class="data-table" style="margin-bottom: 16px;">
+        <table class="data-table" style="margin-bottom: 4px;">
             <thead>
                 <tr><th colspan="4">{{ $member->member_number }} — {{ $member->name }}</th></tr>
                 <tr>
@@ -31,5 +31,8 @@
                 @endforelse
             </tbody>
         </table>
+        <p style="font-size:9pt; margin:0 0 16px; font-weight:600;">
+            Total Sudah Dibayar (Diangsur) — Seluruh Pinjaman: Rp {{ number_format($member->total_diangsur, 0, ',', '.') }}
+        </p>
     @endforeach
 @endsection

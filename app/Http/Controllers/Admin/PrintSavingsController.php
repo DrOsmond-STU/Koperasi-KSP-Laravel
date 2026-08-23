@@ -30,11 +30,22 @@ class PrintSavingsController extends Controller
         }
 
         $members = Member::query()
-            ->with(['savingsAccounts.savingsProduct'])
+            ->with(['savingsAccounts.savingsProduct', 'loans.repayments'])
             ->when($memberId, fn ($query) => $query->where('id', $memberId))
             ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
             ->orderBy('name')
             ->get();
+
+        // Total diangsur dihitung di sini (bukan withSum) karena harus
+        // mengecualikan pembayaran yang dibatalkan — LoanRepayment::isCancelled()
+        // adalah satu-satunya tempat aturan "dibatalkan = tidak terhitung" itu
+        // didefinisikan, dan query aggregate tidak bisa memanggilnya.
+        $members->each(function (Member $member) {
+            $member->total_diangsur = $member->loans
+                ->flatMap(fn ($loan) => $loan->repayments)
+                ->reject(fn ($repayment) => $repayment->isCancelled())
+                ->sum('amount');
+        });
 
         $filterDescription = collect([
             $memberId ? 'Anggota: '.Member::query()->find($memberId)?->name : null,
