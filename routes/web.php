@@ -317,6 +317,10 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
 
     Route::get('/staf/teller', [TellerController::class, 'create'])
         ->name('staf.teller.create');
+    Route::get('/staf/teller/buka-rekening', [TellerController::class, 'createAccount'])
+        ->name('staf.teller.buka-rekening.create');
+    Route::post('/staf/teller/buka-rekening', [TellerController::class, 'storeAccount'])
+        ->name('staf.teller.buka-rekening.store');
     Route::post('/staf/teller/preview', [TellerController::class, 'preview'])
         ->name('staf.teller.preview');
     Route::post('/staf/teller', [TellerController::class, 'store'])

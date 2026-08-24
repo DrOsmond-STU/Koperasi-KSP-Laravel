@@ -2,7 +2,9 @@
 
 namespace Tests\Feature\Savings;
 
+use App\Models\Member;
 use App\Models\SavingsAccount;
+use App\Models\SavingsProduct;
 use App\Models\User;
 use App\Models\UserBranchScope;
 use Database\Seeders\ChartOfAccountsSeeder;
@@ -232,5 +234,90 @@ class TellerControllerTest extends TestCase
         ])->assertForbidden();
 
         $this->assertEquals('menunggu', $withdrawalRequest->fresh()->status);
+    }
+
+    /**
+     * Regresi untuk gap "anggota baru belum bisa setor pertama kali" —
+     * dropdown Teller (create()) hanya memuat SavingsAccount yang sudah
+     * ada, jadi anggota tanpa rekening sama sekali butuh jalur terpisah
+     * ini (staf.teller.buka-rekening.*) untuk buka rekening + setoran
+     * awal sekaligus.
+     */
+    public function test_teller_can_open_new_savings_account_with_initial_deposit_for_member_with_no_accounts_yet(): void
+    {
+        $teller = $this->teller();
+        $member = Member::factory()->create(['status' => 'aktif']);
+        $product = SavingsProduct::factory()->create(['category' => 'pokok', 'minimum_initial_deposit' => 25000]);
+
+        $this->assertSame(0, SavingsAccount::query()->where('member_id', $member->id)->count());
+
+        $response = $this->actingAs($teller)->post(route('staf.teller.buka-rekening.store'), [
+            'member_id' => $member->id,
+            'product_ids' => [$product->id],
+            'initial_deposits' => [$product->id => 25000],
+        ]);
+
+        $response->assertRedirect(route('staf.teller.create'));
+
+        $account = SavingsAccount::query()->where('member_id', $member->id)->where('savings_product_id', $product->id)->firstOrFail();
+        $this->assertEquals('aktif', $account->status);
+        $this->assertEquals(25000, (float) $account->balance);
+        $this->assertDatabaseHas('savings_transactions', [
+            'savings_account_id' => $account->id,
+            'type' => 'setor',
+            'amount' => 25000,
+            'description' => 'Setoran awal pembukaan rekening',
+        ]);
+    }
+
+    public function test_teller_can_open_multiple_savings_products_at_once(): void
+    {
+        $teller = $this->teller();
+        $member = Member::factory()->create(['status' => 'aktif']);
+        $pokok = SavingsProduct::factory()->create(['category' => 'pokok', 'minimum_initial_deposit' => 25000]);
+        $wajib = SavingsProduct::factory()->create(['category' => 'wajib', 'minimum_initial_deposit' => 10000]);
+
+        $this->actingAs($teller)->post(route('staf.teller.buka-rekening.store'), [
+            'member_id' => $member->id,
+            'product_ids' => [$pokok->id, $wajib->id],
+            'initial_deposits' => [$pokok->id => 25000, $wajib->id => 10000],
+        ])->assertRedirect(route('staf.teller.create'));
+
+        $this->assertEquals(2, SavingsAccount::query()->where('member_id', $member->id)->count());
+        $this->assertEquals(25000, (float) SavingsAccount::query()->where('member_id', $member->id)->where('savings_product_id', $pokok->id)->value('balance'));
+        $this->assertEquals(10000, (float) SavingsAccount::query()->where('member_id', $member->id)->where('savings_product_id', $wajib->id)->value('balance'));
+    }
+
+    public function test_opening_account_below_minimum_initial_deposit_is_rejected(): void
+    {
+        $teller = $this->teller();
+        $member = Member::factory()->create(['status' => 'aktif']);
+        $product = SavingsProduct::factory()->create(['minimum_initial_deposit' => 50000]);
+
+        $response = $this->actingAs($teller)->post(route('staf.teller.buka-rekening.store'), [
+            'member_id' => $member->id,
+            'product_ids' => [$product->id],
+            'initial_deposits' => [$product->id => 10000],
+        ]);
+
+        $response->assertSessionHasErrors(["initial_deposits.{$product->id}"]);
+        $this->assertSame(0, SavingsAccount::query()->where('member_id', $member->id)->count());
+    }
+
+    public function test_opening_account_for_a_product_the_member_already_has_active_is_skipped_not_duplicated(): void
+    {
+        $teller = $this->teller();
+        $member = Member::factory()->create(['status' => 'aktif']);
+        $product = SavingsProduct::factory()->create(['minimum_initial_deposit' => 0]);
+        SavingsAccount::factory()->create(['member_id' => $member->id, 'savings_product_id' => $product->id, 'status' => 'aktif']);
+
+        $response = $this->actingAs($teller)->post(route('staf.teller.buka-rekening.store'), [
+            'member_id' => $member->id,
+            'product_ids' => [$product->id],
+            'initial_deposits' => [$product->id => 0],
+        ]);
+
+        $response->assertRedirect(route('staf.teller.buka-rekening.create'));
+        $this->assertSame(1, SavingsAccount::query()->where('member_id', $member->id)->where('savings_product_id', $product->id)->count());
     }
 }

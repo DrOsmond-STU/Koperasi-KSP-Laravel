@@ -29,6 +29,9 @@
     </style>
 
     <h2>Layanan Teller — Simpanan</h2>
+    <p style="margin-top: -8px;">
+        <a href="{{ route('staf.teller.buka-rekening.create') }}">+ Buka Rekening Baru (anggota belum punya simpanan)</a>
+    </p>
 
     @if (session('status'))
         <p class="status-msg">{{ session('status') }}</p>

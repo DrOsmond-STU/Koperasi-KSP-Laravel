@@ -6,13 +6,17 @@ use App\Http\Controllers\Concerns\GeneratesPrintPdf;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CancelSavingsTransactionRequest;
 use App\Http\Requests\DecideSavingsWithdrawalRequest;
+use App\Http\Requests\OpenSavingsAccountRequest;
 use App\Http\Requests\TellerSavingsTransactionRequest;
+use App\Models\Member;
 use App\Models\SavingsAccount;
+use App\Models\SavingsProduct;
 use App\Models\SavingsTransaction;
 use App\Models\SavingsWithdrawalRequest;
 use App\Services\Savings\SavingsService;
 use App\Services\Savings\SavingsWithdrawalRequestService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
@@ -117,5 +121,81 @@ class TellerController extends Controller
         return redirect()
             ->route('staf.teller.create')
             ->with('status', $message);
+    }
+
+    /**
+     * Buka Rekening Simpanan (Setoran Awal) — jalur satu-satunya untuk
+     * anggota yang BELUM punya rekening simpanan sama sekali. Tanpa ini,
+     * dropdown "Rekening" di create() di atas cuma memuat rekening yang
+     * sudah ada, jadi anggota baru tidak bisa disetorkan apapun.
+     *
+     * Bisa buka beberapa produk sekaligus (mis. Pokok + Wajib bersamaan
+     * saat pendaftaran) — setiap produk boleh langsung disertai setoran
+     * awal, diposting sebagai transaksi "setor" biasa lewat
+     * SavingsService::openAccount() (jurnal tetap konsisten).
+     */
+    public function createAccount(): View
+    {
+        $this->authorize('simpanan.create');
+
+        return view('staf.teller-buka-rekening', [
+            'members' => Member::query()
+                ->whereIn('status', ['calon', 'aktif', 'nonaktif'])
+                ->orderBy('name')
+                ->get(),
+            'products' => SavingsProduct::query()
+                ->where('is_active', true)
+                ->orderBy('category')
+                ->orderBy('name')
+                ->get(),
+        ]);
+    }
+
+    public function storeAccount(OpenSavingsAccountRequest $request): RedirectResponse
+    {
+        $member = Member::query()->findOrFail($request->validated('member_id'));
+        $productIds = $request->validated('product_ids');
+        $deposits = (array) $request->input('initial_deposits', []);
+
+        $opened = [];
+        $skipped = [];
+
+        DB::transaction(function () use ($member, $productIds, $deposits, $request, &$opened, &$skipped) {
+            foreach ($productIds as $productId) {
+                $product = SavingsProduct::query()->findOrFail($productId);
+
+                // Cegah rekening dobel untuk produk yang sama — anggota
+                // boleh punya banyak rekening Sukarela kalau produknya
+                // memang berbeda, tapi tidak dua rekening aktif dari
+                // produk yang identik.
+                $alreadyActive = SavingsAccount::query()
+                    ->where('member_id', $member->id)
+                    ->where('savings_product_id', $product->id)
+                    ->where('status', 'aktif')
+                    ->exists();
+
+                if ($alreadyActive) {
+                    $skipped[] = $product->name;
+
+                    continue;
+                }
+
+                $amount = (float) ($deposits[$productId] ?? 0);
+                $account = $this->savings->openAccount($member, $product, $member->branch_id, $amount, $request->user()->id);
+                $opened[] = "{$account->account_number} ({$product->name})";
+            }
+        });
+
+        if (empty($opened)) {
+            return redirect()->route('staf.teller.buka-rekening.create')
+                ->with('error', 'Tidak ada rekening baru dibuka — '.$member->name.' sudah punya rekening aktif untuk seluruh produk yang dipilih.');
+        }
+
+        $status = "Rekening berhasil dibuka untuk {$member->name}: ".implode(', ', $opened).'.';
+        if (! empty($skipped)) {
+            $status .= ' Dilewati (sudah punya rekening aktif): '.implode(', ', $skipped).'.';
+        }
+
+        return redirect()->route('staf.teller.create')->with('status', $status);
     }
 }
