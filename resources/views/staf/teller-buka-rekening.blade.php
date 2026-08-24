@@ -30,8 +30,9 @@
     </p>
 
     <p class="cash-account-note">
-        Setoran awal akan diposting ke akun kas:
-        <strong>{{ $cashAccount->code }} — {{ $cashAccount->name }}</strong>
+        Akun kas default (cabang KSP): <strong>{{ $cashAccount->code }} — {{ $cashAccount->name }}</strong><br>
+        Setoran awal posting ke akun kas cabang anggota yang dipilih — kalau cabangnya belum
+        punya akun kas sendiri, pakai default di atas.
     </p>
 
     @if (session('status'))

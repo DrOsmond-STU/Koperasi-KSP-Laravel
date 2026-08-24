@@ -36,8 +36,8 @@
     </p>
 
     <p class="cash-account-note">
-        Akun kas lawan transaksi setor/tarik:
-        <strong>{{ $cashAccount->code }} — {{ $cashAccount->name }}</strong>
+        Akun kas default (cabang KSP): <strong>{{ $cashAccount->code }} — {{ $cashAccount->name }}</strong><br>
+        Rekening dari cabang lain posting ke akun kas cabangnya sendiri — cek "Preview Jurnal" untuk akun pastinya.
     </p>
 
     @if (session('status'))
