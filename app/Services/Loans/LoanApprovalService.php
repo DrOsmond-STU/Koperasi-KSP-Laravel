@@ -112,11 +112,10 @@ class LoanApprovalService
             'lines' => $lines,
         ]);
 
-        // Pinjaman baru (tenor_days terisi) pakai jadwal harian; pinjaman
-        // yang sudah diajukan SEBELUM perbaikan tenor harian (24 Agu 2026,
-        // tenor_days masih null) tetap dicairkan lewat jalur bulanan lama
-        // supaya tidak menginterpretasi ulang tenor pinjaman yang sudah
-        // berjalan — lihat Loan::usesDailyTenor().
+        // Satuan tenor (hari/bulan) di-snapshot ke pinjaman saat pengajuan
+        // — lihat Loan::usesDailyTenor() / LoanService. Pinjaman anggota
+        // (harian) dan piutang karyawan (bulanan, potong gaji) hidup
+        // berdampingan selamanya, bukan "lama vs baru".
         $schedule = $loan->usesDailyTenor()
             ? $this->scheduleCalculator->calculateDaily(
                 $principal,
@@ -127,7 +126,7 @@ class LoanApprovalService
             )
             : $this->scheduleCalculator->calculate(
                 $principal,
-                $loan->tenor_months,
+                $loan->tenor_days,
                 (float) $loan->interest_rate_percentage,
                 $product->calculation_method,
                 now(),

@@ -146,13 +146,14 @@
                         <select name="loan_product_id">
                             <option value="">— Pilih Produk —</option>
                             @foreach ($loanProducts as $loanProduct)
-                                <option value="{{ $loanProduct->id }}">{{ $loanProduct->code }} — {{ $loanProduct->name }}</option>
+                                <option value="{{ $loanProduct->id }}">{{ $loanProduct->code }} — {{ $loanProduct->name }} ({{ $loanProduct->tenorLabel() }})</option>
                             @endforeach
                         </select>
                     </div>
                     <div class="field">
-                        <label>Tenor (hari)</label>
+                        <label>Tenor</label>
                         <input type="number" name="tenor_days" min="1">
+                        <p style="font-size:11px; color: var(--muted); margin-top:4px;">Isi sesuai satuan produk yang dipilih (lihat keterangan hari/bulan).</p>
                     </div>
                 </div>
 

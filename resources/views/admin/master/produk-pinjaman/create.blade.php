@@ -33,9 +33,16 @@
                 <div class="field"><label>Plafon Minimum (Rp)</label><input type="number" step="0.01" name="min_plafon" value="{{ old('min_plafon', 500000) }}" required></div>
                 <div class="field"><label>Plafon Maksimum (Rp)</label><input type="number" step="0.01" name="max_plafon" value="{{ old('max_plafon', 50000000) }}" required></div>
             </div>
+            <div class="field">
+                <label>Satuan Tenor</label>
+                <select name="tenor_unit" required>
+                    <option value="hari" @selected(old('tenor_unit', 'hari') === 'hari')>Hari (ditagih harian — mis. Pinjaman Anggota)</option>
+                    <option value="bulan" @selected(old('tenor_unit') === 'bulan')>Bulan (potong gaji bulanan — mis. Piutang Karyawan)</option>
+                </select>
+            </div>
             <div class="grid-2">
-                <div class="field"><label>Tenor Minimum (hari)</label><input type="number" name="min_tenor_days" value="{{ old('min_tenor_days', 100) }}" required></div>
-                <div class="field"><label>Tenor Maksimum (hari)</label><input type="number" name="max_tenor_days" value="{{ old('max_tenor_days', 200) }}" required></div>
+                <div class="field"><label>Tenor Minimum</label><input type="number" name="min_tenor_days" value="{{ old('min_tenor_days', 100) }}" required></div>
+                <div class="field"><label>Tenor Maksimum</label><input type="number" name="max_tenor_days" value="{{ old('max_tenor_days', 200) }}" required></div>
             </div>
 
             <div class="field">
@@ -47,9 +54,9 @@
                 </select>
             </div>
             <div class="field">
-                <label>Tarif Jasa (% flat untuk seluruh tenor)</label>
+                <label>Tarif Jasa (%)</label>
                 <input type="number" step="0.001" name="initial_rate_percentage" value="{{ old('initial_rate_percentage', 10) }}" required>
-                <p class="hint">Total jasa selama pinjaman berjalan, BUKAN per tahun — mis. 10% berarti jasa totalnya 10% dari pokok, dibagi rata per hari selama tenor.</p>
+                <p class="hint">Untuk satuan HARI: tarif FLAT untuk seluruh tenor (mis. 10% berarti jasa totalnya 10% dari pokok, dibagi rata per hari selama tenor). Untuk satuan BULAN: tarif per TAHUN seperti biasa (dibagi 12 untuk cicilan bulanan).</p>
             </div>
             <div class="field"><label>Biaya Provisi (%)</label><input type="number" step="0.01" name="provision_fee_percentage" value="{{ old('provision_fee_percentage', 1) }}"></div>
             <div class="field"><label>Denda Keterlambatan (%/hari)</label><input type="number" step="0.001" name="penalty_percentage_per_day" value="{{ old('penalty_percentage_per_day', 0.1) }}"></div>

@@ -24,9 +24,9 @@ class LoanApplicationController extends Controller
     public function create(Request $request): View
     {
         return view('portal.loan-application', [
-            // Cuma produk yang sudah dikonfigurasi tenor harian — lihat
-            // catatan yang sama di Staf\LoanApplicationController::create().
-            'products' => LoanProduct::query()->where('is_active', true)->whereNotNull('min_tenor_days')->get(),
+            // Semua produk aktif berlaku — lihat catatan yang sama di
+            // Staf\LoanApplicationController::create().
+            'products' => LoanProduct::query()->where('is_active', true)->get(),
             'recentApplications' => $request->user()->member->loans()->latest()->limit(5)->get(),
         ]);
     }

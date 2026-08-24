@@ -28,6 +28,7 @@ class LoanFactory extends Factory
             'loan_number' => 'PINJ-'.$this->faker->unique()->numerify('########'),
             'principal_amount' => 5000000,
             'tenor_days' => 100,
+            'tenor_unit' => 'hari',
             'interest_rate_percentage' => 12.0,
             'required_approval_count' => 1,
             'status' => 'diajukan',

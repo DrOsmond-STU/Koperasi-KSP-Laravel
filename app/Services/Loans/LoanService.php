@@ -14,13 +14,16 @@ use Illuminate\Support\Facades\DB;
  * pengajuan (bukan dihitung ulang nanti) agar perubahan produk di kemudian
  * hari tidak memengaruhi pengajuan yang sudah berjalan.
  *
- * Tenor SELALU dalam HARI (bukan bulan lagi) — laporan staf 24 Agu 2026:
- * "pinjaman anggota itu harian, 100hari dan 200hari". Hanya produk yang
- * sudah dikonfigurasi dengan tenor harian (LoanProduct::usesDailyTenor())
- * yang bisa dipakai untuk pengajuan baru — produk lama (bulanan, dibuat
- * sebelum perbaikan ini) tetap ada di database untuk pinjaman yang sudah
- * berjalan, tapi disaring keluar dari pilihan produk di halaman pengajuan
- * (lihat LoanApplicationController::create()).
+ * Tenor punya SATUAN per produk (hari ATAU bulan) — laporan staf 24 Agu
+ * 2026: "pinjaman anggota itu harian, 100hari dan 200hari". Ini BUKAN
+ * migrasi "produk lama vs baru": Pinjaman Anggota ditagih harian (anggota
+ * pasar menyetor tiap hari), Piutang Karyawan dipotong gaji bulanan — dua
+ * model bisnis yang hidup berdampingan selamanya, dibedakan lewat
+ * LoanProduct::usesDailyTenor() / tenor_unit (lihat migrasi
+ * add_tenor_unit_to_loan_products_and_loans, 20 Agu 2026). Satuannya
+ * di-snapshot ke pinjaman saat pengajuan, sejalan dengan
+ * interest_rate_percentage, supaya perubahan satuan produk di kemudian
+ * hari tidak memengaruhi pinjaman yang sudah berjalan.
  */
 class LoanService
 {
@@ -46,6 +49,7 @@ class LoanService
                 'loan_number' => $this->generateLoanNumber($product),
                 'principal_amount' => $principal,
                 'tenor_days' => $tenorDays,
+                'tenor_unit' => $product->tenor_unit,
                 'interest_rate_percentage' => $rate?->rate_percentage ?? 0,
                 'required_approval_count' => $product->requiredApprovalCountFor($principal),
                 'status' => 'diajukan',
@@ -88,6 +92,7 @@ class LoanService
             'loan_number' => $this->generateLoanNumber($product),
             'principal_amount' => $principal,
             'tenor_days' => $tenorDays,
+            'tenor_unit' => $product->tenor_unit,
             'interest_rate_percentage' => $ratePercentage,
             'provision_fee_amount' => 0,
             'required_approval_count' => $product->requiredApprovalCountFor($principal),
@@ -98,7 +103,11 @@ class LoanService
             'disbursed_at' => now()->toDateString(),
         ]);
 
-        foreach ($this->scheduleCalculator->calculateDaily($principal, $tenorDays, $ratePercentage, $product->calculation_method, now()) as $row) {
+        $schedule = $product->usesDailyTenor()
+            ? $this->scheduleCalculator->calculateDaily($principal, $tenorDays, $ratePercentage, $product->calculation_method, now())
+            : $this->scheduleCalculator->calculate($principal, $tenorDays, $ratePercentage, $product->calculation_method, now());
+
+        foreach ($schedule as $row) {
             $loan->schedules()->create([
                 'installment_number' => $row['installment_number'],
                 'due_date' => $row['due_date'],
@@ -117,12 +126,13 @@ class LoanService
             throw InvalidLoanApplicationException::plafonOutOfRange($principal, (float) $product->min_plafon, (float) $product->max_plafon);
         }
 
-        if (! $product->usesDailyTenor()) {
-            throw InvalidLoanApplicationException::productNotDailyTenor($product->name);
-        }
-
         if ($tenorDays < $product->min_tenor_days || $tenorDays > $product->max_tenor_days) {
-            throw InvalidLoanApplicationException::tenorOutOfRange($tenorDays, $product->min_tenor_days, $product->max_tenor_days, 'hari');
+            throw InvalidLoanApplicationException::tenorOutOfRange(
+                $tenorDays,
+                $product->min_tenor_days,
+                $product->max_tenor_days,
+                $product->usesDailyTenor() ? 'hari' : 'bulan',
+            );
         }
     }
 

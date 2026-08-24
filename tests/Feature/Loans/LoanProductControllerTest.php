@@ -33,6 +33,7 @@ class LoanProductControllerTest extends TestCase
             'max_plafon' => 20000000,
             'min_tenor_days' => 100,
             'max_tenor_days' => 200,
+            'tenor_unit' => 'hari',
             'calculation_method' => 'flat',
             'initial_rate_percentage' => 12,
         ];

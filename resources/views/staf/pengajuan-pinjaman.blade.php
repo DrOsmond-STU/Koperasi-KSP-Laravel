@@ -35,7 +35,7 @@
                 <select name="loan_product_id" required>
                     <option value="">— Pilih Produk —</option>
                     @foreach ($products as $product)
-                        <option value="{{ $product->id }}">{{ $product->name }} (Rp {{ number_format($product->min_plafon, 0, ',', '.') }}–Rp {{ number_format($product->max_plafon, 0, ',', '.') }})</option>
+                        <option value="{{ $product->id }}">{{ $product->name }} — {{ $product->tenorLabel() }} (Rp {{ number_format($product->min_plafon, 0, ',', '.') }}–Rp {{ number_format($product->max_plafon, 0, ',', '.') }})</option>
                     @endforeach
                 </select>
             </div>
@@ -44,8 +44,9 @@
                 <input type="number" step="0.01" name="principal_amount" required>
             </div>
             <div class="field">
-                <label>Tenor (hari)</label>
+                <label>Tenor</label>
                 <input type="number" name="tenor_days" required>
+                <p style="font-size:11px; color: var(--muted); margin-top:4px;">Isi sesuai satuan produk yang dipilih di atas (lihat keterangan hari/bulan).</p>
             </div>
             <button type="submit" class="btn-primary">Simulasikan Jadwal Angsuran</button>
         </form>

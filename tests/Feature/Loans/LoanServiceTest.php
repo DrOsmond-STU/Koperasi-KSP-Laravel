@@ -36,16 +36,24 @@ class LoanServiceTest extends TestCase
         app(LoanService::class)->submitApplication($member, $product, 5_000_000, 300, $member->branch_id, $user->id);
     }
 
-    /** Produk lama (sebelum perbaikan tenor harian) belum punya min/max_tenor_days — pengajuan baru terhadap produk itu ditolak. */
-    public function test_application_against_a_product_without_daily_tenor_configured_is_rejected(): void
+    /**
+     * Produk bersatuan 'bulan' (mis. Piutang Karyawan, potong gaji bulanan)
+     * TETAP bisa dipakai untuk pengajuan baru — bukan diusangkan oleh
+     * produk 'hari' (mis. Pinjaman Anggota). Dua model bisnis hidup
+     * berdampingan, dibedakan lewat LoanProduct::usesDailyTenor().
+     */
+    public function test_application_against_a_monthly_unit_product_is_accepted_and_snapshots_the_unit(): void
     {
-        $product = LoanProduct::factory()->create(['min_tenor_days' => null, 'max_tenor_days' => null]);
+        $product = LoanProduct::factory()->create(['tenor_unit' => 'bulan', 'min_tenor_days' => 3, 'max_tenor_days' => 24]);
         $member = Member::factory()->create();
         $user = User::factory()->create();
 
-        $this->expectException(InvalidLoanApplicationException::class);
+        $loan = app(LoanService::class)->submitApplication($member, $product, 5_000_000, 12, $member->branch_id, $user->id);
 
-        app(LoanService::class)->submitApplication($member, $product, 5_000_000, 100, $member->branch_id, $user->id);
+        $this->assertEquals('diajukan', $loan->status);
+        $this->assertEquals(12, $loan->tenor_days);
+        $this->assertEquals('bulan', $loan->tenor_unit);
+        $this->assertFalse($loan->usesDailyTenor());
     }
 
     public function test_valid_application_snapshots_current_rate_and_required_approvals(): void
@@ -58,7 +66,7 @@ class LoanServiceTest extends TestCase
 
         $this->assertEquals('diajukan', $loan->status);
         $this->assertEquals(100, $loan->tenor_days);
-        $this->assertNull($loan->tenor_months);
+        $this->assertEquals('hari', $loan->tenor_unit);
         $this->assertEquals(12.0, (float) $loan->interest_rate_percentage);
         $this->assertEquals(2, $loan->required_approval_count); // above threshold -> 2 approvals
     }

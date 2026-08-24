@@ -24,10 +24,10 @@ class LoanApplicationController extends Controller
 
         return view('staf.pengajuan-pinjaman', [
             'members' => Member::query()->where('status', 'aktif')->get(),
-            // Cuma produk yang sudah dikonfigurasi tenor harian — produk
-            // lama (bulanan, sebelum perbaikan 24 Agu 2026) tidak bisa
-            // dipakai untuk pengajuan baru lagi (lihat LoanService).
-            'products' => LoanProduct::query()->where('is_active', true)->whereNotNull('min_tenor_days')->get(),
+            // Semua produk aktif berlaku untuk pengajuan baru — hari
+            // (mis. Pinjaman Anggota) maupun bulan (mis. Piutang
+            // Karyawan) hidup berdampingan, lihat LoanProduct::usesDailyTenor().
+            'products' => LoanProduct::query()->where('is_active', true)->get(),
         ]);
     }
 
@@ -43,19 +43,19 @@ class LoanApplicationController extends Controller
         $tenor = (int) $request->validated('tenor_days');
         $rate = $product->rateAt();
 
+        $ratePercentage = (float) ($rate?->rate_percentage ?? 0);
+
+        $schedule = $product->usesDailyTenor()
+            ? $this->scheduleCalculator->calculateDaily($principal, $tenor, $ratePercentage, $product->calculation_method, now())
+            : $this->scheduleCalculator->calculate($principal, $tenor, $ratePercentage, $product->calculation_method, now());
+
         return view('staf.pengajuan-pinjaman-simulasi', [
             'member' => $member,
             'product' => $product,
             'principal' => $principal,
             'tenor' => $tenor,
-            'ratePercentage' => (float) ($rate?->rate_percentage ?? 0),
-            'schedule' => $this->scheduleCalculator->calculateDaily(
-                $principal,
-                $tenor,
-                (float) ($rate?->rate_percentage ?? 0),
-                $product->calculation_method,
-                now(),
-            ),
+            'ratePercentage' => $ratePercentage,
+            'schedule' => $schedule,
         ]);
     }
 

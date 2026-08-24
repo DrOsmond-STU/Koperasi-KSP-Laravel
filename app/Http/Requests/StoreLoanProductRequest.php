@@ -32,6 +32,10 @@ class StoreLoanProductRequest extends FormRequest
             'max_plafon' => ['required', 'numeric', 'gte:min_plafon'],
             'min_tenor_days' => ['required', 'integer', 'min:1'],
             'max_tenor_days' => ['required', 'integer', 'gte:min_tenor_days'],
+            // 'hari' (ditagih harian, mis. anggota pasar) atau 'bulan'
+            // (potong gaji bulanan, mis. piutang karyawan) — dua model
+            // bisnis yang hidup berdampingan, lihat LoanProduct::usesDailyTenor().
+            'tenor_unit' => ['required', Rule::in(['hari', 'bulan'])],
             'calculation_method' => ['required', Rule::in(['flat', 'efektif', 'anuitas'])],
             'provision_fee_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'penalty_percentage_per_day' => ['nullable', 'numeric', 'min:0'],
@@ -40,9 +44,12 @@ class StoreLoanProductRequest extends FormRequest
             'coa_interest_income_account_id' => ['required', $postableAccount()],
             'coa_provision_income_account_id' => ['required', $postableAccount()],
             'coa_penalty_receivable_account_id' => ['required', $postableAccount()],
-            // Tarif jasa FLAT untuk seluruh tenor (bukan per tahun lagi) —
-            // laporan staf 24 Agu 2026: "perhitungan jasa nya salah...
-            // padahal pinjaman anggota itu harian". Lihat LoanScheduleCalculator::calculateDaily().
+            // Untuk produk bersatuan 'hari': tarif jasa FLAT untuk SELURUH
+            // tenor (bukan per tahun) — laporan staf 24 Agu 2026:
+            // "perhitungan jasa nya salah... padahal pinjaman anggota itu
+            // harian". Untuk produk bersatuan 'bulan': tarif tetap berarti
+            // per TAHUN seperti semula (dibagi 12 untuk cicilan bulanan).
+            // Lihat LoanScheduleCalculator::calculateDaily() vs calculate().
             'initial_rate_percentage' => ['required', 'numeric', 'min:0'],
             'initial_rate_effective_from' => ['nullable', 'date'],
         ];

@@ -97,11 +97,12 @@ class LoanApprovalServiceTest extends TestCase
     }
 
     /**
-     * Regresi: pinjaman yang diajukan SEBELUM perbaikan tenor harian
-     * (24 Agu 2026, tenor_days masih null) tetap dicairkan lewat jalur
-     * bulanan lama — bukan diinterpretasi ulang sebagai tenor harian.
+     * Regresi: pinjaman bersatuan 'bulan' (mis. Piutang Karyawan, potong
+     * gaji bulanan) dicairkan lewat jalur bulanan lama — bukan
+     * diinterpretasi ulang sebagai tenor harian. Dua model bisnis hidup
+     * berdampingan, lihat LoanProduct::usesDailyTenor().
      */
-    public function test_legacy_monthly_loan_still_disburses_via_the_old_monthly_schedule(): void
+    public function test_monthly_unit_loan_still_disburses_via_the_monthly_schedule(): void
     {
         $creator = User::factory()->create();
         $approver = User::factory()->create();
@@ -110,8 +111,8 @@ class LoanApprovalServiceTest extends TestCase
             'created_by' => $creator->id,
             'required_approval_count' => 1,
             'principal_amount' => 12_000_000,
-            'tenor_days' => null,
-            'tenor_months' => 12,
+            'tenor_days' => 12,
+            'tenor_unit' => 'bulan',
         ]);
         $this->assertFalse($loan->usesDailyTenor());
 
