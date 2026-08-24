@@ -35,7 +35,16 @@ class TellerController extends Controller
         $this->authorize('simpanan.create');
 
         return view('staf.teller', [
-            'accounts' => SavingsAccount::query()->where('status', 'aktif')->with(['member', 'savingsProduct'])->latest()->limit(50)->get(),
+            // Regresi: sebelumnya dibatasi ->latest()->limit(50), sehingga
+            // dari ~1.200+ rekening aktif produksi hanya 50 yang paling
+            // baru dibuat yang muncul — mayoritas rekening Simpanan Pokok/
+            // Wajib/Sukarela anggota lama hilang dari dropdown. Select ini
+            // sudah pakai enhancer .js-searchable (client-side filter),
+            // jadi memuat semua rekening aktif dan diurutkan per nama
+            // anggota supaya tetap gampang dicari.
+            'accounts' => SavingsAccount::query()->where('status', 'aktif')->with(['member', 'savingsProduct'])->get()
+                ->sortBy(fn ($account) => $account->member?->name)
+                ->values(),
             'recentTransactions' => SavingsTransaction::query()
                 ->whereDate('created_at', now()->toDateString())
                 ->with(['savingsAccount.member'])

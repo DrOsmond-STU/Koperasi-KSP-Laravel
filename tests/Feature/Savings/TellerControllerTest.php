@@ -84,6 +84,25 @@ class TellerControllerTest extends TestCase
         $response->assertSee($account->member->name);
     }
 
+    /**
+     * Regresi: dropdown Rekening di halaman Teller sebelumnya dibatasi
+     * ->latest()->limit(50), sehingga dari ratusan rekening aktif produksi
+     * hanya 50 yang paling baru dibuat yang muncul — mayoritas rekening
+     * Simpanan Pokok/Wajib/Sukarela anggota lama hilang begitu saja.
+     */
+    public function test_teller_dropdown_lists_every_active_savings_account_not_just_the_50_newest(): void
+    {
+        $teller = $this->teller();
+        $accounts = SavingsAccount::factory()->count(60)->create(['status' => 'aktif']);
+        $oldestAccount = $accounts->first(); // ->latest() would have pushed this out of a limit(50) window
+
+        $response = $this->actingAs($teller)->get(route('staf.teller.create'));
+
+        $response->assertOk();
+        $response->assertViewHas('accounts', fn ($listed) => $listed->count() >= 60);
+        $response->assertSee($oldestAccount->account_number);
+    }
+
     public function test_anggota_role_cannot_access_teller_page(): void
     {
         $user = User::factory()->create();
