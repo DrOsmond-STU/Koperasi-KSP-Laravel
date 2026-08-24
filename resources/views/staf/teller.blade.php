@@ -26,11 +26,18 @@
         .decide-form input[type="text"] { flex: 1; min-width: 160px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; }
         .btn-approve { padding: 6px 12px; background: var(--ok); color: #fff; border: none; border-radius: 7px; font-size: 12px; cursor: pointer; }
         .btn-reject { padding: 6px 12px; background: var(--brick); color: #fff; border: none; border-radius: 7px; font-size: 12px; cursor: pointer; }
+        .cash-account-note { display: inline-block; background: var(--paper); border: 1px solid var(--line); border-radius: 9px; padding: 6px 12px; font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+        .cash-account-note strong { color: var(--pine-ink); }
     </style>
 
     <h2>Layanan Teller — Simpanan</h2>
     <p style="margin-top: -8px;">
         <a href="{{ route('staf.teller.buka-rekening.create') }}">+ Buka Rekening Baru (anggota belum punya simpanan)</a>
+    </p>
+
+    <p class="cash-account-note">
+        Akun kas lawan transaksi setor/tarik:
+        <strong>{{ $cashAccount->code }} — {{ $cashAccount->name }}</strong>
     </p>
 
     @if (session('status'))

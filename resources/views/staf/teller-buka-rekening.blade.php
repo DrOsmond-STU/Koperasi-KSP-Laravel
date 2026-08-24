@@ -18,6 +18,8 @@
         .product-hint { font-size: 11px; color: var(--muted); }
         .product-row input[type="number"] { width: 160px; box-sizing: border-box; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; }
         .field-errors { color: var(--brick); font-size: 11px; margin: 4px 0 0; }
+        .cash-account-note { display: inline-block; background: var(--paper); border: 1px solid var(--line); border-radius: 9px; padding: 6px 12px; font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+        .cash-account-note strong { color: var(--pine-ink); }
     </style>
 
     <h2>Buka Rekening Simpanan — Setoran Awal</h2>
@@ -25,6 +27,11 @@
         Untuk anggota yang belum punya rekening simpanan sama sekali. Pilih satu atau beberapa
         produk sekaligus (mis. Simpanan Pokok + Simpanan Wajib) — kalau ada setoran awal,
         langsung diposting sebagai transaksi kas masuk.
+    </p>
+
+    <p class="cash-account-note">
+        Setoran awal akan diposting ke akun kas:
+        <strong>{{ $cashAccount->code }} — {{ $cashAccount->name }}</strong>
     </p>
 
     @if (session('status'))

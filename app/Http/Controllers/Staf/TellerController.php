@@ -56,6 +56,7 @@ class TellerController extends Controller
                 ->with(['savingsAccount', 'member'])
                 ->latest()
                 ->get(),
+            'cashAccount' => $this->savings->cashAccount(),
         ]);
     }
 
@@ -157,6 +158,7 @@ class TellerController extends Controller
                 ->orderBy('category')
                 ->orderBy('name')
                 ->get(),
+            'cashAccount' => $this->savings->cashAccount(),
         ]);
     }
 

@@ -103,6 +103,34 @@ class TellerControllerTest extends TestCase
         $response->assertSee($oldestAccount->account_number);
     }
 
+    /**
+     * Regresi: staf minta akun kas lawan transaksi bisa dilihat langsung
+     * di halaman Teller & Buka Rekening (bukan cuma muncul di panel
+     * "Preview Jurnal" setelah submit) supaya bisa diverifikasi dulu akun
+     * nya benar atau tidak sebelum transaksi diproses.
+     */
+    public function test_teller_page_shows_the_cash_account_used_for_transactions(): void
+    {
+        $teller = $this->teller();
+
+        $response = $this->actingAs($teller)->get(route('staf.teller.create'));
+
+        $response->assertOk();
+        $response->assertSee('1101');
+        $response->assertSee('Kas');
+    }
+
+    public function test_buka_rekening_page_shows_the_cash_account_used_for_initial_deposit(): void
+    {
+        $teller = $this->teller();
+
+        $response = $this->actingAs($teller)->get(route('staf.teller.buka-rekening.create'));
+
+        $response->assertOk();
+        $response->assertSee('1101');
+        $response->assertSee('Kas');
+    }
+
     public function test_anggota_role_cannot_access_teller_page(): void
     {
         $user = User::factory()->create();

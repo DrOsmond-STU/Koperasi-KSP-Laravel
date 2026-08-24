@@ -263,7 +263,13 @@ class SavingsService
             ];
     }
 
-    private function cashAccount(): ChartOfAccount
+    /**
+     * Public (bukan private lagi) supaya TellerController bisa menampilkan
+     * akun kas ini di halaman Teller & Buka Rekening — permintaan staf
+     * untuk bisa memverifikasi akun kas lawan SEBELUM transaksi diproses,
+     * bukan cuma lewat panel "Preview Jurnal" setelah submit.
+     */
+    public function cashAccount(): ChartOfAccount
     {
         return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
     }
