@@ -136,7 +136,7 @@ class LoanRepaymentService
 
             $product = $loan->loanProduct;
             $lines = [
-                ['chart_of_account_id' => $this->cashAccount()->id, 'debit' => $amount, 'credit' => 0],
+                ['chart_of_account_id' => $this->cashAccount($loan)->id, 'debit' => $amount, 'credit' => 0],
             ];
 
             if ($plan['total_principal'] > 0) {
@@ -182,8 +182,16 @@ class LoanRepaymentService
         });
     }
 
-    private function cashAccount(): ChartOfAccount
+    /**
+     * Akun kas cabang si pinjaman kalau sudah dikonfigurasi (Branch::
+     * cashAccount, lihat admin.pengaturan.kas-cabang) — supaya angsuran
+     * yang diterima cabang KSP/USP masing-masing posting ke kasnya sendiri,
+     * bukan tercampur di satu akun `1101` konsolidasi. Fallback ke `1101`
+     * untuk cabang yang belum dikonfigurasi, supaya tidak ada yang patah.
+     */
+    private function cashAccount(Loan $loan): ChartOfAccount
     {
-        return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
+        return $loan->branch?->cashAccount
+            ?? ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
     }
 }

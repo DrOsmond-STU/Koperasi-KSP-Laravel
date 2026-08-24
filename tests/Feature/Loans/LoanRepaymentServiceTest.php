@@ -140,6 +140,45 @@ class LoanRepaymentServiceTest extends TestCase
         $this->assertTrue($entry->lines->contains(fn ($line) => $line->chart_of_account_id === $product->coa_interest_income_account_id && (float) $line->credit === 100000.0));
     }
 
+    /**
+     * Regresi untuk pertanyaan "lawan akun angsuran apa?": tanpa cabang
+     * dikonfigurasi (Branch::cash_account_id null), debit tetap jatuh ke
+     * fallback konsolidasi 1101 — bukan patah.
+     */
+    public function test_repayment_debits_the_consolidated_1101_account_when_branch_has_no_cash_account_configured(): void
+    {
+        $loan = $this->disbursedLoanWithThreeInstallments();
+        $this->assertNull($loan->branch->cash_account_id);
+        $payer = User::factory()->create();
+
+        $repayment = app(LoanRepaymentService::class)->recordPayment($loan, 1100000, $payer->id);
+
+        $kas1101 = \App\Models\ChartOfAccount::query()->where('code', '1101')->firstOrFail();
+        $entry = $repayment->journalEntry;
+        $this->assertTrue($entry->lines->contains(fn ($line) => $line->chart_of_account_id === $kas1101->id && (float) $line->debit === 1100000.0));
+    }
+
+    /**
+     * Regresi untuk permintaan "akun kas per cabang, seperti Retribusi":
+     * begitu Branch::cash_account_id diisi, debit angsuran posting ke akun
+     * kas cabang itu — bukan lagi 1101 konsolidasi.
+     */
+    public function test_repayment_debits_the_branch_specific_cash_account_when_configured(): void
+    {
+        $loan = $this->disbursedLoanWithThreeInstallments();
+        $kasKsp = \App\Models\ChartOfAccount::factory()->create(['code' => '1101101', 'name' => 'Kas Kecil (KSP)']);
+        $loan->branch->update(['cash_account_id' => $kasKsp->id]);
+        $payer = User::factory()->create();
+
+        $repayment = app(LoanRepaymentService::class)->recordPayment($loan->fresh(), 1100000, $payer->id);
+
+        $entry = $repayment->journalEntry;
+        $this->assertTrue($entry->lines->contains(fn ($line) => $line->chart_of_account_id === $kasKsp->id && (float) $line->debit === 1100000.0));
+
+        $kas1101 = \App\Models\ChartOfAccount::query()->where('code', '1101')->firstOrFail();
+        $this->assertFalse($entry->lines->contains(fn ($line) => $line->chart_of_account_id === $kas1101->id));
+    }
+
     public function test_overpayment_beyond_total_outstanding_is_rejected(): void
     {
         $loan = $this->disbursedLoanWithThreeInstallments();

@@ -47,6 +47,7 @@ use App\Http\Controllers\Admin\ProductBarcodeController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\PurchaseController;
 use App\Http\Controllers\Admin\PurchaseReturnController;
+use App\Http\Controllers\Admin\BranchCashSettingsController;
 use App\Http\Controllers\Admin\RatPackageController;
 use App\Http\Controllers\Admin\ChartOfAccountController;
 use App\Http\Controllers\Admin\RetributionTypeController;
@@ -254,6 +255,11 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.pengaturan.tanda-tangan.slot.update');
     Route::delete('/admin/pengaturan/tanda-tangan/slot/{slot}', [SignatureConfigController::class, 'destroySlot'])
         ->name('admin.pengaturan.tanda-tangan.slot.destroy');
+
+    Route::get('/admin/pengaturan/kas-cabang', [BranchCashSettingsController::class, 'index'])
+        ->name('admin.pengaturan.kas-cabang.index');
+    Route::put('/admin/pengaturan/kas-cabang/{branch}', [BranchCashSettingsController::class, 'update'])
+        ->name('admin.pengaturan.kas-cabang.update');
 
     Route::get('/admin/master/jenis-anggota', [MemberTypeController::class, 'index'])
         ->name('admin.master.member-types.index');

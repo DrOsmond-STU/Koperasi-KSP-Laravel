@@ -17,6 +17,7 @@ class Branch extends Model
         'name',
         'address',
         'parent_branch_id',
+        'cash_account_id',
         'operational_date',
         'is_active',
     ];
@@ -37,5 +38,16 @@ class Branch extends Model
     public function childBranches(): HasMany
     {
         return $this->hasMany(Branch::class, 'parent_branch_id');
+    }
+
+    /**
+     * Akun kas milik cabang ini — dipakai transaksi yang harus posting ke
+     * kas spesifik cabang (bukan akun kas konsolidasi `1101`). Nullable:
+     * cabang yang belum dikonfigurasi jatuh ke fallback di masing-masing
+     * service (lihat LoanRepaymentService::cashAccount()).
+     */
+    public function cashAccount(): BelongsTo
+    {
+        return $this->belongsTo(ChartOfAccount::class, 'cash_account_id');
     }
 }
