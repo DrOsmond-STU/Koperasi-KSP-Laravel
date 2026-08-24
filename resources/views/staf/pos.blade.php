@@ -151,8 +151,8 @@
                         </select>
                     </div>
                     <div class="field">
-                        <label>Tenor (bulan)</label>
-                        <input type="number" name="tenor_months" min="1">
+                        <label>Tenor (hari)</label>
+                        <input type="number" name="tenor_days" min="1">
                     </div>
                 </div>
 
@@ -306,7 +306,7 @@
             var savingsHidden = document.getElementById('savings_account_id');
             var memberHidden = document.getElementById('member_id');
             var loanProductSelect = document.querySelector('select[name="loan_product_id"]');
-            var tenorInput = document.querySelector('input[name="tenor_months"]');
+            var tenorInput = document.querySelector('input[name="tenor_days"]');
 
             function setPaymentMethod(method) {
                 paymentMethodInput.value = method;

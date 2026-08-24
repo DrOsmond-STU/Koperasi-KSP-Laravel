@@ -15,7 +15,7 @@
     <h2>Simulasi Angsuran — {{ $product->name }} ({{ ucfirst($product->calculation_method) }})</h2>
 
     <div class="panel">
-        <p>Anggota: <strong>{{ $member->name }}</strong> — Plafon Rp {{ number_format($principal, 0, ',', '.') }} — Tenor {{ $tenor }} bulan — Jasa {{ $ratePercentage }}%/tahun</p>
+        <p>Anggota: <strong>{{ $member->name }}</strong> — Plafon Rp {{ number_format($principal, 0, ',', '.') }} — Tenor {{ $tenor }} hari — Jasa {{ $ratePercentage }}% flat</p>
 
         <table class="schedule-table">
             <thead><tr><th>#</th><th>Jatuh Tempo</th><th>Pokok</th><th>Jasa</th><th>Total</th></tr></thead>
@@ -37,7 +37,7 @@
             <input type="hidden" name="member_id" value="{{ $member->id }}">
             <input type="hidden" name="loan_product_id" value="{{ $product->id }}">
             <input type="hidden" name="principal_amount" value="{{ $principal }}">
-            <input type="hidden" name="tenor_months" value="{{ $tenor }}">
+            <input type="hidden" name="tenor_days" value="{{ $tenor }}">
             <button type="submit" class="btn-primary">Kirim Pengajuan</button>
             <a href="{{ route('staf.pengajuan-pinjaman.create') }}" class="btn-ghost">Batal</a>
         </form>

@@ -112,13 +112,26 @@ class LoanApprovalService
             'lines' => $lines,
         ]);
 
-        $schedule = $this->scheduleCalculator->calculate(
-            $principal,
-            $loan->tenor_months,
-            (float) $loan->interest_rate_percentage,
-            $product->calculation_method,
-            now(),
-        );
+        // Pinjaman baru (tenor_days terisi) pakai jadwal harian; pinjaman
+        // yang sudah diajukan SEBELUM perbaikan tenor harian (24 Agu 2026,
+        // tenor_days masih null) tetap dicairkan lewat jalur bulanan lama
+        // supaya tidak menginterpretasi ulang tenor pinjaman yang sudah
+        // berjalan — lihat Loan::usesDailyTenor().
+        $schedule = $loan->usesDailyTenor()
+            ? $this->scheduleCalculator->calculateDaily(
+                $principal,
+                $loan->tenor_days,
+                (float) $loan->interest_rate_percentage,
+                $product->calculation_method,
+                now(),
+            )
+            : $this->scheduleCalculator->calculate(
+                $principal,
+                $loan->tenor_months,
+                (float) $loan->interest_rate_percentage,
+                $product->calculation_method,
+                now(),
+            );
 
         foreach ($schedule as $row) {
             $loan->schedules()->create([

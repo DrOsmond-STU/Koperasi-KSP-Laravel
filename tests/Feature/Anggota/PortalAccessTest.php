@@ -113,7 +113,7 @@ class PortalAccessTest extends TestCase
             'member_id' => $otherMember->id, // ignored — no such field is even validated
             'loan_product_id' => $product->id,
             'principal_amount' => 3000000,
-            'tenor_months' => 12,
+            'tenor_days' => 100,
         ]);
 
         $response->assertRedirect(route('portal.loan-application.create'));

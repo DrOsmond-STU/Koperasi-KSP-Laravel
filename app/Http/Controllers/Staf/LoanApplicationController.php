@@ -24,7 +24,10 @@ class LoanApplicationController extends Controller
 
         return view('staf.pengajuan-pinjaman', [
             'members' => Member::query()->where('status', 'aktif')->get(),
-            'products' => LoanProduct::query()->where('is_active', true)->get(),
+            // Cuma produk yang sudah dikonfigurasi tenor harian — produk
+            // lama (bulanan, sebelum perbaikan 24 Agu 2026) tidak bisa
+            // dipakai untuk pengajuan baru lagi (lihat LoanService).
+            'products' => LoanProduct::query()->where('is_active', true)->whereNotNull('min_tenor_days')->get(),
         ]);
     }
 
@@ -37,7 +40,7 @@ class LoanApplicationController extends Controller
         $member = Member::query()->findOrFail($request->validated('member_id'));
         $product = LoanProduct::query()->findOrFail($request->validated('loan_product_id'));
         $principal = (float) $request->validated('principal_amount');
-        $tenor = (int) $request->validated('tenor_months');
+        $tenor = (int) $request->validated('tenor_days');
         $rate = $product->rateAt();
 
         return view('staf.pengajuan-pinjaman-simulasi', [
@@ -46,7 +49,7 @@ class LoanApplicationController extends Controller
             'principal' => $principal,
             'tenor' => $tenor,
             'ratePercentage' => (float) ($rate?->rate_percentage ?? 0),
-            'schedule' => $this->scheduleCalculator->calculate(
+            'schedule' => $this->scheduleCalculator->calculateDaily(
                 $principal,
                 $tenor,
                 (float) ($rate?->rate_percentage ?? 0),
@@ -65,7 +68,7 @@ class LoanApplicationController extends Controller
             $member,
             $product,
             (float) $request->validated('principal_amount'),
-            (int) $request->validated('tenor_months'),
+            (int) $request->validated('tenor_days'),
             $member->branch_id,
             $request->user()->id,
         );

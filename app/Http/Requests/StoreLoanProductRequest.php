@@ -30,8 +30,8 @@ class StoreLoanProductRequest extends FormRequest
             'name' => ['required', 'string', 'max:150'],
             'min_plafon' => ['required', 'numeric', 'min:0'],
             'max_plafon' => ['required', 'numeric', 'gte:min_plafon'],
-            'min_tenor_months' => ['required', 'integer', 'min:1'],
-            'max_tenor_months' => ['required', 'integer', 'gte:min_tenor_months'],
+            'min_tenor_days' => ['required', 'integer', 'min:1'],
+            'max_tenor_days' => ['required', 'integer', 'gte:min_tenor_days'],
             'calculation_method' => ['required', Rule::in(['flat', 'efektif', 'anuitas'])],
             'provision_fee_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'penalty_percentage_per_day' => ['nullable', 'numeric', 'min:0'],
@@ -40,6 +40,9 @@ class StoreLoanProductRequest extends FormRequest
             'coa_interest_income_account_id' => ['required', $postableAccount()],
             'coa_provision_income_account_id' => ['required', $postableAccount()],
             'coa_penalty_receivable_account_id' => ['required', $postableAccount()],
+            // Tarif jasa FLAT untuk seluruh tenor (bukan per tahun lagi) —
+            // laporan staf 24 Agu 2026: "perhitungan jasa nya salah...
+            // padahal pinjaman anggota itu harian". Lihat LoanScheduleCalculator::calculateDaily().
             'initial_rate_percentage' => ['required', 'numeric', 'min:0'],
             'initial_rate_effective_from' => ['nullable', 'date'],
         ];

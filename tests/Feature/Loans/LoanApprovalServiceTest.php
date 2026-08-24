@@ -77,7 +77,7 @@ class LoanApprovalServiceTest extends TestCase
             'created_by' => $creator->id,
             'required_approval_count' => 2,
             'principal_amount' => 10_000_000,
-            'tenor_months' => 10,
+            'tenor_days' => 10,
         ]);
 
         $service = app(LoanApprovalService::class);
@@ -94,6 +94,32 @@ class LoanApprovalServiceTest extends TestCase
 
         $journalEntry = JournalEntry::query()->where('source_type', Loan::class)->where('source_id', $loan->id)->firstOrFail();
         $this->assertEquals($journalEntry->lines->sum('debit'), $journalEntry->lines->sum('credit'));
+    }
+
+    /**
+     * Regresi: pinjaman yang diajukan SEBELUM perbaikan tenor harian
+     * (24 Agu 2026, tenor_days masih null) tetap dicairkan lewat jalur
+     * bulanan lama — bukan diinterpretasi ulang sebagai tenor harian.
+     */
+    public function test_legacy_monthly_loan_still_disburses_via_the_old_monthly_schedule(): void
+    {
+        $creator = User::factory()->create();
+        $approver = User::factory()->create();
+
+        $loan = Loan::factory()->create([
+            'created_by' => $creator->id,
+            'required_approval_count' => 1,
+            'principal_amount' => 12_000_000,
+            'tenor_days' => null,
+            'tenor_months' => 12,
+        ]);
+        $this->assertFalse($loan->usesDailyTenor());
+
+        $result = app(LoanApprovalService::class)->approve($loan, $approver);
+
+        $this->assertEquals('dicairkan', $result->status);
+        $this->assertCount(12, $result->schedules);
+        $this->assertTrue($result->schedules->first()->due_date->isSameDay(now()->addMonthNoOverflow()));
     }
 
     public function test_rejected_loan_is_never_disbursed(): void
@@ -126,7 +152,7 @@ class LoanApprovalServiceTest extends TestCase
             'created_by' => $creator->id,
             'required_approval_count' => 1,
             'principal_amount' => 5_000_000,
-            'tenor_months' => 12,
+            'tenor_days' => 12,
         ]);
 
         return app(LoanApprovalService::class)->approve($loan, $approver);
@@ -186,7 +212,7 @@ class LoanApprovalServiceTest extends TestCase
         $member = Member::factory()->create();
         $user = User::factory()->create();
 
-        $loan = app(LoanService::class)->originateInstantly($member, $product, 1_000_000, 6, $member->branch_id, $user->id);
+        $loan = app(LoanService::class)->originateInstantly($member, $product, 1_000_000, 150, $member->branch_id, $user->id);
 
         $this->expectException(LoanApprovalException::class);
         app(LoanApprovalService::class)->cancelDisbursement($loan, 'Coba batalkan', $user->id);

@@ -20,6 +20,8 @@ class LoanProduct extends Model
         'max_plafon',
         'min_tenor_months',
         'max_tenor_months',
+        'min_tenor_days',
+        'max_tenor_days',
         'calculation_method',
         'provision_fee_percentage',
         'penalty_percentage_per_day',
@@ -95,6 +97,25 @@ class LoanProduct extends Model
         }
 
         return 1;
+    }
+
+    /**
+     * Produk baru (dibuat sejak perbaikan tenor harian, 24 Agu 2026) selalu
+     * punya min/max_tenor_days terisi — produk lama sebelum itu cuma punya
+     * min/max_tenor_months. Dipakai LoanService untuk menentukan jalur
+     * validasi & LoanScheduleCalculator mana yang berlaku.
+     */
+    public function usesDailyTenor(): bool
+    {
+        return $this->min_tenor_days !== null && $this->max_tenor_days !== null;
+    }
+
+    /** Label tenor untuk tampilan — "100–200 hari" (produk baru) atau "3–24 bulan" (produk lama, sebelum perbaikan). */
+    public function tenorLabel(): string
+    {
+        return $this->usesDailyTenor()
+            ? "{$this->min_tenor_days}–{$this->max_tenor_days} hari"
+            : "{$this->min_tenor_months}–{$this->max_tenor_months} bulan";
     }
 
     public function isReadyForActivation(): bool

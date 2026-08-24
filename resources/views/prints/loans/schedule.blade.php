@@ -6,7 +6,7 @@
     <h2 style="font-size:13pt; margin:0 0 2px;">Jadwal &amp; Historis Angsuran — {{ $loan->loan_number }}</h2>
     <p style="font-size:9pt; color:#5C6E64; margin:0 0 4px;">
         {{ $loan->member->member_number }} — {{ $loan->member->name }} | {{ $loan->loanProduct->name }} |
-        Plafon Rp {{ number_format($loan->principal_amount, 0, ',', '.') }}, tenor {{ $loan->tenor_months }} bulan
+        Plafon Rp {{ number_format($loan->principal_amount, 0, ',', '.') }}, tenor {{ $loan->tenorLabel() }}
     </p>
     <p style="font-size:8pt; color:#5C6E64; margin:0 0 14px;">Dicetak: {{ $generatedAt->translatedFormat('d M Y H:i') }}</p>
 

@@ -36,7 +36,9 @@ class PosController extends Controller
             'products' => Product::query()->where('is_active', true)->get(),
             'categories' => Product::query()->where('is_active', true)->whereNotNull('category')->distinct()->orderBy('category')->pluck('category'),
             'savingsAccounts' => SavingsAccount::query()->where('status', 'aktif')->with('member')->latest()->limit(50)->get(),
-            'loanProducts' => LoanProduct::query()->where('is_active', true)->get(),
+            // Cuma produk yang sudah dikonfigurasi tenor harian — lihat
+            // catatan yang sama di Staf\LoanApplicationController::create().
+            'loanProducts' => LoanProduct::query()->where('is_active', true)->whereNotNull('min_tenor_days')->get(),
             'recentSales' => PosSale::query()
                 ->whereDate('created_at', now()->toDateString())
                 ->latest()
@@ -55,7 +57,7 @@ class PosController extends Controller
             ? [
                 'member' => Member::query()->findOrFail($request->validated('member_id')),
                 'loan_product' => LoanProduct::query()->findOrFail($request->validated('loan_product_id')),
-                'tenor_months' => (int) $request->validated('tenor_months'),
+                'tenor_days' => (int) $request->validated('tenor_days'),
             ]
             : null;
 

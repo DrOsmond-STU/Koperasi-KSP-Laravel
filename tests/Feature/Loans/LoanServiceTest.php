@@ -22,18 +22,30 @@ class LoanServiceTest extends TestCase
 
         $this->expectException(InvalidLoanApplicationException::class);
 
-        app(LoanService::class)->submitApplication($member, $product, 10_000_000, 12, $member->branch_id, $user->id);
+        app(LoanService::class)->submitApplication($member, $product, 10_000_000, 100, $member->branch_id, $user->id);
     }
 
     public function test_tenor_outside_product_range_is_rejected(): void
     {
-        $product = LoanProduct::factory()->create(['min_tenor_months' => 6, 'max_tenor_months' => 12]);
+        $product = LoanProduct::factory()->create(['min_tenor_days' => 100, 'max_tenor_days' => 200]);
         $member = Member::factory()->create();
         $user = User::factory()->create();
 
         $this->expectException(InvalidLoanApplicationException::class);
 
-        app(LoanService::class)->submitApplication($member, $product, 5_000_000, 36, $member->branch_id, $user->id);
+        app(LoanService::class)->submitApplication($member, $product, 5_000_000, 300, $member->branch_id, $user->id);
+    }
+
+    /** Produk lama (sebelum perbaikan tenor harian) belum punya min/max_tenor_days — pengajuan baru terhadap produk itu ditolak. */
+    public function test_application_against_a_product_without_daily_tenor_configured_is_rejected(): void
+    {
+        $product = LoanProduct::factory()->create(['min_tenor_days' => null, 'max_tenor_days' => null]);
+        $member = Member::factory()->create();
+        $user = User::factory()->create();
+
+        $this->expectException(InvalidLoanApplicationException::class);
+
+        app(LoanService::class)->submitApplication($member, $product, 5_000_000, 100, $member->branch_id, $user->id);
     }
 
     public function test_valid_application_snapshots_current_rate_and_required_approvals(): void
@@ -42,9 +54,11 @@ class LoanServiceTest extends TestCase
         $member = Member::factory()->create();
         $user = User::factory()->create();
 
-        $loan = app(LoanService::class)->submitApplication($member, $product, 20_000_000, 12, $member->branch_id, $user->id);
+        $loan = app(LoanService::class)->submitApplication($member, $product, 20_000_000, 100, $member->branch_id, $user->id);
 
         $this->assertEquals('diajukan', $loan->status);
+        $this->assertEquals(100, $loan->tenor_days);
+        $this->assertNull($loan->tenor_months);
         $this->assertEquals(12.0, (float) $loan->interest_rate_percentage);
         $this->assertEquals(2, $loan->required_approval_count); // above threshold -> 2 approvals
     }
@@ -55,7 +69,7 @@ class LoanServiceTest extends TestCase
         $member = Member::factory()->create();
         $user = User::factory()->create();
 
-        $loan = app(LoanService::class)->submitApplication($member, $product, 2_000_000, 12, $member->branch_id, $user->id);
+        $loan = app(LoanService::class)->submitApplication($member, $product, 2_000_000, 100, $member->branch_id, $user->id);
 
         $this->assertEquals(1, $loan->required_approval_count);
     }
@@ -66,13 +80,13 @@ class LoanServiceTest extends TestCase
         $member = Member::factory()->create();
         $user = User::factory()->create();
 
-        $loan = app(LoanService::class)->originateInstantly($member, $product, 3_000_000, 6, $member->branch_id, $user->id);
+        $loan = app(LoanService::class)->originateInstantly($member, $product, 3_000_000, 100, $member->branch_id, $user->id);
 
         $this->assertEquals('dicairkan', $loan->status);
         $this->assertEquals('lancar', $loan->collectibility);
         $this->assertNotNull($loan->disbursed_at);
         $this->assertEquals('0.00', $loan->provision_fee_amount);
-        $this->assertCount(6, $loan->schedules);
+        $this->assertCount(100, $loan->schedules);
     }
 
     public function test_originate_instantly_rejects_out_of_range_plafon(): void
@@ -83,12 +97,12 @@ class LoanServiceTest extends TestCase
 
         $this->expectException(InvalidLoanApplicationException::class);
 
-        app(LoanService::class)->originateInstantly($member, $product, 10_000_000, 6, $member->branch_id, $user->id);
+        app(LoanService::class)->originateInstantly($member, $product, 10_000_000, 100, $member->branch_id, $user->id);
     }
 
     public function test_originate_instantly_rejects_out_of_range_tenor(): void
     {
-        $product = LoanProduct::factory()->create(['min_plafon' => 0, 'min_tenor_months' => 6, 'max_tenor_months' => 12]);
+        $product = LoanProduct::factory()->create(['min_plafon' => 0, 'min_tenor_days' => 6, 'max_tenor_days' => 12]);
         $member = Member::factory()->create();
         $user = User::factory()->create();
 

@@ -46,8 +46,8 @@ class LoanApplicationFlowTest extends TestCase
         $product = LoanProduct::factory()->create([
             'min_plafon' => 500000,
             'max_plafon' => 20000000,
-            'min_tenor_months' => 3,
-            'max_tenor_months' => 24,
+            'min_tenor_days' => 100,
+            'max_tenor_days' => 200,
             'approval_threshold' => 10000000,
             'calculation_method' => 'flat',
         ]);
@@ -57,7 +57,7 @@ class LoanApplicationFlowTest extends TestCase
             'member_id' => $member->id,
             'loan_product_id' => $product->id,
             'principal_amount' => 5000000,
-            'tenor_months' => 12,
+            'tenor_days' => 100,
         ]);
         $simulate->assertOk();
         $simulate->assertSee('12'); // rate percentage shown somewhere in the table/header
@@ -67,7 +67,7 @@ class LoanApplicationFlowTest extends TestCase
             'member_id' => $member->id,
             'loan_product_id' => $product->id,
             'principal_amount' => 5000000,
-            'tenor_months' => 12,
+            'tenor_days' => 100,
         ]);
         $submit->assertRedirect(route('staf.pengajuan-pinjaman.create'));
 
@@ -92,7 +92,7 @@ class LoanApplicationFlowTest extends TestCase
 
         $loan->refresh();
         $this->assertEquals('dicairkan', $loan->status);
-        $this->assertCount(12, $loan->schedules);
+        $this->assertCount(100, $loan->schedules);
 
         $journalEntry = JournalEntry::query()
             ->where('source_type', Loan::class)

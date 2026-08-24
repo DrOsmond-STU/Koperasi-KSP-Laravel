@@ -22,6 +22,7 @@ class Loan extends Model
         'loan_number',
         'principal_amount',
         'tenor_months',
+        'tenor_days',
         'interest_rate_percentage',
         'provision_fee_amount',
         'required_approval_count',
@@ -51,6 +52,20 @@ class Loan extends Model
     public function isCancelled(): bool
     {
         return $this->cancelled_at !== null;
+    }
+
+    /** True untuk pinjaman yang diajukan sejak perbaikan tenor harian (24 Agu 2026) — lihat LoanProduct::usesDailyTenor(). */
+    public function usesDailyTenor(): bool
+    {
+        return $this->tenor_days !== null;
+    }
+
+    /** Label tenor untuk tampilan/cetak — "100 hari" (pinjaman baru) atau "12 bulan" (pinjaman lama, sebelum perbaikan). */
+    public function tenorLabel(): string
+    {
+        return $this->usesDailyTenor()
+            ? "{$this->tenor_days} hari"
+            : "{$this->tenor_months} bulan";
     }
 
     public function member(): BelongsTo

@@ -107,4 +107,115 @@ class LoanScheduleCalculator
             'total_amount' => round($principalAmount + $interestAmount, 2),
         ];
     }
+
+    /**
+     * Pinjaman anggota koperasi ini HARIAN (mis. 100 hari, 200 hari), bukan
+     * bulanan — laporan staf 24 Agu 2026: "perhitungan jasa nya salah...
+     * sekarang yang ada adalah perhitungan nya bulan x 12 jadi tahunan.
+     * padahal pinjaman anggota itu harian". Jadwal 1 baris PER HARI (100
+     * hari = 100 baris), dan $flatRatePercentage adalah tarif jasa FLAT
+     * untuk SELURUH tenor (bukan per tahun) — jasa harian = (pokok ×
+     * tarif flat) ÷ jumlah hari tenor, disebar rata ke tiap hari.
+     *
+     * Method terpisah dari calculate() (bulanan) di atas — dipertahankan
+     * apa adanya untuk pinjaman yang sudah diajukan/berjalan SEBELUM
+     * perbaikan ini (lihat LoanApprovalService::disburse()), supaya tidak
+     * menginterpretasi ulang tenor pinjaman lama yang memang bulanan.
+     *
+     * @return array<int, array{installment_number: int, due_date: Carbon, principal_amount: float, interest_amount: float, total_amount: float}>
+     */
+    public function calculateDaily(
+        float $principal,
+        int $tenorDays,
+        float $flatRatePercentage,
+        string $method,
+        Carbon $disbursementDate,
+    ): array {
+        return match ($method) {
+            'flat' => $this->flatDaily($principal, $tenorDays, $flatRatePercentage, $disbursementDate),
+            'efektif' => $this->efektifDaily($principal, $tenorDays, $flatRatePercentage, $disbursementDate),
+            'anuitas' => $this->anuitasDaily($principal, $tenorDays, $flatRatePercentage, $disbursementDate),
+            default => throw new \InvalidArgumentException("Metode perhitungan tidak dikenal: {$method}"),
+        };
+    }
+
+    /** Tarif per hari turunan dari tarif flat SELURUH tenor — bukan tarif tahunan dibagi 12 seperti monthlyRate(). */
+    private function dailyRate(float $flatRatePercentage, int $tenorDays): float
+    {
+        return $tenorDays > 0 ? $flatRatePercentage / 100 / $tenorDays : 0.0;
+    }
+
+    private function flatDaily(float $principal, int $tenor, float $flatRate, Carbon $start): array
+    {
+        $dailyRate = $this->dailyRate($flatRate, $tenor);
+        $principalPerDay = round($principal / $tenor, 2);
+        $interestPerDay = round($principal * $dailyRate, 2);
+
+        $rows = [];
+        $principalPaid = 0.0;
+
+        for ($i = 1; $i <= $tenor; $i++) {
+            $isLast = $i === $tenor;
+            $principalAmount = $isLast ? round($principal - $principalPaid, 2) : $principalPerDay;
+            $principalPaid += $principalAmount;
+
+            $rows[] = $this->rowDaily($i, $start, $principalAmount, $interestPerDay);
+        }
+
+        return $rows;
+    }
+
+    private function efektifDaily(float $principal, int $tenor, float $flatRate, Carbon $start): array
+    {
+        $dailyRate = $this->dailyRate($flatRate, $tenor);
+        $principalPerDay = round($principal / $tenor, 2);
+
+        $rows = [];
+        $remaining = $principal;
+
+        for ($i = 1; $i <= $tenor; $i++) {
+            $isLast = $i === $tenor;
+            $principalAmount = $isLast ? round($remaining, 2) : $principalPerDay;
+            $interestAmount = round($remaining * $dailyRate, 2);
+
+            $rows[] = $this->rowDaily($i, $start, $principalAmount, $interestAmount);
+            $remaining = round($remaining - $principalAmount, 2);
+        }
+
+        return $rows;
+    }
+
+    private function anuitasDaily(float $principal, int $tenor, float $flatRate, Carbon $start): array
+    {
+        $dailyRate = $this->dailyRate($flatRate, $tenor);
+
+        $payment = $dailyRate == 0.0
+            ? $principal / $tenor
+            : $principal * $dailyRate * (1 + $dailyRate) ** $tenor / ((1 + $dailyRate) ** $tenor - 1);
+
+        $rows = [];
+        $remaining = $principal;
+
+        for ($i = 1; $i <= $tenor; $i++) {
+            $isLast = $i === $tenor;
+            $interestAmount = round($remaining * $dailyRate, 2);
+            $principalAmount = $isLast ? round($remaining, 2) : round($payment - $interestAmount, 2);
+
+            $rows[] = $this->rowDaily($i, $start, $principalAmount, $interestAmount);
+            $remaining = round($remaining - $principalAmount, 2);
+        }
+
+        return $rows;
+    }
+
+    private function rowDaily(int $installmentNumber, Carbon $start, float $principalAmount, float $interestAmount): array
+    {
+        return [
+            'installment_number' => $installmentNumber,
+            'due_date' => $start->copy()->addDays($installmentNumber),
+            'principal_amount' => $principalAmount,
+            'interest_amount' => $interestAmount,
+            'total_amount' => round($principalAmount + $interestAmount, 2),
+        ];
+    }
 }

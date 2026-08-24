@@ -33,7 +33,7 @@
                     <td>{{ $product->code }}</td>
                     <td>{{ $product->name }}</td>
                     <td>Rp {{ number_format($product->min_plafon, 0, ',', '.') }} – Rp {{ number_format($product->max_plafon, 0, ',', '.') }}</td>
-                    <td>{{ $product->min_tenor_months }}–{{ $product->max_tenor_months }} bulan</td>
+                    <td>{{ $product->tenorLabel() }}</td>
                     <td>{{ ucfirst($product->calculation_method) }}</td>
                     <td>{{ $product->approval_threshold ? 'Rp '.number_format($product->approval_threshold, 0, ',', '.').' (2 approval di atasnya)' : '1 approval' }}</td>
                 </tr>
