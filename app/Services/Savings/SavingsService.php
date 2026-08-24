@@ -23,17 +23,25 @@ class SavingsService
 {
     /**
      * Kode cabang "Unit Koperasi Simpan Pinjam (KSP)" — dipakai sebagai
-     * fallback akun kas transaksi Teller (setor/tarik/buka rekening) kalau
-     * rekening itu sendiri belum terhubung ke akun kas cabang lewat
-     * admin/pengaturan/kas-cabang.
+     * akun kas transaksi Teller (setor/tarik/buka rekening).
      *
      * Sebelumnya di-hardcode ke akun kas konsolidasi 1101 untuk SEMUA
      * cabang — laporan staf 24 Agu 2026: "akun lawan kas nya salah...
-     * ini harusnya masuk ke cabang KSP". Yang di-hardcode di sini adalah
-     * kode CABANG default-nya, bukan kode akun — akun kas cabang KSP
-     * sendiri tetap bisa diedit kapan saja lewat halaman pengaturan itu
-     * (branches.cash_account_id), jadi berubah otomatis tanpa deploy kode
-     * baru kalau nanti diganti.
+     * ini harusnya masuk ke cabang KSP". Sempat dicoba dibuat resolusi
+     * PER CABANG rekening (mirror LoanRepaymentService), tapi ternyata
+     * SEMUA 1.226 rekening simpanan aktif di production ber-branch_id ke
+     * cabang ROOT "KPPD Pusat" (bukan ke Unit KSP/USP/UPF sama sekali) —
+     * jadi resolusi per-cabang rekening selalu jatuh ke akun kas KPPD
+     * Pusat (1101100 "KAS KECIL (KSP)"), bukan akun kas Unit KSP yang
+     * dimaksud (laporan susulan: "kenapa saat jurnal jadi 1101100 — KAS
+     * KECIL (KSP)" padahal banner default sudah benar 1101500). Jadi di
+     * sini SELALU dipakai akun kas cabang KSP ini, terlepas dari
+     * branch_id rekeningnya sendiri.
+     *
+     * Yang di-hardcode di sini adalah kode CABANG-nya, bukan kode akun —
+     * akun kas cabang KSP sendiri tetap bisa diedit kapan saja lewat
+     * admin/pengaturan/kas-cabang (branches.cash_account_id), jadi
+     * berubah otomatis tanpa deploy kode baru kalau nanti diganti.
      */
     private const DEFAULT_BRANCH_CODE = '001';
 
@@ -90,7 +98,7 @@ class SavingsService
                 'source' => $account,
                 'idempotency_key' => $idempotencyKey,
                 'lines' => [
-                    ['chart_of_account_id' => $this->cashAccount($account)->id, 'debit' => $amount, 'credit' => 0],
+                    ['chart_of_account_id' => $this->cashAccount()->id, 'debit' => $amount, 'credit' => 0],
                     ['chart_of_account_id' => $product->coa_liability_account_id, 'debit' => 0, 'credit' => $amount],
                 ],
             ]);
@@ -134,7 +142,7 @@ class SavingsService
                 'idempotency_key' => $idempotencyKey,
                 'lines' => [
                     ['chart_of_account_id' => $product->coa_liability_account_id, 'debit' => $amount, 'credit' => 0],
-                    ['chart_of_account_id' => $this->cashAccount($account)->id, 'debit' => 0, 'credit' => $amount],
+                    ['chart_of_account_id' => $this->cashAccount()->id, 'debit' => 0, 'credit' => $amount],
                 ],
             ]);
 
@@ -269,7 +277,7 @@ class SavingsService
     public function previewLines(SavingsAccount $account, string $type, float $amount): array
     {
         $product = $account->savingsProduct;
-        $cash = $this->cashAccount($account);
+        $cash = $this->cashAccount();
         $liability = $product->liabilityAccount;
 
         return $type === 'setor'
@@ -284,26 +292,17 @@ class SavingsService
     }
 
     /**
-     * Akun kas lawan transaksi — sekarang per CABANG rekening (mirror pola
-     * LoanRepaymentService::cashAccount()), bukan akun kas konsolidasi 1101
-     * untuk semua cabang lagi.
+     * Akun kas lawan transaksi Teller — SELALU akun kas cabang KSP (lihat
+     * DEFAULT_BRANCH_CODE), bukan akun kas konsolidasi 1101 lagi, dan
+     * bukan per-cabang rekening (lihat penjelasan di DEFAULT_BRANCH_CODE
+     * kenapa itu tidak dipakai untuk Simpanan).
      *
-     * $account null = dipakai murni untuk tampilan info (banner "akun kas"
-     * di halaman Teller/Buka Rekening SEBELUM rekening dipilih) — resolusi
-     * final yang benar-benar diposting tetap per rekening lewat cabangnya
-     * sendiri saat transaksi diproses.
-     *
-     * Public (bukan private) supaya TellerController bisa menampilkan akun
-     * kas ini di halaman Teller & Buka Rekening — permintaan staf untuk
-     * bisa memverifikasi akun kas lawan SEBELUM transaksi diproses, bukan
-     * cuma lewat panel "Preview Jurnal" setelah submit.
+     * Public supaya TellerController bisa menampilkan akun kas ini di
+     * halaman Teller & Buka Rekening — permintaan staf untuk bisa
+     * memverifikasi akun kas lawan SEBELUM transaksi diproses, bukan cuma
+     * lewat panel "Preview Jurnal" setelah submit.
      */
-    public function cashAccount(?SavingsAccount $account = null): ChartOfAccount
-    {
-        return $account?->branch?->cashAccount ?? $this->defaultCashAccount();
-    }
-
-    private function defaultCashAccount(): ChartOfAccount
+    public function cashAccount(): ChartOfAccount
     {
         $kspBranch = Branch::query()->where('code', self::DEFAULT_BRANCH_CODE)->first();
 
