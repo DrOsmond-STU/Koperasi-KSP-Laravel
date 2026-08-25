@@ -1089,6 +1089,7 @@ class LaporanController extends Controller
                 'jumlah' => $this->rupiah((float) $repayment->amount),
                 'pokok' => $this->rupiah((float) $repayment->principal_portion),
                 'jasa' => $this->rupiah((float) $repayment->interest_portion),
+                'denda' => $this->rupiah((float) $repayment->penalty_portion),
                 'saldo_akhir' => $this->rupiah((float) $repayment->balance_after),
                 'status' => $repayment->isCancelled() ? 'Dibatalkan' : 'Normal',
             ]);

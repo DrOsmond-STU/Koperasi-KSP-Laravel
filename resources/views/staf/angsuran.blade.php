@@ -47,8 +47,27 @@
                 </div>
                 <div class="field">
                     <label>Nominal Bayar (Rp)</label>
-                    <input type="number" step="0.01" name="amount" value="{{ old('amount') }}" required>
+                    <input type="text" id="nominal-bayar-display" value="Rp 0" readonly style="background: var(--paper); font-weight: 700;">
+                    <p style="color: var(--muted); font-size: 11px; margin: 6px 0 0;">
+                        Jumlah dari Angsuran Pokok + Jasa + Denda di bawah — bukan diketik langsung.
+                    </p>
                 </div>
+                <div class="field">
+                    <label>Angsuran Pokok (Rp)</label>
+                    <input type="number" step="0.01" min="0" name="principal_portion" id="principal-portion-input" value="{{ old('principal_portion', 0) }}" required>
+                </div>
+                <div class="field">
+                    <label>Jasa (Rp)</label>
+                    <input type="number" step="0.01" min="0" name="interest_portion" id="interest-portion-input" value="{{ old('interest_portion', 0) }}" required>
+                </div>
+                <div class="field">
+                    <label>Denda (Rp)</label>
+                    <input type="number" step="0.01" min="0" name="penalty_portion" id="penalty-portion-input" value="{{ old('penalty_portion', 0) }}" required>
+                </div>
+                <p style="color: var(--muted); font-size: 11px; margin: -6px 0 14px;">
+                    Pokok dan Jasa terisi otomatis dengan angsuran NORMAL (pinjaman ÷ lama pinjaman + % jasa) begitu Pinjaman dipilih —
+                    tidak mengejar tunggakan. Ketiganya bisa diedit sebelum disimpan.
+                </p>
                 <div class="field">
                     <label>Tanggal Bayar</label>
                     <input type="date" name="paid_at" value="{{ old('paid_at', now()->toDateString()) }}" max="{{ now()->toDateString() }}" required>
@@ -93,4 +112,52 @@
             @endforelse
         </div>
     </div>
+
+    <script>
+        (function () {
+            // Saran default Pokok/Jasa NORMAL per pinjaman — lihat
+            // LoanRepaymentService::normalInstallment(). Denda selalu mulai
+            // dari 0 (tidak ada rumus otomatis, murni input staf).
+            var normalInstallments = @json($normalInstallments);
+
+            var loanSelect = document.querySelector('select[name="loan_id"]');
+            var principalInput = document.getElementById('principal-portion-input');
+            var interestInput = document.getElementById('interest-portion-input');
+            var penaltyInput = document.getElementById('penalty-portion-input');
+            var nominalDisplay = document.getElementById('nominal-bayar-display');
+
+            function formatRupiah(n) {
+                return (Number(n) || 0).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+            }
+
+            function recomputeNominal() {
+                var total = (parseFloat(principalInput.value) || 0)
+                    + (parseFloat(interestInput.value) || 0)
+                    + (parseFloat(penaltyInput.value) || 0);
+                nominalDisplay.value = 'Rp ' + formatRupiah(total);
+            }
+
+            function applyNormalDefaults() {
+                var normal = normalInstallments[loanSelect.value];
+                principalInput.value = normal ? normal.principal : 0;
+                interestInput.value = normal ? normal.interest : 0;
+                penaltyInput.value = 0;
+                recomputeNominal();
+            }
+
+            loanSelect.addEventListener('change', applyNormalDefaults);
+            [principalInput, interestInput, penaltyInput].forEach(function (input) {
+                input.addEventListener('input', recomputeNominal);
+            });
+
+            // Setelah redirect balik dari error validasi, angka yang sudah
+            // diketik staf (old()) dipertahankan — jangan ditimpa default.
+            var hasOldInput = {{ Js::from(old('principal_portion') !== null) }};
+            if (loanSelect.value && !hasOldInput) {
+                applyNormalDefaults();
+            } else {
+                recomputeNominal();
+            }
+        })();
+    </script>
 @endsection

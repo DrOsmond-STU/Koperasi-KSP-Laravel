@@ -12,6 +12,9 @@
         <tr><td style="padding:3px 0;">Nominal Bayar</td><td style="padding:3px 0;">: Rp {{ number_format($repayment->amount, 0, ',', '.') }}</td></tr>
         <tr><td style="padding:3px 0;">Porsi Pokok</td><td style="padding:3px 0;">: Rp {{ number_format($repayment->principal_portion, 0, ',', '.') }}</td></tr>
         <tr><td style="padding:3px 0;">Porsi Jasa</td><td style="padding:3px 0;">: Rp {{ number_format($repayment->interest_portion, 0, ',', '.') }}</td></tr>
+        @if ($repayment->penalty_portion > 0)
+            <tr><td style="padding:3px 0;">Porsi Denda</td><td style="padding:3px 0;">: Rp {{ number_format($repayment->penalty_portion, 0, ',', '.') }}</td></tr>
+        @endif
         <tr><td style="padding:3px 0;">Sisa Tunggakan</td><td style="padding:3px 0;">: Rp {{ number_format($repayment->balance_after, 0, ',', '.') }}</td></tr>
         <tr><td style="padding:3px 0;">Tanggal</td><td style="padding:3px 0;">: {{ $repayment->paidOn()->translatedFormat('d M Y') }}</td></tr>
         @if ($repayment->description)

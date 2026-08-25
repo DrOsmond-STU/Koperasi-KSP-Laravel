@@ -25,7 +25,10 @@ class LoanRepaymentService
 {
     private const DEFAULT_CASH_ACCOUNT_CODE = '1101';
 
-    public function __construct(private readonly JournalEngine $journalEngine) {}
+    public function __construct(
+        private readonly JournalEngine $journalEngine,
+        private readonly LoanScheduleCalculator $scheduleCalculator,
+    ) {}
 
     /**
      * @return array{
@@ -159,6 +162,174 @@ class LoanRepaymentService
                 'principal_portion' => $plan['total_principal'],
                 'interest_portion' => $plan['total_interest'],
                 'balance_after' => round($plan['outstanding_before'] - $amount, 2),
+                'paid_at' => $entryDate->format('Y-m-d'),
+                'created_by' => $createdBy,
+                'description' => $description,
+            ]);
+
+            $entry = $this->journalEngine->post([
+                'branch_id' => $loan->branch_id,
+                'entry_date' => $entryDate->format('Y-m-d'),
+                'description' => $description ?? "Pembayaran angsuran {$loan->loan_number}",
+                'created_by' => $createdBy,
+                'source' => $repayment,
+                'idempotency_key' => $idempotencyKey,
+                'lines' => $lines,
+            ]);
+
+            $repayment->update(['journal_entry_id' => $entry->id]);
+
+            if (! $loan->schedules()->where('status', '!=', 'lunas')->exists()) {
+                $loan->update(['status' => 'lunas']);
+            }
+
+            return $repayment->fresh();
+        });
+    }
+
+    /**
+     * Pokok + Jasa SATU periode normal — "pinjaman dibagi lama pinjaman +
+     * % jasa" (instruksi KPPD Depok, 26 Agu 2026), dihitung ulang dari
+     * principal_amount/tenor_days/interest_rate_percentage yang di-snapshot
+     * di Loan sendiri saat pengajuan. SENGAJA tidak melihat loan_schedules
+     * sama sekali — banyak anggota di KPPD Depok nunggak, dan sisa tagihan
+     * beberapa pinjaman lama sudah "menggumpal" jadi satu baris jadwal
+     * dengan jasa jauh lebih besar dari angsuran normal (laporan staf 25
+     * Agu 2026: pinjaman 117-0151-01059). Nilai ini hanya SARAN default
+     * untuk field "Angsuran Pokok"/"Jasa" di form Catat Angsuran — staf
+     * tetap bisa mengeditnya (lihat recordManualPayment()).
+     *
+     * @return array{principal: float, interest: float}
+     */
+    public function normalInstallment(Loan $loan): array
+    {
+        $product = $loan->loanProduct;
+        $rows = $loan->usesDailyTenor()
+            ? $this->scheduleCalculator->calculateDaily(
+                (float) $loan->principal_amount,
+                $loan->tenor_days,
+                (float) $loan->interest_rate_percentage,
+                $product->calculation_method,
+                now(),
+            )
+            : $this->scheduleCalculator->calculate(
+                (float) $loan->principal_amount,
+                $loan->tenor_days,
+                (float) $loan->interest_rate_percentage,
+                $product->calculation_method,
+                now(),
+            );
+
+        $first = $rows[0];
+
+        return ['principal' => $first['principal_amount'], 'interest' => $first['interest_amount']];
+    }
+
+    /**
+     * Catat Angsuran (staf/teller) — BEDA dari recordPayment(): staf
+     * menentukan sendiri pembagian Pokok/Jasa/Denda (lihat
+     * normalInstallment() untuk saran default di form), BUKAN dihitung
+     * otomatis dari sisa baris loan_schedules seperti recordPayment()
+     * (dipakai LoanRepaymentGatewayService untuk pembayaran mandiri via
+     * Xendit — jalur itu TIDAK berubah). Instruksi KPPD Depok, 26 Agu 2026:
+     * banyak anggota nunggak, tapi perhitungan angsuran harus tetap normal
+     * (pokok = pinjaman ÷ lama pinjaman, jasa = tarif normal) — jangan
+     * mengejar tunggakan atau baris jadwal yang sudah menggumpal.
+     *
+     * loan_schedules TETAP diperbarui — Pokok+Jasa yang diinput staf
+     * dikonsumsi dari baris belum lunas (tertua dulu, interest-first per
+     * baris, sama seperti recordPayment()) supaya status jadwal & cetakan
+     * tetap berjalan. Tapi jurnal & loan_repayments.principal_portion/
+     * interest_portion/penalty_portion memakai ANGKA STAF, bukan hasil
+     * hitung baris jadwal — dua hal ini sengaja dipisah: baris jadwal cuma
+     * penanda "berapa lagi yang harus dibayar", bukan penentu pembagian
+     * akuntansi pembayaran ini.
+     */
+    public function recordManualPayment(
+        Loan $loan,
+        float $principalPortion,
+        float $interestPortion,
+        float $penaltyPortion,
+        int $createdBy,
+        ?string $description = null,
+        ?string $idempotencyKey = null,
+        ?\DateTimeInterface $date = null,
+        ?int $cashAccountId = null,
+    ): LoanRepayment {
+        if ($loan->status !== 'dicairkan') {
+            throw LoanRepaymentException::notActive($loan->status);
+        }
+
+        $principalPortion = round($principalPortion, 2);
+        $interestPortion = round($interestPortion, 2);
+        $penaltyPortion = round($penaltyPortion, 2);
+        $totalAmount = round($principalPortion + $interestPortion + $penaltyPortion, 2);
+
+        if ($totalAmount <= 0) {
+            throw LoanRepaymentException::zeroPayment();
+        }
+
+        $product = $loan->loanProduct;
+
+        if ($penaltyPortion > 0 && $product->coa_penalty_receivable_account_id === null) {
+            throw LoanRepaymentException::missingPenaltyAccount();
+        }
+
+        $scheduleConsumption = round($principalPortion + $interestPortion, 2);
+        $plan = $this->previewAllocation($loan, $scheduleConsumption);
+
+        if ($plan['remaining_unallocated'] > 0) {
+            throw LoanRepaymentException::overpayment(
+                number_format($scheduleConsumption, 2, '.', ''),
+                number_format($plan['outstanding_before'], 2, '.', ''),
+            );
+        }
+
+        $entryDate = $date ?? now();
+
+        return DB::transaction(function () use (
+            $loan, $product, $principalPortion, $interestPortion, $penaltyPortion, $totalAmount,
+            $scheduleConsumption, $createdBy, $description, $idempotencyKey, $plan, $entryDate, $cashAccountId,
+        ) {
+            foreach ($plan['allocations'] as $allocation) {
+                $schedule = LoanSchedule::query()->lockForUpdate()->findOrFail($allocation['schedule_id']);
+
+                $newPaidPrincipal = round((float) $schedule->paid_principal_amount + $allocation['principal_share'], 2);
+                $newPaidInterest = round((float) $schedule->paid_interest_amount + $allocation['interest_share'], 2);
+                $newPaidAmount = round($newPaidPrincipal + $newPaidInterest, 2);
+
+                $schedule->update([
+                    'paid_principal_amount' => $newPaidPrincipal,
+                    'paid_interest_amount' => $newPaidInterest,
+                    'paid_amount' => $newPaidAmount,
+                    'status' => $newPaidAmount >= (float) $schedule->total_amount ? 'lunas' : 'sebagian',
+                ]);
+            }
+
+            $lines = [
+                ['chart_of_account_id' => $this->cashAccount($loan, $cashAccountId)->id, 'debit' => $totalAmount, 'credit' => 0],
+            ];
+
+            if ($principalPortion > 0) {
+                $lines[] = ['chart_of_account_id' => $product->coa_receivable_account_id, 'debit' => 0, 'credit' => $principalPortion];
+            }
+
+            if ($interestPortion > 0) {
+                $lines[] = ['chart_of_account_id' => $product->coa_interest_income_account_id, 'debit' => 0, 'credit' => $interestPortion];
+            }
+
+            if ($penaltyPortion > 0) {
+                $lines[] = ['chart_of_account_id' => $product->coa_penalty_receivable_account_id, 'debit' => 0, 'credit' => $penaltyPortion];
+            }
+
+            $repayment = LoanRepayment::query()->create([
+                'branch_id' => $loan->branch_id,
+                'loan_id' => $loan->id,
+                'amount' => $totalAmount,
+                'principal_portion' => $principalPortion,
+                'interest_portion' => $interestPortion,
+                'penalty_portion' => $penaltyPortion,
+                'balance_after' => round($plan['outstanding_before'] - $scheduleConsumption, 2),
                 'paid_at' => $entryDate->format('Y-m-d'),
                 'created_by' => $createdBy,
                 'description' => $description,

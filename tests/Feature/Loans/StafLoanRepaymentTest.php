@@ -2,12 +2,14 @@
 
 namespace Tests\Feature\Loans;
 
+use App\Models\Branch;
 use App\Models\ChartOfAccount;
 use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Models\LoanSchedule;
 use App\Models\User;
 use App\Models\UserBranchScope;
+use App\Services\Loans\LoanRepaymentService;
 use Database\Seeders\ChartOfAccountsSeeder;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -18,6 +20,12 @@ use Tests\TestCase;
  * only existing repayment path was Anggota\LoanRepaymentController (member
  * self-service through the Xendit gateway). This is a synchronous staff
  * path over the same LoanRepaymentService, no gateway involved.
+ *
+ * Sejak 26 Agu 2026 (instruksi KPPD Depok): staf menentukan sendiri
+ * pembagian Pokok/Jasa/Denda per pembayaran (LoanRepaymentService::
+ * recordManualPayment()), bukan dihitung otomatis dari sisa baris jadwal
+ * lagi — lihat test_normal_installment_* untuk bukti default yang
+ * disarankan TIDAK terpengaruh tunggakan/jadwal yang menggumpal.
  */
 class StafLoanRepaymentTest extends TestCase
 {
@@ -90,7 +98,9 @@ class StafLoanRepaymentTest extends TestCase
 
         $response = $this->actingAs($user)->post(route('staf.angsuran.preview'), [
             'loan_id' => $loan->id,
-            'amount' => 1100000,
+            'principal_portion' => 1000000,
+            'interest_portion' => 100000,
+            'penalty_portion' => 0,
             'cash_account_id' => $this->cashAccountId(),
         ]);
 
@@ -108,7 +118,9 @@ class StafLoanRepaymentTest extends TestCase
 
         $response = $this->actingAs($user)->post(route('staf.angsuran.store'), [
             'loan_id' => $loan->id,
-            'amount' => 1100000,
+            'principal_portion' => 1000000,
+            'interest_portion' => 100000,
+            'penalty_portion' => 0,
             'cash_account_id' => $cashAccountId,
         ]);
 
@@ -118,6 +130,7 @@ class StafLoanRepaymentTest extends TestCase
             'amount' => '1100000.00',
             'principal_portion' => '1000000.00',
             'interest_portion' => '100000.00',
+            'penalty_portion' => '0.00',
             'created_by' => $user->id,
         ]);
         $this->assertDatabaseHas('loan_schedules', [
@@ -141,7 +154,9 @@ class StafLoanRepaymentTest extends TestCase
 
         $response = $this->actingAs($user)->post(route('staf.angsuran.store'), [
             'loan_id' => $loan->id,
-            'amount' => 1100000,
+            'principal_portion' => 1000000,
+            'interest_portion' => 100000,
+            'penalty_portion' => 0,
             'paid_at' => $paidOn,
             'cash_account_id' => $this->cashAccountId(),
         ]);
@@ -160,11 +175,31 @@ class StafLoanRepaymentTest extends TestCase
 
         $response = $this->actingAs($user)->post(route('staf.angsuran.store'), [
             'loan_id' => $loan->id,
-            'amount' => 99999999,
+            'principal_portion' => 90000000,
+            'interest_portion' => 9999999,
+            'penalty_portion' => 0,
             'cash_account_id' => $this->cashAccountId(),
         ]);
 
-        $response->assertSessionHasErrors('amount');
+        $response->assertSessionHasErrors('principal_portion');
+        $this->assertDatabaseCount('loan_repayments', 0);
+    }
+
+    /** Instruksi KPPD Depok 26 Agu 2026: Pokok, Jasa, Denda tidak boleh ketiganya nol. */
+    public function test_all_three_components_zero_is_rejected(): void
+    {
+        $user = $this->petugasKredit();
+        $loan = $this->disbursedLoanWithThreeInstallments();
+
+        $response = $this->actingAs($user)->post(route('staf.angsuran.store'), [
+            'loan_id' => $loan->id,
+            'principal_portion' => 0,
+            'interest_portion' => 0,
+            'penalty_portion' => 0,
+            'cash_account_id' => $this->cashAccountId(),
+        ]);
+
+        $response->assertSessionHasErrors('principal_portion');
         $this->assertDatabaseCount('loan_repayments', 0);
     }
 
@@ -175,7 +210,9 @@ class StafLoanRepaymentTest extends TestCase
 
         $this->actingAs($user)->post(route('staf.angsuran.store'), [
             'loan_id' => $loan->id,
-            'amount' => 1100000,
+            'principal_portion' => 1000000,
+            'interest_portion' => 100000,
+            'penalty_portion' => 0,
         ])->assertForbidden();
     }
 
@@ -211,7 +248,7 @@ class StafLoanRepaymentTest extends TestCase
             'code' => '1101400', 'name' => 'KAS AO RIDWAN (USP)', 'type' => 'ASET',
             'normal_balance' => 'DEBIT', 'is_postable' => true, 'statement' => 'NERACA',
         ]);
-        \App\Models\Branch::factory()->create(['name' => 'Unit Simpan Pinjam ( USP )', 'cash_account_id' => $uspCashAccount->id]);
+        Branch::factory()->create(['name' => 'Unit Simpan Pinjam ( USP )', 'cash_account_id' => $uspCashAccount->id]);
 
         $response = $this->actingAs($user)->get(route('staf.angsuran.create'));
 
@@ -232,7 +269,9 @@ class StafLoanRepaymentTest extends TestCase
 
         $response = $this->actingAs($user)->post(route('staf.angsuran.store'), [
             'loan_id' => $loan->id,
-            'amount' => 1100000,
+            'principal_portion' => 1000000,
+            'interest_portion' => 100000,
+            'penalty_portion' => 0,
             'cash_account_id' => $alternateCashAccount->id,
         ]);
 
@@ -240,5 +279,94 @@ class StafLoanRepaymentTest extends TestCase
         $this->assertDatabaseHas('journal_lines', [
             'chart_of_account_id' => $alternateCashAccount->id, 'debit' => '1100000.00',
         ]);
+    }
+
+    /**
+     * Instruksi KPPD Depok 26 Agu 2026: "perhitungan nya tetap normal
+     * pinjaman di bagi lama pinjaman + % jasa" — TIDAK boleh melihat
+     * tunggakan atau baris jadwal yang sudah menggumpal (laporan staf 25
+     * Agu 2026: pinjaman 117-0151-01059, sisa tagihan menggumpal jadi satu
+     * baris jasa Rp 36.300, jauh lebih besar dari angsuran normal harian).
+     * Di sini: pinjaman 3 juta, 3 bulan, bunga 12%/tahun flat — normal per
+     * bulan = pokok 1.000.000 + jasa 30.000, TERLEPAS dari baris jadwal
+     * yang sengaja dibuat menggumpal (jasa Rp 500.000 dalam satu baris).
+     */
+    public function test_normal_installment_default_ignores_a_lumped_schedule_row(): void
+    {
+        $product = LoanProduct::factory()->create(['tenor_unit' => 'bulan', 'calculation_method' => 'flat']);
+        $loan = Loan::factory()->create([
+            'loan_product_id' => $product->id,
+            'status' => 'dicairkan',
+            'principal_amount' => 3000000,
+            'tenor_unit' => 'bulan',
+            'tenor_days' => 3,
+            'interest_rate_percentage' => 12.0,
+        ]);
+
+        // Sisa tagihan "menggumpal" jadi satu baris — bukan 3 baris normal.
+        LoanSchedule::query()->create([
+            'loan_id' => $loan->id,
+            'installment_number' => 1,
+            'due_date' => now(),
+            'principal_amount' => 2000000,
+            'interest_amount' => 500000,
+            'total_amount' => 2500000,
+            'paid_amount' => 0,
+            'status' => 'belum_bayar',
+        ]);
+
+        $normal = app(LoanRepaymentService::class)->normalInstallment($loan->fresh());
+
+        $this->assertSame(1000000.0, $normal['principal']);
+        $this->assertSame(30000.0, $normal['interest']);
+    }
+
+    /** Denda ikut diposting sebagai kredit ke akun Piutang Denda produk. */
+    public function test_denda_is_posted_to_the_penalty_receivable_account_when_provided(): void
+    {
+        $user = $this->petugasKredit();
+        $loan = $this->disbursedLoanWithThreeInstallments();
+        $penaltyAccountId = $loan->loanProduct->coa_penalty_receivable_account_id;
+
+        $response = $this->actingAs($user)->post(route('staf.angsuran.store'), [
+            'loan_id' => $loan->id,
+            'principal_portion' => 1000000,
+            'interest_portion' => 100000,
+            'penalty_portion' => 50000,
+            'cash_account_id' => $this->cashAccountId(),
+        ]);
+
+        $response->assertRedirect(route('staf.angsuran.create'));
+        $this->assertDatabaseHas('loan_repayments', [
+            'loan_id' => $loan->id,
+            'amount' => '1150000.00',
+            'penalty_portion' => '50000.00',
+        ]);
+        $this->assertDatabaseHas('journal_lines', [
+            'chart_of_account_id' => $penaltyAccountId, 'credit' => '50000.00',
+        ]);
+    }
+
+    public function test_denda_without_a_configured_penalty_account_is_rejected_with_a_friendly_error(): void
+    {
+        $user = $this->petugasKredit();
+        $product = LoanProduct::factory()->create(['coa_penalty_receivable_account_id' => null]);
+        $loan = Loan::factory()->create(['loan_product_id' => $product->id, 'status' => 'dicairkan', 'principal_amount' => 3000000]);
+        LoanSchedule::query()->create([
+            'loan_id' => $loan->id, 'installment_number' => 1, 'due_date' => now(),
+            'principal_amount' => 1000000, 'interest_amount' => 100000, 'total_amount' => 1100000,
+            'paid_amount' => 0, 'status' => 'belum_bayar',
+        ]);
+
+        $response = $this->actingAs($user)->post(route('staf.angsuran.store'), [
+            'loan_id' => $loan->id,
+            'principal_portion' => 0,
+            'interest_portion' => 0,
+            'penalty_portion' => 50000,
+            'cash_account_id' => $this->cashAccountId(),
+        ]);
+
+        $response->assertSessionHasErrors('principal_portion');
+        $this->assertDatabaseCount('loan_repayments', 0);
     }
 }

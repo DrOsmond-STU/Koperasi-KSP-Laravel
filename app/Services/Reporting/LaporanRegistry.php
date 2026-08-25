@@ -155,6 +155,7 @@ class LaporanRegistry
                     'jumlah' => 'Jumlah Bayar',
                     'pokok' => 'Porsi Pokok',
                     'jasa' => 'Porsi Jasa',
+                    'denda' => 'Porsi Denda',
                     'saldo_akhir' => 'Sisa Pinjaman',
                     'status' => 'Status',
                 ],
