@@ -20,6 +20,7 @@
         <p>Anggota: <strong>{{ $loan->member->name }}</strong></p>
         <p>Nominal Bayar: <strong>Rp {{ number_format($amount, 0, ',', '.') }}</strong></p>
         <p>Tanggal Bayar: <strong>{{ \Illuminate\Support\Carbon::parse($paidAt)->translatedFormat('d M Y') }}</strong></p>
+        <p>Akun Kas Penerima: <strong>@if ($cashAccount) {{ $cashAccount->code }} — {{ $cashAccount->name }} @else (tidak ditemukan) @endif</strong></p>
 
         <table class="alloc-table">
             <thead><tr><th>Angsuran ke-</th><th>Pokok</th><th>Jasa</th><th>Total Dialokasikan</th></tr></thead>
@@ -46,6 +47,7 @@
             <input type="hidden" name="amount" value="{{ $amount }}">
             <input type="hidden" name="description" value="{{ $description }}">
             <input type="hidden" name="paid_at" value="{{ $paidAt }}">
+            <input type="hidden" name="cash_account_id" value="{{ $cashAccountId }}">
             <button type="submit" class="btn-primary">Konfirmasi &amp; Simpan</button>
             <a href="{{ route('staf.angsuran.create') }}" class="btn-ghost">Batal</a>
         </form>

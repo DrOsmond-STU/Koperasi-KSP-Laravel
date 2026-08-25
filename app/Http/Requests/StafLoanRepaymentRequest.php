@@ -28,6 +28,7 @@ class StafLoanRepaymentRequest extends FormRequest
             'amount' => ['required', 'numeric', 'min:0.01'],
             'description' => ['nullable', 'string', 'max:255'],
             'paid_at' => ['nullable', 'date'],
+            'cash_account_id' => ['required', 'integer', Rule::exists('chart_of_accounts', 'id')],
         ];
     }
 }

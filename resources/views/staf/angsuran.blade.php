@@ -58,6 +58,19 @@
                     </p>
                 </div>
                 <div class="field">
+                    <label>Akun Kas Penerima</label>
+                    <select name="cash_account_id" required>
+                        @foreach ($cashAccounts as $account)
+                            <option value="{{ $account->id }}" @selected((int) old('cash_account_id', $defaultCashAccountId) === $account->id)>
+                                {{ $account->code }} — {{ $account->name }}
+                            </option>
+                        @endforeach
+                    </select>
+                    <p style="color: var(--muted); font-size: 11px; margin: 6px 0 0;">
+                        Default kas cabang USP — ganti kalau uang benar-benar diterima di kas cabang lain.
+                    </p>
+                </div>
+                <div class="field">
                     <label>Keterangan (opsional)</label>
                     <input type="text" name="description" value="{{ old('description') }}">
                 </div>

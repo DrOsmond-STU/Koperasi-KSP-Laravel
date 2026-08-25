@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Staf;
 use App\Exceptions\Loans\LoanRepaymentException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StafLoanRepaymentRequest;
+use App\Models\ChartOfAccount;
 use App\Models\Loan;
 use App\Models\LoanRepayment;
 use App\Services\Loans\LoanRepaymentService;
@@ -42,6 +43,16 @@ class LoanRepaymentController extends Controller
                 ->limit(20)
                 ->get(),
             'preselectedLoanId' => request()->integer('loan_id') ?: null,
+            // Daftar akun kas yang bisa dipilih staf (postable + "kas" di
+            // nama, sama pola dengan BranchCashSettingsController::index())
+            // + default dinamis (kas cabang USP) — lihat
+            // LoanRepaymentService::defaultCashAccount().
+            'cashAccounts' => ChartOfAccount::query()
+                ->where('is_postable', true)
+                ->where('name', 'like', '%kas%')
+                ->orderBy('code')
+                ->get(),
+            'defaultCashAccountId' => $this->repayments->defaultCashAccount()?->id,
         ]);
     }
 
@@ -68,6 +79,8 @@ class LoanRepaymentController extends Controller
             'description' => $request->validated('description'),
             'paidAt' => $request->validated('paid_at') ?: now()->toDateString(),
             'plan' => $plan,
+            'cashAccountId' => $request->validated('cash_account_id'),
+            'cashAccount' => ChartOfAccount::query()->find($request->validated('cash_account_id')),
         ]);
     }
 
@@ -85,6 +98,7 @@ class LoanRepaymentController extends Controller
                 $request->validated('description'),
                 $idempotencyKey,
                 $paidAt ? Carbon::parse($paidAt) : null,
+                (int) $request->validated('cash_account_id'),
             );
         } catch (LoanRepaymentException $exception) {
             return back()->withErrors(['amount' => $exception->getMessage()])->withInput();

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Loans;
 
+use App\Models\ChartOfAccount;
 use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Models\LoanSchedule;
@@ -48,6 +49,11 @@ class StafLoanRepaymentTest extends TestCase
         return $user;
     }
 
+    private function cashAccountId(): int
+    {
+        return ChartOfAccount::query()->where('code', '1101')->firstOrFail()->id;
+    }
+
     /** Three installments of Rp 1.000.000 pokok + Rp 100.000 jasa each. */
     private function disbursedLoanWithThreeInstallments(): Loan
     {
@@ -85,6 +91,7 @@ class StafLoanRepaymentTest extends TestCase
         $response = $this->actingAs($user)->post(route('staf.angsuran.preview'), [
             'loan_id' => $loan->id,
             'amount' => 1100000,
+            'cash_account_id' => $this->cashAccountId(),
         ]);
 
         $response->assertOk();
@@ -97,9 +104,12 @@ class StafLoanRepaymentTest extends TestCase
         $user = $this->petugasKredit();
         $loan = $this->disbursedLoanWithThreeInstallments();
 
+        $cashAccountId = $this->cashAccountId();
+
         $response = $this->actingAs($user)->post(route('staf.angsuran.store'), [
             'loan_id' => $loan->id,
             'amount' => 1100000,
+            'cash_account_id' => $cashAccountId,
         ]);
 
         $response->assertRedirect(route('staf.angsuran.create'));
@@ -112,6 +122,9 @@ class StafLoanRepaymentTest extends TestCase
         ]);
         $this->assertDatabaseHas('loan_schedules', [
             'loan_id' => $loan->id, 'installment_number' => 1, 'status' => 'lunas',
+        ]);
+        $this->assertDatabaseHas('journal_lines', [
+            'chart_of_account_id' => $cashAccountId, 'debit' => '1100000.00',
         ]);
     }
 
@@ -130,6 +143,7 @@ class StafLoanRepaymentTest extends TestCase
             'loan_id' => $loan->id,
             'amount' => 1100000,
             'paid_at' => $paidOn,
+            'cash_account_id' => $this->cashAccountId(),
         ]);
 
         $response->assertRedirect(route('staf.angsuran.create'));
@@ -147,6 +161,7 @@ class StafLoanRepaymentTest extends TestCase
         $response = $this->actingAs($user)->post(route('staf.angsuran.store'), [
             'loan_id' => $loan->id,
             'amount' => 99999999,
+            'cash_account_id' => $this->cashAccountId(),
         ]);
 
         $response->assertSessionHasErrors('amount');
@@ -178,5 +193,52 @@ class StafLoanRepaymentTest extends TestCase
         $response->assertOk();
         $response->assertSee(route('admin.print.loans.schedule', $loan), false);
         $response->assertSee(route('staf.angsuran.create', ['loan_id' => $loan->id]), false);
+    }
+
+    /**
+     * Regresi: akun kas lawan angsuran sebelumnya diam-diam diambil dari
+     * cabang si pinjaman sendiri (`Loan::branch_id`) — untuk pinjaman
+     * anggota lama, cabang itu keliru tersimpan "KPPD Pusat", jadi jurnal
+     * lawan angsuran salah posting ke kas KPPD Pusat, bukan kas cabang USP
+     * (laporan staf 25 Agu 2026). Sekarang form Catat Angsuran menawarkan
+     * dropdown "Akun Kas Penerima" yang defaultnya SELALU kas cabang USP
+     * (dicari lewat nama cabang, bukan kode akun statis).
+     */
+    public function test_default_cash_account_offered_is_the_usp_branch_cash_account(): void
+    {
+        $user = $this->petugasKredit();
+        $uspCashAccount = ChartOfAccount::query()->create([
+            'code' => '1101400', 'name' => 'KAS AO RIDWAN (USP)', 'type' => 'ASET',
+            'normal_balance' => 'DEBIT', 'is_postable' => true, 'statement' => 'NERACA',
+        ]);
+        \App\Models\Branch::factory()->create(['name' => 'Unit Simpan Pinjam ( USP )', 'cash_account_id' => $uspCashAccount->id]);
+
+        $response = $this->actingAs($user)->get(route('staf.angsuran.create'));
+
+        $response->assertOk();
+        $response->assertSee('KAS AO RIDWAN (USP)');
+        $response->assertSee('value="'.$uspCashAccount->id.'" selected', false);
+    }
+
+    /** Bagian "tapi bisa di rubah saat input data" dari laporan staf 25 Agu 2026. */
+    public function test_staf_can_override_the_cash_account_when_recording_a_payment(): void
+    {
+        $user = $this->petugasKredit();
+        $loan = $this->disbursedLoanWithThreeInstallments();
+        $alternateCashAccount = ChartOfAccount::query()->create([
+            'code' => '1101999', 'name' => 'KAS CABANG LAIN', 'type' => 'ASET',
+            'normal_balance' => 'DEBIT', 'is_postable' => true, 'statement' => 'NERACA',
+        ]);
+
+        $response = $this->actingAs($user)->post(route('staf.angsuran.store'), [
+            'loan_id' => $loan->id,
+            'amount' => 1100000,
+            'cash_account_id' => $alternateCashAccount->id,
+        ]);
+
+        $response->assertRedirect(route('staf.angsuran.create'));
+        $this->assertDatabaseHas('journal_lines', [
+            'chart_of_account_id' => $alternateCashAccount->id, 'debit' => '1100000.00',
+        ]);
     }
 }

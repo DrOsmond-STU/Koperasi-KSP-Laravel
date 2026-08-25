@@ -3,6 +3,7 @@
 namespace App\Services\Loans;
 
 use App\Exceptions\Loans\LoanRepaymentException;
+use App\Models\Branch;
 use App\Models\ChartOfAccount;
 use App\Models\Loan;
 use App\Models\LoanRepayment;
@@ -102,6 +103,7 @@ class LoanRepaymentService
         ?string $description = null,
         ?string $idempotencyKey = null,
         ?\DateTimeInterface $date = null,
+        ?int $cashAccountId = null,
     ): LoanRepayment {
         if ($loan->status !== 'dicairkan') {
             throw LoanRepaymentException::notActive($loan->status);
@@ -118,7 +120,7 @@ class LoanRepaymentService
 
         $entryDate = $date ?? now();
 
-        return DB::transaction(function () use ($loan, $amount, $createdBy, $description, $idempotencyKey, $plan, $entryDate) {
+        return DB::transaction(function () use ($loan, $amount, $createdBy, $description, $idempotencyKey, $plan, $entryDate, $cashAccountId) {
             foreach ($plan['allocations'] as $allocation) {
                 $schedule = LoanSchedule::query()->lockForUpdate()->findOrFail($allocation['schedule_id']);
 
@@ -136,7 +138,7 @@ class LoanRepaymentService
 
             $product = $loan->loanProduct;
             $lines = [
-                ['chart_of_account_id' => $this->cashAccount($loan)->id, 'debit' => $amount, 'credit' => 0],
+                ['chart_of_account_id' => $this->cashAccount($loan, $cashAccountId)->id, 'debit' => $amount, 'credit' => 0],
             ];
 
             if ($plan['total_principal'] > 0) {
@@ -183,15 +185,45 @@ class LoanRepaymentService
     }
 
     /**
-     * Akun kas cabang si pinjaman kalau sudah dikonfigurasi (Branch::
-     * cashAccount, lihat admin.pengaturan.kas-cabang) — supaya angsuran
-     * yang diterima cabang KSP/USP masing-masing posting ke kasnya sendiri,
-     * bukan tercampur di satu akun `1101` konsolidasi. Fallback ke `1101`
-     * untuk cabang yang belum dikonfigurasi, supaya tidak ada yang patah.
+     * $cashAccountId datang dari pilihan staf di form Catat Angsuran (select
+     * "Akun Kas Penerima", lihat LoanRepaymentController) — kalau diisi,
+     * SELALU menang, apa pun cabang pinjamannya. Ini yang membuat akun kas
+     * lawan bisa diedit per-transaksi (laporan staf 25 Agu 2026: akun kas
+     * lawan angsuran jangan di-hardcode ke satu akun tetap).
+     *
+     * Kalau tidak diisi (mis. dipanggil dari webhook Xendit —
+     * LoanRepaymentGatewayService, yang belum ada UI pemilihan akun), jatuh
+     * ke akun kas cabang si pinjaman kalau sudah dikonfigurasi (Branch::
+     * cashAccount, lihat admin.pengaturan.kas-cabang), lalu fallback ke
+     * `1101` untuk cabang yang belum dikonfigurasi sama sekali.
      */
-    private function cashAccount(Loan $loan): ChartOfAccount
+    private function cashAccount(Loan $loan, ?int $cashAccountId): ChartOfAccount
     {
+        if ($cashAccountId !== null) {
+            return ChartOfAccount::query()->findOrFail($cashAccountId);
+        }
+
         return $loan->branch?->cashAccount
             ?? ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
+    }
+
+    /**
+     * Default yang ditawarkan di dropdown "Akun Kas Penerima" pada form
+     * Catat Angsuran SEBELUM staf memilih sendiri — kas cabang "Unit Simpan
+     * Pinjam (USP)", bukan akun kas cabang si pinjaman sendiri (`branch_id`
+     * pada baris `loans` untuk pinjaman anggota yang sudah berjalan masih
+     * banyak tersimpan "KPPD Pusat", peninggalan data lama — lihat temuan
+     * 25 Agu 2026: 142 pinjaman aktif semuanya branch_id itu — padahal
+     * secara bisnis produk pinjaman anggota koperasi ini semuanya USP).
+     * Diekspos publik (bukan konstanta kode/nama akun statis di controller
+     * atau view) supaya SELALU mengikuti pemetaan Kas per Cabang yang live
+     * di admin.pengaturan.kas-cabang, dan dicari lewat NAMA cabang (bukan
+     * id/code tetap) — sama alasannya dengan
+     * RetributionController::defaultUpfBranchId(): cabang didaftarkan
+     * manual oleh pengurus lewat menu Master Cabang, bukan seeder.
+     */
+    public function defaultCashAccount(): ?ChartOfAccount
+    {
+        return Branch::query()->where('name', 'LIKE', '%USP%')->first()?->cashAccount;
     }
 }
