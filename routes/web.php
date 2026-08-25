@@ -320,6 +320,10 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.master.loan-products.create');
     Route::post('/admin/master/produk-pinjaman', [LoanProductController::class, 'store'])
         ->name('admin.master.loan-products.store');
+    Route::get('/admin/master/produk-pinjaman/{loanProduct}/edit', [LoanProductController::class, 'edit'])
+        ->name('admin.master.loan-products.edit');
+    Route::put('/admin/master/produk-pinjaman/{loanProduct}', [LoanProductController::class, 'update'])
+        ->name('admin.master.loan-products.update');
 
     Route::get('/staf/teller', [TellerController::class, 'create'])
         ->name('staf.teller.create');

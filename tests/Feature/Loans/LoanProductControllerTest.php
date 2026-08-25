@@ -3,6 +3,7 @@
 namespace Tests\Feature\Loans;
 
 use App\Models\ChartOfAccount;
+use App\Models\LoanProduct;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -87,5 +88,59 @@ class LoanProductControllerTest extends TestCase
 
         $response->assertRedirect(route('admin.master.loan-products.index'));
         $this->assertDatabaseHas('loan_products', ['code' => 'PINJ-001', 'is_active' => 1]);
+    }
+
+    /** Regresi: route admin.master.loan-products.edit/.update sempat hilang dari web.php (404) — halaman "Ubah" tidak bisa dibuka sama sekali. */
+    public function test_edit_page_renders_for_existing_product(): void
+    {
+        $user = $this->manajer();
+        $product = LoanProduct::factory()->create(['tenor_unit' => 'bulan']);
+
+        $response = $this->actingAs($user)->get(route('admin.master.loan-products.edit', $product));
+
+        $response->assertOk();
+        $response->assertSee($product->code);
+    }
+
+    /**
+     * Regresi: form Ubah Produk sebelumnya tidak punya field tenor_unit sama
+     * sekali — staf tidak bisa mengubah produk lama (default 'bulan') jadi
+     * harian. Ini jalur satu-satunya untuk mengubah satuan tenor produk yang
+     * sudah ada (form Tambah cuma untuk produk baru).
+     */
+    public function test_update_can_switch_tenor_unit_from_monthly_to_daily(): void
+    {
+        $user = $this->manajer();
+        $accounts = ChartOfAccount::factory()->count(4)->create();
+        $product = LoanProduct::factory()->create([
+            'tenor_unit' => 'bulan',
+            'min_tenor_days' => 3,
+            'max_tenor_days' => 24,
+            'coa_receivable_account_id' => $accounts[0]->id,
+            'coa_interest_income_account_id' => $accounts[1]->id,
+            'coa_provision_income_account_id' => $accounts[2]->id,
+            'coa_penalty_receivable_account_id' => $accounts[3]->id,
+        ]);
+
+        $response = $this->actingAs($user)->put(route('admin.master.loan-products.update', $product), [
+            'code' => $product->code,
+            'name' => $product->name,
+            'min_plafon' => $product->min_plafon,
+            'max_plafon' => $product->max_plafon,
+            'min_tenor_days' => 100,
+            'max_tenor_days' => 200,
+            'tenor_unit' => 'hari',
+            'calculation_method' => $product->calculation_method,
+            'coa_receivable_account_id' => $accounts[0]->id,
+            'coa_interest_income_account_id' => $accounts[1]->id,
+            'coa_provision_income_account_id' => $accounts[2]->id,
+            'coa_penalty_receivable_account_id' => $accounts[3]->id,
+            'is_active' => '1',
+        ]);
+
+        $response->assertRedirect(route('admin.master.loan-products.index'));
+        $this->assertTrue($product->fresh()->usesDailyTenor());
+        $this->assertEquals(100, $product->fresh()->min_tenor_days);
+        $this->assertEquals(200, $product->fresh()->max_tenor_days);
     }
 }
