@@ -179,6 +179,7 @@ class RetributionController extends Controller
     private function baseViewData(Request $request): array
     {
         $branchId = $this->resolveBranchId($request);
+        $filters = $this->transactionFilters($request);
         $activeTypes = RetributionType::query()
             ->where('is_active', true)
             ->orderBy('sort_order')
@@ -218,16 +219,55 @@ class RetributionController extends Controller
             'splitPercentageTotal' => $splitTypes->sum('percentage'),
             'activePercentageTotal' => $activeTypes->sum('percentage'),
             'members' => $membersQuery->with('memberType')->get(),
-            'recentTransactions' => RetributionTransaction::query()
-                ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
-                ->with(['lines', 'branch'])
-                ->latest('transaction_date')
-                ->latest('id')
-                ->limit(20)
-                ->get(),
+            'transactions' => $this->filteredTransactions($branchId, $filters),
+            'filters' => $filters,
             'staticColumns' => ReportTypeRegistry::columnsFor('retribusi_upf'),
             'cashAccount' => $this->retributionService->cashAccount(),
         ];
+    }
+
+    /**
+     * @return array{q: ?string, date_from: ?string, date_to: ?string, payment_method: ?string, status: ?string}
+     */
+    private function transactionFilters(Request $request): array
+    {
+        return [
+            'q' => $request->string('q')->trim()->value() ?: null,
+            'date_from' => $request->string('date_from')->value() ?: null,
+            'date_to' => $request->string('date_to')->value() ?: null,
+            'payment_method' => $request->string('payment_method')->value() ?: null,
+            'status' => $request->string('status')->value() ?: null,
+        ];
+    }
+
+    /**
+     * Tab Transaksi sebelumnya cuma menampilkan 20 transaksi terbaru tanpa
+     * cara melihat riwayat lebih lama sama sekali — kalau cabang itu punya
+     * ≥20 transaksi di satu hari saja, tanggal-tanggal sebelumnya jadi
+     * tidak pernah terlihat. Sekarang seluruh riwayat (sejak input pertama)
+     * bisa dijangkau lewat pagination, dengan filter tanggal/metode/status
+     * dan pencarian nomor transaksi/nama pembayar.
+     *
+     * @param  array{q: ?string, date_from: ?string, date_to: ?string, payment_method: ?string, status: ?string}  $filters
+     */
+    private function filteredTransactions(?int $branchId, array $filters): \Illuminate\Pagination\LengthAwarePaginator
+    {
+        return RetributionTransaction::query()
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($filters['q'], fn ($q, $search) => $q->where(
+                fn ($w) => $w->where('transaction_number', 'like', "%{$search}%")
+                    ->orWhere('payer_name', 'like', "%{$search}%")
+            ))
+            ->when($filters['date_from'], fn ($q, $date) => $q->whereDate('transaction_date', '>=', $date))
+            ->when($filters['date_to'], fn ($q, $date) => $q->whereDate('transaction_date', '<=', $date))
+            ->when($filters['payment_method'], fn ($q, $method) => $q->where('payment_method', $method))
+            ->when($filters['status'] === 'aktif', fn ($q) => $q->whereNull('cancelled_at'))
+            ->when($filters['status'] === 'dibatalkan', fn ($q) => $q->whereNotNull('cancelled_at'))
+            ->with(['lines', 'branch'])
+            ->latest('transaction_date')
+            ->latest('id')
+            ->paginate(25)
+            ->withQueryString();
     }
 
     /**

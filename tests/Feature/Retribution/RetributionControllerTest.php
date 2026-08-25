@@ -260,4 +260,109 @@ class RetributionControllerTest extends TestCase
         $response->assertSee('KAS AO JAYA BUDIMAN (UPF)');
         $response->assertDontSee('KAS AO RIDWAN');
     }
+
+    private function recordTransactionAs(User $officer, Branch $branch, RetributionType $type, string $payerName, string $date, float $amount = 75000, string $paymentMethod = 'tunai'): void
+    {
+        $this->actingAs($officer)->post(route('staf.retribusi-upf.store'), [
+            'branch_id' => $branch->id,
+            'payer_type' => 'umum',
+            'payer_name' => $payerName,
+            'retribution_type_id' => $type->id,
+            'total_amount' => $amount,
+            'payment_method' => $paymentMethod,
+            'transaction_date' => $date,
+        ]);
+    }
+
+    /**
+     * Regresi: tab Transaksi dulu cuma `limit(20)` tanpa pagination — kalau
+     * satu cabang punya ≥20 transaksi di satu tanggal saja, tanggal-tanggal
+     * sebelumnya jadi tidak pernah terlihat sama sekali. Sekarang seluruh
+     * riwayat bisa dijangkau lewat halaman berikutnya.
+     */
+    public function test_transaction_list_paginates_and_older_transactions_are_reachable_via_page_2(): void
+    {
+        $officer = $this->petugasUpf();
+        $branch = Branch::factory()->create();
+        $type = $this->activateFullyAllocatedType();
+
+        for ($i = 0; $i < 30; $i++) {
+            $this->recordTransactionAs($officer, $branch, $type, "Pembayar Ke-{$i}", now()->subDays($i)->toDateString());
+        }
+
+        $page1 = $this->actingAs($officer)->get(route('staf.retribusi-upf.index', [
+            'tab' => 'transaksi', 'branch_id' => $branch->id,
+        ]));
+        $page1->assertOk();
+        $page1->assertSee('Pembayar Ke-0'); // paling baru -> halaman 1
+        $page1->assertDontSee('Pembayar Ke-29'); // paling lama -> belum tampil
+
+        $page2 = $this->actingAs($officer)->get(route('staf.retribusi-upf.index', [
+            'tab' => 'transaksi', 'branch_id' => $branch->id, 'page' => 2,
+        ]));
+        $page2->assertOk();
+        $page2->assertSee('Pembayar Ke-29');
+    }
+
+    public function test_transaction_list_can_be_searched_by_payer_name(): void
+    {
+        $officer = $this->petugasUpf();
+        $branch = Branch::factory()->create();
+        $type = $this->activateFullyAllocatedType();
+        $this->recordTransactionAs($officer, $branch, $type, 'Toko Sinar Jaya', now()->toDateString());
+        // Ditanggali kemarin (bukan hari ini) supaya tidak ikut nongol di
+        // widget KPI Dashboard "Pembayar Hari Ini" — itu daftar TERPISAH
+        // dari tabel Transaksi yang sedang diuji di sini, dan tidak
+        // dibatasi oleh filter pencarian ini sama sekali.
+        $this->recordTransactionAs($officer, $branch, $type, 'Warung Bu Tuti', now()->subDay()->toDateString());
+
+        $response = $this->actingAs($officer)->get(route('staf.retribusi-upf.index', [
+            'tab' => 'transaksi', 'branch_id' => $branch->id, 'q' => 'Sinar Jaya',
+        ]));
+
+        $response->assertOk();
+        $response->assertSee('Toko Sinar Jaya');
+        $response->assertDontSee('Warung Bu Tuti');
+    }
+
+    public function test_transaction_list_can_be_filtered_by_date_range(): void
+    {
+        $officer = $this->petugasUpf();
+        $branch = Branch::factory()->create();
+        $type = $this->activateFullyAllocatedType();
+        $this->recordTransactionAs($officer, $branch, $type, 'Transaksi Lama', now()->subDays(10)->toDateString());
+        $this->recordTransactionAs($officer, $branch, $type, 'Transaksi Baru', now()->toDateString());
+
+        $response = $this->actingAs($officer)->get(route('staf.retribusi-upf.index', [
+            'tab' => 'transaksi', 'branch_id' => $branch->id,
+            'date_from' => now()->subDays(2)->toDateString(),
+        ]));
+
+        $response->assertOk();
+        $response->assertSee('Transaksi Baru');
+        $response->assertDontSee('Transaksi Lama');
+    }
+
+    public function test_transaction_list_can_be_filtered_by_cancelled_status(): void
+    {
+        $officer = $this->petugasUpf();
+        $branch = Branch::factory()->create();
+        $type = $this->activateFullyAllocatedType();
+        // "Transaksi Aktif" ditanggali kemarin supaya tidak ikut nongol di
+        // widget KPI Dashboard "Pembayar Hari Ini" (daftar terpisah dari
+        // tabel Transaksi yang diuji di sini, lihat catatan yang sama di
+        // test_transaction_list_can_be_searched_by_payer_name di atas).
+        $this->recordTransactionAs($officer, $branch, $type, 'Transaksi Aktif', now()->subDay()->toDateString());
+        $this->recordTransactionAs($officer, $branch, $type, 'Transaksi Batal', now()->toDateString());
+        $toCancel = \App\Models\RetributionTransaction::query()->where('payer_name', 'Transaksi Batal')->firstOrFail();
+        $this->actingAs($officer)->post(route('staf.retribusi-upf.cancel', $toCancel), ['reason' => 'Salah input']);
+
+        $response = $this->actingAs($officer)->get(route('staf.retribusi-upf.index', [
+            'tab' => 'transaksi', 'branch_id' => $branch->id, 'status' => 'dibatalkan',
+        ]));
+
+        $response->assertOk();
+        $response->assertSee('Transaksi Batal');
+        $response->assertDontSee('Transaksi Aktif');
+    }
 }

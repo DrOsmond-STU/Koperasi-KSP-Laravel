@@ -51,6 +51,13 @@
         .field-row { display: flex; gap: 14px; }
         .field-row .field { flex: 1; }
         .btn-primary { padding: 10px 18px; background: var(--pine); color: #fff; border: none; border-radius: 9px; font-weight: 700; cursor: pointer; }
+        .btn-secondary { display: inline-block; padding: 9px 16px; background: var(--paper); color: var(--pine); border: 1px solid var(--line); border-radius: 9px; font-weight: 700; font-size: 13px; cursor: pointer; text-decoration: none; }
+        .btn-secondary[aria-disabled="true"] { opacity: .5; cursor: default; pointer-events: none; }
+        .filter-toolbar .field-row { flex-wrap: wrap; align-items: end; row-gap: 10px; }
+        .filter-toolbar .field { min-width: 160px; margin-bottom: 0; }
+        .filter-toolbar .field.field-search { flex: 2 1 240px; }
+        .pager-row { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 10px; }
+        .pager-links { display: flex; align-items: center; gap: 8px; }
         .payer-toggle { display: flex; gap: 8px; margin-bottom: 14px; }
         .payer-toggle label { flex: 1; text-align: center; padding: 9px; border: 1px solid var(--line); border-radius: 9px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); }
         .payer-toggle input { display: none; }
@@ -380,12 +387,60 @@
             </div>
         </div>
 
+        @php
+            $filtersActive = $filters['q'] || $filters['date_from'] || $filters['date_to'] || $filters['payment_method'] || $filters['status'];
+        @endphp
+        <div class="panel filter-toolbar" style="margin-top:18px;">
+            <form method="GET" action="{{ route('staf.retribusi-upf.index') }}">
+                <input type="hidden" name="tab" value="transaksi">
+                @if ($selectedBranchId)<input type="hidden" name="branch_id" value="{{ $selectedBranchId }}">@endif
+                <div class="field-row">
+                    <div class="field field-search">
+                        <label>Cari</label>
+                        <input type="text" name="q" value="{{ $filters['q'] }}" placeholder="No. transaksi atau nama pembayar...">
+                    </div>
+                    <div class="field">
+                        <label>Dari Tanggal</label>
+                        <input type="date" name="date_from" value="{{ $filters['date_from'] }}">
+                    </div>
+                    <div class="field">
+                        <label>Sampai Tanggal</label>
+                        <input type="date" name="date_to" value="{{ $filters['date_to'] }}">
+                    </div>
+                    <div class="field">
+                        <label>Metode Bayar</label>
+                        <select name="payment_method">
+                            <option value="">Semua</option>
+                            <option value="tunai" @selected($filters['payment_method'] === 'tunai')>Tunai</option>
+                            <option value="transfer" @selected($filters['payment_method'] === 'transfer')>Transfer</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Status</label>
+                        <select name="status">
+                            <option value="">Semua</option>
+                            <option value="aktif" @selected($filters['status'] === 'aktif')>Aktif</option>
+                            <option value="dibatalkan" @selected($filters['status'] === 'dibatalkan')>Dibatalkan</option>
+                        </select>
+                    </div>
+                    <div class="field" style="min-width:0;">
+                        <button type="submit" class="btn-primary">Terapkan</button>
+                    </div>
+                    @if ($filtersActive)
+                        <div class="field" style="min-width:0;">
+                            <a href="{{ route('staf.retribusi-upf.index', array_filter(['tab' => 'transaksi', 'branch_id' => $selectedBranchId])) }}" class="btn-secondary">Reset</a>
+                        </div>
+                    @endif
+                </div>
+            </form>
+        </div>
+
         <table class="data-table">
             <thead>
                 <tr><th>No. Transaksi</th><th>Tanggal</th><th>Pembayar</th><th>Cabang</th><th>Total</th><th>Metode</th><th>Status</th></tr>
             </thead>
             <tbody>
-                @forelse ($recentTransactions as $trx)
+                @forelse ($transactions as $trx)
                     <tr>
                         <td>{{ $trx->transaction_number }}</td>
                         <td>{{ $trx->transaction_date->format('d/m/Y') }}</td>
@@ -407,10 +462,23 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="7">Belum ada transaksi retribusi.</td></tr>
+                    <tr><td colspan="7">{{ $filtersActive ? 'Tidak ada transaksi yang cocok dengan filter ini.' : 'Belum ada transaksi retribusi.' }}</td></tr>
                 @endforelse
             </tbody>
         </table>
+
+        @if ($transactions->total() > 0)
+            <div class="pager-row">
+                <span>Menampilkan {{ $transactions->firstItem() }}–{{ $transactions->lastItem() }} dari {{ $transactions->total() }} transaksi</span>
+                @if ($transactions->hasPages())
+                    <div class="pager-links">
+                        <a href="{{ $transactions->previousPageUrl() ?? '#' }}" class="btn-secondary" @if ($transactions->onFirstPage()) aria-disabled="true" @endif>‹ Sebelumnya</a>
+                        <span>Halaman {{ $transactions->currentPage() }} / {{ $transactions->lastPage() }}</span>
+                        <a href="{{ $transactions->nextPageUrl() ?? '#' }}" class="btn-secondary" @if (! $transactions->hasMorePages()) aria-disabled="true" @endif>Berikutnya ›</a>
+                    </div>
+                @endif
+            </div>
+        @endif
     </div>
 
     {{-- ================= LAPORAN TAB ================= --}}
