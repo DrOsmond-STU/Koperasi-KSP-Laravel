@@ -161,10 +161,14 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.tarif-parameter.savings.update');
     Route::post('/admin/tarif-parameter/simpanan/{product}/tarif', [TarifParameterController::class, 'addSavingsRate'])
         ->name('admin.tarif-parameter.savings.rate');
+    Route::put('/admin/tarif-parameter/simpanan/{product}/tarif/{rate}', [TarifParameterController::class, 'updateSavingsRate'])
+        ->name('admin.tarif-parameter.savings.rate.update');
     Route::put('/admin/tarif-parameter/pinjaman/{product}', [TarifParameterController::class, 'updateLoan'])
         ->name('admin.tarif-parameter.loan.update');
     Route::post('/admin/tarif-parameter/pinjaman/{product}/tarif', [TarifParameterController::class, 'addLoanRate'])
         ->name('admin.tarif-parameter.loan.rate');
+    Route::put('/admin/tarif-parameter/pinjaman/{product}/tarif/{rate}', [TarifParameterController::class, 'updateLoanRate'])
+        ->name('admin.tarif-parameter.loan.rate.update');
 
     Route::get('/admin/jurnal-buku-besar', [GeneralLedgerController::class, 'index'])
         ->name('admin.jurnal-buku-besar.index');

@@ -6,9 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\AddLoanRateHistoryRequest;
 use App\Http\Requests\AddSavingsRateHistoryRequest;
 use App\Http\Requests\UpdateLoanProductParametersRequest;
+use App\Http\Requests\UpdateLoanRateHistoryRequest;
 use App\Http\Requests\UpdateSavingsProductParametersRequest;
+use App\Http\Requests\UpdateSavingsRateHistoryRequest;
 use App\Models\LoanProduct;
+use App\Models\LoanProductRateHistory;
 use App\Models\SavingsProduct;
+use App\Models\SavingsProductRateHistory;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 
@@ -48,6 +52,23 @@ class TarifParameterController extends Controller
             ->with('status', "Tarif baru untuk \"{$product->name}\" berlaku sejak {$request->validated('effective_from')}.");
     }
 
+    /**
+     * Koreksi baris tarif yang SUDAH tersimpan (mis. migrasi 31 Juli 2026
+     * yang salah ketik jadi Agustus — laporan staf 26 Agu 2026) — beda dari
+     * addSavingsRate() yang menambah kebijakan tarif baru ke depan dan
+     * tetap non-retroaktif (E2E-05). Lihat UpdateSavingsRateHistoryRequest.
+     */
+    public function updateSavingsRate(UpdateSavingsRateHistoryRequest $request, SavingsProduct $product, SavingsProductRateHistory $rate): RedirectResponse
+    {
+        abort_unless($rate->savings_product_id === $product->id, 404);
+
+        $rate->update($request->validated());
+
+        return redirect()
+            ->route('admin.tarif-parameter.index')
+            ->with('status', "Tarif \"{$product->name}\" berhasil diperbarui.");
+    }
+
     public function updateLoan(UpdateLoanProductParametersRequest $request, LoanProduct $product): RedirectResponse
     {
         $product->update($request->validated());
@@ -64,5 +85,22 @@ class TarifParameterController extends Controller
         return redirect()
             ->route('admin.tarif-parameter.index')
             ->with('status', "Tarif baru untuk \"{$product->name}\" berlaku sejak {$request->validated('effective_from')}.");
+    }
+
+    /**
+     * Koreksi baris tarif yang SUDAH tersimpan (mis. migrasi 31 Juli 2026
+     * yang salah ketik jadi Agustus — laporan staf 26 Agu 2026) — beda dari
+     * addLoanRate() yang menambah kebijakan tarif baru ke depan dan tetap
+     * non-retroaktif (E2E-05). Lihat UpdateLoanRateHistoryRequest.
+     */
+    public function updateLoanRate(UpdateLoanRateHistoryRequest $request, LoanProduct $product, LoanProductRateHistory $rate): RedirectResponse
+    {
+        abort_unless($rate->loan_product_id === $product->id, 404);
+
+        $rate->update($request->validated());
+
+        return redirect()
+            ->route('admin.tarif-parameter.index')
+            ->with('status', "Tarif \"{$product->name}\" berhasil diperbarui.");
     }
 }

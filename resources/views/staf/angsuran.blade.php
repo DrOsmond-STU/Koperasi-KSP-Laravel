@@ -47,9 +47,9 @@
                 </div>
                 <div class="field">
                     <label>Nominal Bayar (Rp)</label>
-                    <input type="text" id="nominal-bayar-display" value="Rp 0" readonly style="background: var(--paper); font-weight: 700;">
+                    <input type="number" step="0.01" min="0" name="nominal_bayar" id="nominal-bayar-input" value="{{ old('nominal_bayar') }}">
                     <p style="color: var(--muted); font-size: 11px; margin: 6px 0 0;">
-                        Jumlah dari Angsuran Pokok + Jasa + Denda di bawah — bukan diketik langsung.
+                        Ketik jumlah yang diterima — Pokok/Jasa/Denda di bawah otomatis mengikuti (jasa sesuai pengaturan di Master Produk Pinjaman).
                     </p>
                 </div>
                 <div class="field">
@@ -65,8 +65,8 @@
                     <input type="number" step="0.01" min="0" name="penalty_portion" id="penalty-portion-input" value="{{ old('penalty_portion', 0) }}" required>
                 </div>
                 <p style="color: var(--muted); font-size: 11px; margin: -6px 0 14px;">
-                    Pokok dan Jasa terisi otomatis dengan angsuran NORMAL (pinjaman ÷ lama pinjaman + % jasa) begitu Pinjaman dipilih —
-                    tidak mengejar tunggakan. Ketiganya bisa diedit sebelum disimpan.
+                    Jasa terisi otomatis (tarif NORMAL dari produk pinjaman, tidak mengejar tunggakan) begitu Pinjaman dipilih; Pokok = Nominal Bayar − Jasa − Denda,
+                    dihitung ulang tiap Nominal Bayar/Jasa/Denda diubah. Ketiganya tetap bisa diedit manual sebelum disimpan.
                 </p>
                 <div class="field">
                     <label>Tanggal Bayar</label>
@@ -115,39 +115,41 @@
 
     <script>
         (function () {
-            // Saran default Pokok/Jasa NORMAL per pinjaman — lihat
-            // LoanRepaymentService::normalInstallment(). Denda selalu mulai
-            // dari 0 (tidak ada rumus otomatis, murni input staf).
+            // Jasa NORMAL per pinjaman (tarif dari Master Produk Pinjaman,
+            // TIDAK mengejar tunggakan) — lihat LoanRepaymentService::
+            // normalInstallment(). Jasa-nya TETAP (flat per periode), bukan
+            // proporsional terhadap Nominal Bayar — sama seperti pola
+            // histori: jasa selalu sama persis tiap pembayaran, berapa pun
+            // nominalnya, dan Pokok-lah yang menyesuaikan.
             var normalInstallments = @json($normalInstallments);
 
             var loanSelect = document.querySelector('select[name="loan_id"]');
+            var nominalInput = document.getElementById('nominal-bayar-input');
             var principalInput = document.getElementById('principal-portion-input');
             var interestInput = document.getElementById('interest-portion-input');
             var penaltyInput = document.getElementById('penalty-portion-input');
-            var nominalDisplay = document.getElementById('nominal-bayar-display');
 
-            function formatRupiah(n) {
-                return (Number(n) || 0).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-            }
-
-            function recomputeNominal() {
-                var total = (parseFloat(principalInput.value) || 0)
-                    + (parseFloat(interestInput.value) || 0)
-                    + (parseFloat(penaltyInput.value) || 0);
-                nominalDisplay.value = 'Rp ' + formatRupiah(total);
+            function recomputePokok() {
+                var nominal = parseFloat(nominalInput.value) || 0;
+                var jasa = parseFloat(interestInput.value) || 0;
+                var denda = parseFloat(penaltyInput.value) || 0;
+                principalInput.value = Math.max(0, nominal - jasa - denda).toFixed(2);
             }
 
             function applyNormalDefaults() {
                 var normal = normalInstallments[loanSelect.value];
-                principalInput.value = normal ? normal.principal : 0;
                 interestInput.value = normal ? normal.interest : 0;
                 penaltyInput.value = 0;
-                recomputeNominal();
+                nominalInput.value = '';
+                principalInput.value = 0;
             }
 
             loanSelect.addEventListener('change', applyNormalDefaults);
-            [principalInput, interestInput, penaltyInput].forEach(function (input) {
-                input.addEventListener('input', recomputeNominal);
+            // Nominal Bayar/Jasa/Denda menentukan Pokok. Pokok sendiri tetap
+            // bisa diketik manual (mis. staf menyesuaikan hasil bulat) tanpa
+            // memicu hitung ulang terhadap dirinya sendiri.
+            [nominalInput, interestInput, penaltyInput].forEach(function (input) {
+                input.addEventListener('input', recomputePokok);
             });
 
             // Setelah redirect balik dari error validasi, angka yang sudah
@@ -155,8 +157,6 @@
             var hasOldInput = {{ Js::from(old('principal_portion') !== null) }};
             if (loanSelect.value && !hasOldInput) {
                 applyNormalDefaults();
-            } else {
-                recomputeNominal();
             }
         })();
     </script>

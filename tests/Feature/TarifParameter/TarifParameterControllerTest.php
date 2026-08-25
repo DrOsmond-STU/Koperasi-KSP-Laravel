@@ -110,4 +110,82 @@ class TarifParameterControllerTest extends TestCase
             'admin_fee' => 5000,
         ])->assertForbidden();
     }
+
+    /**
+     * Laporan staf 26 Agu 2026: migrasi terjadi 31 Juli 2026, tapi baris
+     * tarif yang sudah tersimpan tidak bisa dikoreksi ke tanggal itu sama
+     * sekali (tidak ada endpoint edit, dan menambah baris baru terkena
+     * aturan non-retroaktif E2E-05). Endpoint update INI beda dari
+     * addSavingsRate()/addLoanRate() — sengaja TIDAK menegakkan
+     * after_or_equal:today, karena tujuannya mengoreksi data migrasi yang
+     * sudah terlanjur salah tanggal, bukan menambah kebijakan baru.
+     */
+    public function test_editing_a_savings_rate_history_row_allows_a_backdated_effective_from(): void
+    {
+        $user = $this->manajer();
+        $product = SavingsProduct::factory()->create();
+        $rate = $product->rateHistory()->create(['rate_percentage' => 3.0, 'effective_from' => now()->toDateString()]);
+
+        $response = $this->actingAs($user)->put(route('admin.tarif-parameter.savings.rate.update', [$product, $rate]), [
+            'rate_percentage' => 3.5,
+            'effective_from' => '2026-07-31',
+        ]);
+
+        $response->assertRedirect(route('admin.tarif-parameter.index'));
+        $this->assertDatabaseHas('savings_product_rate_history', [
+            'id' => $rate->id,
+            'rate_percentage' => '3.500',
+            'effective_from' => '2026-07-31',
+        ]);
+    }
+
+    public function test_editing_a_loan_rate_history_row_allows_a_backdated_effective_from(): void
+    {
+        $user = $this->manajer();
+        $product = LoanProduct::factory()->create();
+        $rate = $product->rateHistory()->create(['rate_percentage' => 5.0, 'effective_from' => now()->toDateString()]);
+
+        $response = $this->actingAs($user)->put(route('admin.tarif-parameter.loan.rate.update', [$product, $rate]), [
+            'rate_percentage' => 5.5,
+            'effective_from' => '2026-07-31',
+        ]);
+
+        $response->assertRedirect(route('admin.tarif-parameter.index'));
+        $this->assertDatabaseHas('loan_product_rate_history', [
+            'id' => $rate->id,
+            'rate_percentage' => '5.500',
+            'effective_from' => '2026-07-31',
+        ]);
+    }
+
+    public function test_editing_a_rate_belonging_to_a_different_product_is_rejected(): void
+    {
+        $user = $this->manajer();
+        $productA = SavingsProduct::factory()->create();
+        $productB = SavingsProduct::factory()->create();
+        $rateOfA = $productA->rateHistory()->create(['rate_percentage' => 3.0, 'effective_from' => now()->toDateString()]);
+
+        $this->actingAs($user)
+            ->put(route('admin.tarif-parameter.savings.rate.update', [$productB, $rateOfA]), [
+                'rate_percentage' => 9.9,
+                'effective_from' => '2026-07-31',
+            ])
+            ->assertNotFound();
+    }
+
+    public function test_role_without_permission_cannot_edit_rate_history(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+        $user = User::factory()->create(['two_factor_confirmed_at' => now()]);
+        $user->assignRole('teller');
+        $product = SavingsProduct::factory()->create();
+        $rate = $product->rateHistory()->create(['rate_percentage' => 3.0, 'effective_from' => now()->toDateString()]);
+
+        $this->actingAs($user)
+            ->put(route('admin.tarif-parameter.savings.rate.update', [$product, $rate]), [
+                'rate_percentage' => 3.5,
+                'effective_from' => '2026-07-31',
+            ])
+            ->assertForbidden();
+    }
 }
