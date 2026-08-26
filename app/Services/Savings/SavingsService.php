@@ -79,20 +79,31 @@ class SavingsService
         });
     }
 
+    /**
+     * $date = tanggal transaksi SEBENARNYA (mis. staf menyusulkan setoran
+     * lama yang belum sempat dicatat) — default ke hari ini kalau tidak
+     * diisi. Dipakai untuk savings_transactions.transaction_date DAN
+     * entry_date jurnal, supaya keduanya selalu konsisten (mirror pola
+     * LoanRepaymentService::recordManualPayment() / RetributionService::
+     * record()).
+     */
     public function deposit(
         SavingsAccount $account,
         float $amount,
         int $createdBy,
         ?string $description = null,
         ?string $idempotencyKey = null,
+        ?\DateTimeInterface $date = null,
     ): SavingsTransaction {
-        return DB::transaction(function () use ($account, $amount, $createdBy, $description, $idempotencyKey) {
+        $entryDate = $date ?? now();
+
+        return DB::transaction(function () use ($account, $amount, $createdBy, $description, $idempotencyKey, $entryDate) {
             $product = $account->savingsProduct;
             $newBalance = bcadd((string) $account->balance, (string) $amount, 2);
 
             $entry = $this->journalEngine->post([
                 'branch_id' => $account->branch_id,
-                'entry_date' => now()->toDateString(),
+                'entry_date' => $entryDate->format('Y-m-d'),
                 'description' => $description ?? "Setoran simpanan {$account->account_number}",
                 'created_by' => $createdBy,
                 'source' => $account,
@@ -109,6 +120,7 @@ class SavingsService
                 'branch_id' => $account->branch_id,
                 'savings_account_id' => $account->id,
                 'type' => 'setor',
+                'transaction_date' => $entryDate->format('Y-m-d'),
                 'amount' => $amount,
                 'balance_after' => $newBalance,
                 'journal_entry_id' => $entry->id,
@@ -124,18 +136,21 @@ class SavingsService
         int $createdBy,
         ?string $description = null,
         ?string $idempotencyKey = null,
+        ?\DateTimeInterface $date = null,
     ): SavingsTransaction {
         if (bccomp((string) $account->balance, (string) $amount, 2) < 0) {
             throw new InsufficientBalanceException($account->account_number, (string) $account->balance, (string) $amount);
         }
 
-        return DB::transaction(function () use ($account, $amount, $createdBy, $description, $idempotencyKey) {
+        $entryDate = $date ?? now();
+
+        return DB::transaction(function () use ($account, $amount, $createdBy, $description, $idempotencyKey, $entryDate) {
             $product = $account->savingsProduct;
             $newBalance = bcsub((string) $account->balance, (string) $amount, 2);
 
             $entry = $this->journalEngine->post([
                 'branch_id' => $account->branch_id,
-                'entry_date' => now()->toDateString(),
+                'entry_date' => $entryDate->format('Y-m-d'),
                 'description' => $description ?? "Penarikan simpanan {$account->account_number}",
                 'created_by' => $createdBy,
                 'source' => $account,
@@ -152,6 +167,7 @@ class SavingsService
                 'branch_id' => $account->branch_id,
                 'savings_account_id' => $account->id,
                 'type' => 'tarik',
+                'transaction_date' => $entryDate->format('Y-m-d'),
                 'amount' => $amount,
                 'balance_after' => $newBalance,
                 'journal_entry_id' => $entry->id,
@@ -236,7 +252,7 @@ class SavingsService
     public function reverseTransaction(SavingsTransaction $transaction, string $reason, int $cancelledBy): SavingsTransaction
     {
         if ($transaction->isCancelled()) {
-            throw new TransactionAlreadyCancelledException();
+            throw new TransactionAlreadyCancelledException;
         }
 
         return DB::transaction(function () use ($transaction, $reason, $cancelledBy) {

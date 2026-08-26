@@ -33,6 +33,8 @@
     <h2>Layanan Teller — Simpanan</h2>
     <p style="margin-top: -8px;">
         <a href="{{ route('staf.teller.buka-rekening.create') }}">+ Buka Rekening Baru (anggota belum punya simpanan)</a>
+        &nbsp;·&nbsp;
+        <a href="{{ route('staf.teller.history') }}">Lihat Riwayat Transaksi ↗</a>
     </p>
 
     <p class="cash-account-note">
@@ -49,6 +51,14 @@
             <h3>Transaksi Simpanan</h3>
             <form method="POST" action="{{ route('staf.teller.preview') }}">
                 @csrf
+                <div class="field">
+                    <label>Tanggal Transaksi</label>
+                    <input type="date" name="transaction_date" value="{{ old('transaction_date') }}" max="{{ now()->toDateString() }}" required>
+                    <p style="color: var(--muted); font-size: 11px; margin: 6px 0 0;">
+                        Wajib diisi manual — banyak transaksi lama yang belum sempat dicatat, jadi tanggalnya
+                        TIDAK otomatis hari ini. Isi tanggal transaksi yang sebenarnya terjadi.
+                    </p>
+                </div>
                 <div class="field">
                     <label>Rekening</label>
                     <select name="savings_account_id" required class="js-searchable">

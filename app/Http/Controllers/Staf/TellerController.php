@@ -16,6 +16,9 @@ use App\Models\SavingsWithdrawalRequest;
 use App\Services\Savings\SavingsService;
 use App\Services\Savings\SavingsWithdrawalRequestService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -71,6 +74,7 @@ class TellerController extends Controller
         return view('staf.teller-preview', [
             'account' => $account,
             'type' => $request->validated('type'),
+            'transactionDate' => $request->validated('transaction_date'),
             'amount' => (float) $request->validated('amount'),
             'description' => $request->validated('description'),
             'lines' => $this->savings->previewLines($account, $request->validated('type'), (float) $request->validated('amount')),
@@ -81,10 +85,11 @@ class TellerController extends Controller
     {
         $account = SavingsAccount::query()->findOrFail($request->validated('savings_account_id'));
         $idempotencyKey = $request->input('idempotency_key') ?: (string) Str::uuid();
+        $date = Carbon::parse($request->validated('transaction_date'));
 
         $transaction = $request->validated('type') === 'setor'
-            ? $this->savings->deposit($account, (float) $request->validated('amount'), $request->user()->id, $request->validated('description'), $idempotencyKey)
-            : $this->savings->withdraw($account, (float) $request->validated('amount'), $request->user()->id, $request->validated('description'), $idempotencyKey);
+            ? $this->savings->deposit($account, (float) $request->validated('amount'), $request->user()->id, $request->validated('description'), $idempotencyKey, $date)
+            : $this->savings->withdraw($account, (float) $request->validated('amount'), $request->user()->id, $request->validated('description'), $idempotencyKey, $date);
 
         return redirect()
             ->route('staf.teller.create')
@@ -116,6 +121,31 @@ class TellerController extends Controller
         ]);
 
         return $pdf->download('bukti-'.$transaction->type.'-'.$transaction->id.'.pdf');
+    }
+
+    /**
+     * Riwayat Transaksi Simpanan — laporan staf 26 Agu 2026: panel
+     * "Transaksi Hari Ini" di halaman utama Teller cuma menampilkan
+     * transaksi HARI INI (limit 20). Halaman terpisah ini menampilkan
+     * SEMUA transaksi (semua tanggal, semua cabang), dengan pencarian +
+     * filter + paginasi — sama pola dengan tab "Transaksi" pada
+     * RetributionController (filteredTransactions()/transactionFilters()).
+     *
+     * Baca (detail/cetak) dan Batalkan dipakai ulang persis dari panel
+     * utama — "Edit" di sini = Batalkan lalu catat ulang lewat form Setor/
+     * Tarik biasa (ledger append-only, lihat SavingsService::
+     * reverseTransaction()), bukan mengubah baris yang sudah diposting.
+     */
+    public function history(Request $request): View
+    {
+        $this->authorize('simpanan.read');
+
+        $filters = $this->transactionFilters($request);
+
+        return view('staf.teller-riwayat', [
+            'transactions' => $this->filteredTransactions($filters),
+            'filters' => $filters,
+        ]);
     }
 
     public function decideWithdrawal(DecideSavingsWithdrawalRequest $request, SavingsWithdrawalRequest $withdrawalRequest): RedirectResponse
@@ -208,5 +238,48 @@ class TellerController extends Controller
         }
 
         return redirect()->route('staf.teller.create')->with('status', $status);
+    }
+
+    /**
+     * @return array{q: ?string, type: ?string, status: ?string, date_from: ?string, date_to: ?string}
+     */
+    private function transactionFilters(Request $request): array
+    {
+        return [
+            'q' => $request->string('q')->trim()->value() ?: null,
+            'type' => $request->string('type')->value() ?: null,
+            'status' => $request->string('status')->value() ?: null,
+            'date_from' => $request->string('date_from')->value() ?: null,
+            'date_to' => $request->string('date_to')->value() ?: null,
+        ];
+    }
+
+    /**
+     * Difilter/diurutkan lewat COALESCE(transaction_date, DATE(created_at))
+     * — baris lama (sebelum kolom transaction_date ada) tetap ikut
+     * terfilter/terurut lewat tanggal dibuatnya, bukan hilang dari hasil
+     * pencarian (sama fallback tampilan dengan SavingsTransaction::
+     * transactionOn()).
+     */
+    private function filteredTransactions(array $filters): LengthAwarePaginator
+    {
+        return SavingsTransaction::query()
+            ->when($filters['q'], fn ($q, $search) => $q->where(
+                fn ($w) => $w
+                    ->whereHas('savingsAccount', fn ($sa) => $sa
+                        ->where('account_number', 'like', "%{$search}%")
+                        ->orWhereHas('member', fn ($m) => $m->where('name', 'like', "%{$search}%")))
+                    ->orWhere('description', 'like', "%{$search}%")
+            ))
+            ->when($filters['type'], fn ($q, $type) => $q->where('type', $type))
+            ->when($filters['date_from'], fn ($q, $date) => $q->whereRaw('COALESCE(transaction_date, DATE(created_at)) >= ?', [$date]))
+            ->when($filters['date_to'], fn ($q, $date) => $q->whereRaw('COALESCE(transaction_date, DATE(created_at)) <= ?', [$date]))
+            ->when($filters['status'] === 'aktif', fn ($q) => $q->whereNull('cancelled_at'))
+            ->when($filters['status'] === 'dibatalkan', fn ($q) => $q->whereNotNull('cancelled_at'))
+            ->with(['savingsAccount.member'])
+            ->orderByRaw('COALESCE(transaction_date, DATE(created_at)) DESC')
+            ->latest('id')
+            ->paginate(25)
+            ->withQueryString();
     }
 }

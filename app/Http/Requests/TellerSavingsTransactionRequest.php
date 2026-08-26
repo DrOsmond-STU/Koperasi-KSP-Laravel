@@ -26,6 +26,7 @@ class TellerSavingsTransactionRequest extends FormRequest
         return [
             'savings_account_id' => ['required', 'integer', Rule::exists('savings_accounts', 'id')],
             'type' => ['required', Rule::in(['setor', 'tarik'])],
+            'transaction_date' => ['required', 'date', 'before_or_equal:today'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'description' => ['nullable', 'string', 'max:255'],
         ];

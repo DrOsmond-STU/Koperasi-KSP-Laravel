@@ -16,6 +16,7 @@
 
     <div class="panel">
         <p>Rekening: <strong>{{ $account->account_number }}</strong> — {{ $account->member->name }}</p>
+        <p>Tanggal Transaksi: <strong>{{ \Illuminate\Support\Carbon::parse($transactionDate)->translatedFormat('d M Y') }}</strong></p>
 
         <table class="journal-table">
             <thead><tr><th>Akun</th><th>Debit</th><th>Kredit</th></tr></thead>
@@ -34,6 +35,7 @@
             @csrf
             <input type="hidden" name="savings_account_id" value="{{ $account->id }}">
             <input type="hidden" name="type" value="{{ $type }}">
+            <input type="hidden" name="transaction_date" value="{{ $transactionDate }}">
             <input type="hidden" name="amount" value="{{ $amount }}">
             <input type="hidden" name="description" value="{{ $description }}">
             <button type="submit" class="btn-primary">Konfirmasi &amp; Simpan</button>
