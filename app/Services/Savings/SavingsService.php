@@ -284,6 +284,45 @@ class SavingsService
     }
 
     /**
+     * Edit — laporan staf 26 Agu 2026: staf perlu bisa mengoreksi transaksi
+     * Setor/Tarik yang salah catat (tanggal/jenis/nominal/keterangan)
+     * langsung dari halaman Riwayat. Ledger append-only (JournalEngine,
+     * LED-06) — jadi ini BUKAN update-in-place, melainkan reverseTransaction()
+     * (membalik jurnal + saldo, menandai baris asli dibatalkan) diikuti
+     * deposit()/withdraw() BARU dengan nilai yang sudah dikoreksi, keduanya
+     * dalam SATU transaksi DB supaya atomik (baris asli TIDAK pernah
+     * ditandai dibatalkan kalau langkah kedua gagal, mis. saldo tidak
+     * cukup untuk Tarik yang baru). Rekening TIDAK bisa diganti lewat sini
+     * — kalau salah rekening, batalkan lewat reverseTransaction() lalu
+     * catat manual dari form biasa.
+     */
+    public function editTransaction(
+        SavingsTransaction $transaction,
+        string $newType,
+        float $newAmount,
+        ?string $newDescription,
+        \DateTimeInterface $newDate,
+        string $reason,
+        int $editedBy,
+    ): SavingsTransaction {
+        return DB::transaction(function () use ($transaction, $newType, $newAmount, $newDescription, $newDate, $reason, $editedBy) {
+            $accountId = $transaction->savings_account_id;
+
+            $this->reverseTransaction($transaction, $reason, $editedBy);
+
+            // Diambil ulang (bukan pakai relasi $transaction->savingsAccount
+            // yang sudah di-cache) supaya deposit()/withdraw() di bawah
+            // menghitung dari saldo TERBARU setelah reverseTransaction()
+            // di atas, bukan saldo sebelum dibalik.
+            $account = SavingsAccount::query()->lockForUpdate()->findOrFail($accountId);
+
+            return $newType === 'setor'
+                ? $this->deposit($account, $newAmount, $editedBy, $newDescription, null, $newDate)
+                : $this->withdraw($account, $newAmount, $editedBy, $newDescription, null, $newDate);
+        });
+    }
+
+    /**
      * Preview journal lines without persisting anything — used to render
      * the Journal Preview panel on the Teller form (DESIGN §Transaction Panel)
      * before the Teller confirms the transaction.

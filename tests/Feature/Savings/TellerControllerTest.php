@@ -523,4 +523,222 @@ class TellerControllerTest extends TestCase
 
         $this->assertTrue($tx->fresh()->isCancelled());
     }
+
+    /**
+     * Laporan staf 26 Agu 2026: "tambahkan edit di riwayat transaksi".
+     * Ledger append-only — edit() TIDAK mengubah baris asli, melainkan
+     * membatalkannya (jurnal dibalik) lalu mencatat baris baru dengan nilai
+     * terkoreksi. Di sini: setor 100.000 diedit jadi 150.000 pada tanggal
+     * yang sama — saldo akhir harus 150.000 (bukan 250.000).
+     */
+    public function test_creator_can_edit_own_transaction_which_cancels_the_original_and_records_a_corrected_one(): void
+    {
+        $teller = $this->teller();
+        $account = SavingsAccount::factory()->create(['balance' => 0]);
+        $this->actingAs($teller)->post(route('staf.teller.store'), [
+            'savings_account_id' => $account->id,
+            'type' => 'setor',
+            'transaction_date' => now()->subDays(2)->toDateString(),
+            'amount' => 100000,
+        ]);
+        $original = SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
+        $newDate = now()->subDay()->toDateString();
+
+        $response = $this->actingAs($teller)->put(route('staf.teller.update', $original), [
+            'type' => 'setor',
+            'transaction_date' => $newDate,
+            'amount' => 150000,
+            'description' => 'Koreksi nominal',
+            'reason' => 'Salah ketik nominal',
+        ]);
+
+        $response->assertRedirect(route('staf.teller.history'));
+        $this->assertEquals(150000, (float) $account->fresh()->balance);
+
+        $original->refresh();
+        $this->assertTrue($original->isCancelled());
+        $this->assertEquals('Salah ketik nominal', $original->cancellation_reason);
+        $this->assertNotNull($original->reversal_journal_entry_id);
+
+        $corrected = SavingsTransaction::query()->where('savings_account_id', $account->id)->where('id', '!=', $original->id)->firstOrFail();
+        $this->assertEquals('150000.00', $corrected->amount);
+        $this->assertEquals($newDate, $corrected->transaction_date->toDateString());
+        $this->assertEquals('Koreksi nominal', $corrected->description);
+        $this->assertFalse($corrected->isCancelled());
+    }
+
+    /** Edit yang mengganti Jenis (Setor -> Tarik) harus menghitung ulang saldo dari arah yang benar. */
+    public function test_editing_changes_type_from_setor_to_tarik_and_recomputes_balance(): void
+    {
+        $teller = $this->teller();
+        $account = SavingsAccount::factory()->create(['balance' => 500000]);
+        $this->actingAs($teller)->post(route('staf.teller.store'), [
+            'savings_account_id' => $account->id,
+            'type' => 'setor',
+            'transaction_date' => now()->toDateString(),
+            'amount' => 100000,
+        ]);
+        // Saldo sekarang 600.000.
+        $original = SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
+
+        $this->actingAs($teller)->put(route('staf.teller.update', $original), [
+            'type' => 'tarik',
+            'transaction_date' => now()->toDateString(),
+            'amount' => 100000,
+            'reason' => 'Ternyata ini penarikan, bukan setoran',
+        ])->assertRedirect(route('staf.teller.history'));
+
+        // Batalkan setor 100rb (600rb -> 500rb) lalu tarik 100rb (500rb -> 400rb).
+        $this->assertEquals(400000, (float) $account->fresh()->balance);
+    }
+
+    public function test_other_teller_cannot_edit_someone_elses_transaction(): void
+    {
+        $creator = $this->teller();
+        $otherTeller = $this->teller();
+        $account = SavingsAccount::factory()->create(['balance' => 0]);
+        $this->actingAs($creator)->post(route('staf.teller.store'), [
+            'savings_account_id' => $account->id,
+            'type' => 'setor',
+            'transaction_date' => now()->toDateString(),
+            'amount' => 100000,
+        ]);
+        $tx = SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
+
+        $this->actingAs($otherTeller)->get(route('staf.teller.edit', $tx))->assertForbidden();
+        $this->actingAs($otherTeller)->put(route('staf.teller.update', $tx), [
+            'type' => 'setor',
+            'transaction_date' => now()->toDateString(),
+            'amount' => 999999,
+            'reason' => 'Coba edit punya orang lain',
+        ])->assertForbidden();
+
+        $this->assertFalse($tx->fresh()->isCancelled());
+        $this->assertEquals(100000, (float) $account->fresh()->balance);
+    }
+
+    public function test_manajer_can_edit_another_tellers_transaction(): void
+    {
+        $creator = $this->teller();
+        $manajer = User::factory()->create(['two_factor_confirmed_at' => now()]);
+        $manajer->assignRole('manajer');
+        UserBranchScope::query()->create(['user_id' => $manajer->id, 'scope_type' => 'all']);
+
+        $account = SavingsAccount::factory()->create(['balance' => 0]);
+        $this->actingAs($creator)->post(route('staf.teller.store'), [
+            'savings_account_id' => $account->id,
+            'type' => 'setor',
+            'transaction_date' => now()->toDateString(),
+            'amount' => 50000,
+        ]);
+        $tx = SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
+
+        $this->actingAs($manajer)->put(route('staf.teller.update', $tx), [
+            'type' => 'setor',
+            'transaction_date' => now()->toDateString(),
+            'amount' => 75000,
+            'reason' => 'Koreksi oleh manajer',
+        ])->assertRedirect(route('staf.teller.history'));
+
+        $this->assertEquals(75000, (float) $account->fresh()->balance);
+    }
+
+    public function test_cannot_edit_an_already_cancelled_transaction(): void
+    {
+        $teller = $this->teller();
+        $account = SavingsAccount::factory()->create(['balance' => 0]);
+        $this->actingAs($teller)->post(route('staf.teller.store'), [
+            'savings_account_id' => $account->id,
+            'type' => 'setor',
+            'transaction_date' => now()->toDateString(),
+            'amount' => 60000,
+        ]);
+        $tx = SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
+        $this->actingAs($teller)->post(route('staf.teller.cancel', $tx), ['reason' => 'Batal duluan']);
+
+        $this->actingAs($teller)->get(route('staf.teller.edit', $tx))->assertStatus(422);
+
+        $response = $this->actingAs($teller)->put(route('staf.teller.update', $tx), [
+            'type' => 'setor',
+            'transaction_date' => now()->toDateString(),
+            'amount' => 60000,
+            'reason' => 'Coba edit yang sudah batal',
+        ]);
+        $response->assertRedirect(route('staf.teller.history'));
+        $response->assertSessionHas('error');
+    }
+
+    public function test_edit_requires_a_reason(): void
+    {
+        $teller = $this->teller();
+        $account = SavingsAccount::factory()->create(['balance' => 0]);
+        $this->actingAs($teller)->post(route('staf.teller.store'), [
+            'savings_account_id' => $account->id,
+            'type' => 'setor',
+            'transaction_date' => now()->toDateString(),
+            'amount' => 60000,
+        ]);
+        $tx = SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
+
+        $this->actingAs($teller)->put(route('staf.teller.update', $tx), [
+            'type' => 'setor',
+            'transaction_date' => now()->toDateString(),
+            'amount' => 60000,
+        ])->assertSessionHasErrors('reason');
+
+        $this->assertFalse($tx->fresh()->isCancelled());
+    }
+
+    /**
+     * Atomisitas: kalau langkah kedua (mencatat baris baru) gagal karena
+     * saldo tidak cukup, langkah pertama (membatalkan baris asli) HARUS
+     * ikut batal juga — baris asli tetap utuh, bukan "sudah dibatalkan tapi
+     * gagal digantikan".
+     */
+    public function test_edit_that_would_overdraw_the_account_is_rejected_and_the_original_stays_intact(): void
+    {
+        $teller = $this->teller();
+        $account = SavingsAccount::factory()->create(['balance' => 0]);
+        $this->actingAs($teller)->post(route('staf.teller.store'), [
+            'savings_account_id' => $account->id,
+            'type' => 'setor',
+            'transaction_date' => now()->toDateString(),
+            'amount' => 50000,
+        ]);
+        // Saldo sekarang 50.000.
+        $tx = SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
+
+        $response = $this->actingAs($teller)->put(route('staf.teller.update', $tx), [
+            'type' => 'tarik',
+            'transaction_date' => now()->toDateString(),
+            'amount' => 999999,
+            'reason' => 'Coba ubah jadi tarikan besar',
+        ]);
+
+        $response->assertSessionHasErrors('amount');
+        $this->assertFalse($tx->fresh()->isCancelled());
+        $this->assertEquals(50000, (float) $account->fresh()->balance);
+        $this->assertSame(1, SavingsTransaction::query()->where('savings_account_id', $account->id)->count());
+    }
+
+    public function test_edit_form_is_prefilled_with_the_current_transaction_values(): void
+    {
+        $teller = $this->teller();
+        $account = SavingsAccount::factory()->create(['balance' => 0]);
+        $this->actingAs($teller)->post(route('staf.teller.store'), [
+            'savings_account_id' => $account->id,
+            'type' => 'setor',
+            'transaction_date' => now()->subDays(5)->toDateString(),
+            'amount' => 80000,
+            'description' => 'Setoran rutin',
+        ]);
+        $tx = SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
+
+        $response = $this->actingAs($teller)->get(route('staf.teller.edit', $tx));
+
+        $response->assertOk();
+        $response->assertSee('value="80000.00"', false);
+        $response->assertSee('Setoran rutin', false);
+        $response->assertSee($account->account_number);
+    }
 }

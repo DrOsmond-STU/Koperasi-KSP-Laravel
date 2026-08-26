@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers\Staf;
 
+use App\Exceptions\Savings\InsufficientBalanceException;
+use App\Exceptions\Savings\TransactionAlreadyCancelledException;
 use App\Http\Controllers\Concerns\GeneratesPrintPdf;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CancelSavingsTransactionRequest;
 use App\Http\Requests\DecideSavingsWithdrawalRequest;
+use App\Http\Requests\EditSavingsTransactionRequest;
 use App\Http\Requests\OpenSavingsAccountRequest;
 use App\Http\Requests\TellerSavingsTransactionRequest;
 use App\Models\Member;
@@ -105,6 +108,49 @@ class TellerController extends Controller
         return redirect()
             ->route('staf.teller.create')
             ->with('status', "Transaksi {$transaction->id} berhasil dibatalkan.");
+    }
+
+    /**
+     * Form Edit — laporan staf 26 Agu 2026: koreksi transaksi Setor/Tarik
+     * yang salah catat langsung dari halaman Riwayat. Ledger append-only —
+     * lihat SavingsService::editTransaction().
+     */
+    public function editForm(SavingsTransaction $transaction): View
+    {
+        abort_unless($transaction->canBeCancelledBy(request()->user()), 403, 'Anda hanya bisa mengedit transaksi yang Anda buat sendiri.');
+        abort_if($transaction->isCancelled(), 422, 'Transaksi yang sudah dibatalkan tidak bisa diedit.');
+
+        return view('staf.teller-edit', [
+            'transaction' => $transaction->load('savingsAccount.member'),
+        ]);
+    }
+
+    public function update(EditSavingsTransactionRequest $request, SavingsTransaction $transaction): RedirectResponse
+    {
+        abort_unless($transaction->canBeCancelledBy($request->user()), 403, 'Anda hanya bisa mengedit transaksi yang Anda buat sendiri.');
+
+        try {
+            $this->savings->editTransaction(
+                $transaction,
+                $request->validated('type'),
+                (float) $request->validated('amount'),
+                $request->validated('description'),
+                Carbon::parse($request->validated('transaction_date')),
+                $request->validated('reason'),
+                $request->user()->id,
+            );
+        } catch (TransactionAlreadyCancelledException $exception) {
+            // Bukan balik ke form edit (editForm() akan 422 kalau transaksi
+            // ini sudah dibatalkan duluan, mis. dua tab dibuka bersamaan) —
+            // langsung ke Riwayat supaya pesannya kebaca.
+            return redirect()->route('staf.teller.history')->with('error', $exception->getMessage());
+        } catch (InsufficientBalanceException $exception) {
+            return back()->withErrors(['amount' => $exception->getMessage()])->withInput();
+        }
+
+        return redirect()
+            ->route('staf.teller.history')
+            ->with('status', "Transaksi {$transaction->id} berhasil diedit.");
     }
 
     /**

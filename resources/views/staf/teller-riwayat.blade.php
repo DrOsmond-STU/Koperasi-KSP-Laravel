@@ -118,6 +118,8 @@
                                 <p style="font-size:11px; color:var(--muted); margin: 2px 0 0;">Dibatalkan: {{ $trx->cancellation_reason }}</p>
                             @elseif ($trx->canBeCancelledBy(auth()->user()))
                                 <br>
+                                <a href="{{ route('staf.teller.edit', $trx) }}" style="font-size:11px;">Edit</a>
+                                &nbsp;·&nbsp;
                                 <button type="button" class="btn-cancel-toggle" data-toggle-cancel="{{ $trx->id }}">Batalkan</button>
                                 <form method="POST" action="{{ route('staf.teller.cancel', $trx) }}" class="cancel-form" id="cancel-form-{{ $trx->id }}">
                                     @csrf

@@ -342,6 +342,10 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('staf.teller.store');
     Route::post('/staf/teller/{transaction}/batalkan', [TellerController::class, 'cancel'])
         ->name('staf.teller.cancel');
+    Route::get('/staf/teller/{transaction}/edit', [TellerController::class, 'editForm'])
+        ->name('staf.teller.edit');
+    Route::put('/staf/teller/{transaction}', [TellerController::class, 'update'])
+        ->name('staf.teller.update');
     Route::get('/staf/teller/riwayat', [TellerController::class, 'history'])
         ->name('staf.teller.history');
     Route::post('/staf/teller/penarikan/{withdrawalRequest}/keputusan', [TellerController::class, 'decideWithdrawal'])
