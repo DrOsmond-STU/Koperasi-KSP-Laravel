@@ -67,6 +67,37 @@ class RetributionReportServiceTest extends TestCase
         $this->assertEquals(40000.0, $row["retribusi_line_{$this->kam->id}"]);
     }
 
+    public function test_retribusi_upf_report_excludes_cancelled_transactions(): void
+    {
+        // Transaksi yang dibatalkan sudah tercermin di jurnal pembalik dan
+        // tidak lagi jadi pendapatan — kalau masih ikut terhitung di sini,
+        // nilainya selisih dengan Rekap Pendapatan UPF (yang sudah
+        // mengecualikan cancelled_at sejak awal).
+        $this->recordSampleTransaction();
+
+        $branch = Branch::factory()->create();
+        $user = User::factory()->create();
+        $cancelled = app(RetributionService::class)->record(
+            branchId: $branch->id,
+            payerType: 'umum',
+            payerName: 'Pak Budi',
+            member: null,
+            totalAmount: 50000,
+            paymentMethod: 'tunai',
+            createdBy: $user->id,
+        );
+        app(RetributionService::class)->reverseTransaction($cancelled, 'salah input', $user->id);
+
+        $rows = app(RetributionReportService::class)->retribusiUpf([
+            'branch_id' => null,
+            'period_start' => now()->subDay()->toDateString(),
+            'period_end' => now()->addDay()->toDateString(),
+        ]);
+
+        $this->assertCount(1, $rows);
+        $this->assertEquals('Ibu Sari', $rows->first()['payer_name']);
+    }
+
     public function test_generate_via_report_builder_service_accepts_static_columns(): void
     {
         $this->recordSampleTransaction();

@@ -25,6 +25,10 @@ class RetributionReportService
 
         $transactions = RetributionTransaction::query()
             ->with(['lines', 'branch', 'creator', 'member'])
+            // Transaksi yang dibatalkan sudah tercermin di jurnal pembalik dan
+            // tidak lagi jadi pendapatan — dikeluarkan dari laporan supaya
+            // nilainya konsisten dengan Rekap Pendapatan UPF.
+            ->whereNull('cancelled_at')
             ->when($filters['branch_id'] ?? null, fn ($q, $branchId) => $q->where('branch_id', $branchId))
             ->when($filters['period_start'] ?? null, fn ($q, $date) => $q->where('transaction_date', '>=', $date))
             ->when($filters['period_end'] ?? null, fn ($q, $date) => $q->where('transaction_date', '<=', $date))
