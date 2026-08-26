@@ -35,6 +35,14 @@
             <form method="POST" action="{{ route('staf.angsuran.preview') }}">
                 @csrf
                 <div class="field">
+                    <label>Tanggal Bayar</label>
+                    <input type="date" name="paid_at" value="{{ old('paid_at', now()->toDateString()) }}" max="{{ now()->toDateString() }}" required>
+                    <p style="color: var(--muted); font-size: 11px; margin: 6px 0 0;">
+                        Ganti tanggal ini kalau sedang menyusulkan angsuran lama yang belum sempat dicatat —
+                        jangan biarkan bertanggal hari ini kalau pembayarannya terjadi di hari lain.
+                    </p>
+                </div>
+                <div class="field">
                     <label>Pinjaman</label>
                     <select name="loan_id" required class="js-searchable">
                         <option value="">— Pilih Pinjaman —</option>
@@ -75,14 +83,6 @@
                     Jasa terisi otomatis (tarif NORMAL dari produk pinjaman, tidak mengejar tunggakan) begitu Pinjaman dipilih; Pokok = Nominal Bayar − Jasa − Denda,
                     dihitung ulang tiap Nominal Bayar/Jasa/Denda diubah. Ketiganya tetap bisa diedit manual sebelum disimpan.
                 </p>
-                <div class="field">
-                    <label>Tanggal Bayar</label>
-                    <input type="date" name="paid_at" value="{{ old('paid_at', now()->toDateString()) }}" max="{{ now()->toDateString() }}" required>
-                    <p style="color: var(--muted); font-size: 11px; margin: 6px 0 0;">
-                        Ganti tanggal ini kalau sedang menyusulkan angsuran lama yang belum sempat dicatat —
-                        jangan biarkan bertanggal hari ini kalau pembayarannya terjadi di hari lain.
-                    </p>
-                </div>
                 <div class="field">
                     <label>Akun Kas Penerima</label>
                     <select name="cash_account_id" required>
