@@ -353,6 +353,14 @@ class LoanRepaymentService
             $loan, $product, $principalPortion, $interestPortion, $penaltyPortion, $totalAmount,
             $scheduleConsumption, $createdBy, $description, $idempotencyKey, $plan, $entryDate, $cashAccountId,
         ) {
+            // Direkam apa adanya (bukan cuma dipakai lalu dibuang) — ini
+            // satu-satunya jejak "baris jadwal mana disentuh berapa" milik
+            // pembayaran INI, dipakai reverseRepayment() supaya pembatalan
+            // bisa mengembalikan paid_principal_amount/paid_interest_amount
+            // TEPAT ke sebelum pembayaran ini, terlepas dari urutan
+            // pembatalan (laporan staf 26 Agu 2026).
+            $scheduleAllocations = [];
+
             foreach ($plan['allocations'] as $allocation) {
                 $schedule = LoanSchedule::query()->lockForUpdate()->findOrFail($allocation['schedule_id']);
 
@@ -366,6 +374,12 @@ class LoanRepaymentService
                     'paid_amount' => $newPaidAmount,
                     'status' => $newPaidAmount >= (float) $schedule->total_amount ? 'lunas' : 'sebagian',
                 ]);
+
+                $scheduleAllocations[] = [
+                    'schedule_id' => $schedule->id,
+                    'principal_share' => $allocation['principal_share'],
+                    'interest_share' => $allocation['interest_share'],
+                ];
             }
 
             $lines = [
@@ -391,6 +405,7 @@ class LoanRepaymentService
                 'principal_portion' => $principalPortion,
                 'interest_portion' => $interestPortion,
                 'penalty_portion' => $penaltyPortion,
+                'schedule_allocations' => $scheduleAllocations,
                 'balance_after' => round($plan['outstanding_before'] - $scheduleConsumption, 2),
                 'paid_at' => $entryDate->format('Y-m-d'),
                 'created_by' => $createdBy,
@@ -411,6 +426,81 @@ class LoanRepaymentService
 
             if (! $loan->schedules()->where('status', '!=', 'lunas')->exists()) {
                 $loan->update(['status' => 'lunas']);
+            }
+
+            return $repayment->fresh();
+        });
+    }
+
+    /**
+     * Pembatalan (void) angsuran yang sudah dicatat — laporan staf 26 Agu
+     * 2026: "kalau ada edit atau delete angsuran, jurnal COA harus di-
+     * update juga". Baris `loan_repayments` asli TIDAK PERNAH diubah/
+     * dihapus, hanya ditandai dibatalkan (sama filosofi dengan
+     * SavingsService::reverseTransaction()/RetributionService::
+     * reverseTransaction() — JournalEngine append-only, LED-06). Untuk
+     * MENGEDIT angsuran yang salah: batalkan dulu lewat method ini, lalu
+     * catat ulang lewat recordManualPayment() (form Catat Angsuran biasa)
+     * dengan angka yang benar — bukan mengubah baris yang sudah diposting.
+     *
+     * Membalik DUA hal:
+     *  1. Jurnal — via JournalEngine::reverse() (debit/kredit ditukar,
+     *     entry asli tidak disentuh, reversal_of_entry_id tertaut).
+     *  2. loan_schedules — paid_principal_amount/paid_interest_amount/
+     *     paid_amount dikurangi PERSIS sebesar schedule_allocations yang
+     *     direkam recordManualPayment() (lihat kolom itu), status baris
+     *     dihitung ulang (bisa turun dari 'lunas'/'sebagian' balik ke
+     *     'belum_bayar'). Kalau Loan sempat ditandai 'lunas' gara-gara
+     *     angsuran ini, dibuka lagi jadi 'dicairkan' — aman dilakukan
+     *     tanpa syarat tambahan: begitu SEMUA baris jadwal lunas,
+     *     recordManualPayment() menolak pembayaran susulan apa pun
+     *     (overpayment guard), jadi 'lunas' hanya bisa dipicu oleh SATU
+     *     angsuran — membatalkan angsuran lain yang lebih tua sekalipun
+     *     pasti membuka kembali minimal satu baris jadwal.
+     */
+    public function reverseRepayment(LoanRepayment $repayment, string $reason, int $cancelledBy): LoanRepayment
+    {
+        if ($repayment->isCancelled()) {
+            throw LoanRepaymentException::alreadyCancelled();
+        }
+
+        return DB::transaction(function () use ($repayment, $reason, $cancelledBy) {
+            $loan = $repayment->loan;
+
+            foreach ((array) $repayment->schedule_allocations as $allocation) {
+                $schedule = LoanSchedule::query()->lockForUpdate()->find($allocation['schedule_id']);
+
+                if ($schedule === null) {
+                    continue;
+                }
+
+                $newPaidPrincipal = round((float) $schedule->paid_principal_amount - (float) $allocation['principal_share'], 2);
+                $newPaidInterest = round((float) $schedule->paid_interest_amount - (float) $allocation['interest_share'], 2);
+                $newPaidAmount = round($newPaidPrincipal + $newPaidInterest, 2);
+
+                $schedule->update([
+                    'paid_principal_amount' => max(0.0, $newPaidPrincipal),
+                    'paid_interest_amount' => max(0.0, $newPaidInterest),
+                    'paid_amount' => max(0.0, $newPaidAmount),
+                    'status' => match (true) {
+                        $newPaidAmount <= 0 => 'belum_bayar',
+                        $newPaidAmount >= (float) $schedule->total_amount => 'lunas',
+                        default => 'sebagian',
+                    },
+                ]);
+            }
+
+            $reversalEntry = $this->journalEngine->reverse($repayment->journalEntry, $reason, $cancelledBy);
+
+            $repayment->update([
+                'cancelled_at' => now(),
+                'cancelled_by' => $cancelledBy,
+                'cancellation_reason' => $reason,
+                'reversal_journal_entry_id' => $reversalEntry->id,
+            ]);
+
+            if ($loan->status === 'lunas' && $loan->schedules()->where('status', '!=', 'lunas')->exists()) {
+                $loan->update(['status' => 'dicairkan']);
             }
 
             return $repayment->fresh();

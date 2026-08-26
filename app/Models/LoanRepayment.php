@@ -3,9 +3,11 @@
 namespace App\Models;
 
 use App\Models\Concerns\Auditable;
+use App\Models\Concerns\AuthorizesOwner;
 use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * One payment EVENT against a loan — written only by LoanRepaymentService.
@@ -15,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class LoanRepayment extends Model
 {
-    use Auditable, BelongsToBranch;
+    use Auditable, AuthorizesOwner, BelongsToBranch;
 
     protected $fillable = [
         'branch_id',
@@ -24,6 +26,7 @@ class LoanRepayment extends Model
         'principal_portion',
         'interest_portion',
         'penalty_portion',
+        'schedule_allocations',
         'balance_after',
         'paid_at',
         'migrated_at',
@@ -43,6 +46,7 @@ class LoanRepayment extends Model
             'principal_portion' => 'decimal:2',
             'interest_portion' => 'decimal:2',
             'penalty_portion' => 'decimal:2',
+            'schedule_allocations' => 'array',
             'balance_after' => 'decimal:2',
             'paid_at' => 'date',
             'migrated_at' => 'datetime',
@@ -60,7 +64,7 @@ class LoanRepayment extends Model
      * created_at untuk baris lama (sebelum kolom ini ada) yang tidak punya
      * tanggal asli lagi.
      */
-    public function paidOn(): \Illuminate\Support\Carbon
+    public function paidOn(): Carbon
     {
         return $this->paid_at ?? $this->created_at;
     }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Staf;
 
 use App\Exceptions\Loans\LoanRepaymentException;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\CancelLoanRepaymentRequest;
 use App\Http\Requests\StafLoanRepaymentRequest;
 use App\Models\ChartOfAccount;
 use App\Models\Loan;
@@ -143,5 +144,26 @@ class LoanRepaymentController extends Controller
         return redirect()
             ->route('staf.angsuran.create')
             ->with('status', "Angsuran {$loan->loan_number} Rp ".number_format($repayment->amount, 0, ',', '.').' berhasil dicatat.');
+    }
+
+    /**
+     * Batalkan angsuran yang salah catat — lihat LoanRepaymentService::
+     * reverseRepayment() untuk apa yang dibalik (jurnal + loan_schedules).
+     * Untuk MENGEDIT: batalkan dulu lewat sini, lalu catat ulang lewat
+     * form Catat Angsuran biasa dengan angka yang benar.
+     */
+    public function cancel(CancelLoanRepaymentRequest $request, LoanRepayment $repayment): RedirectResponse
+    {
+        abort_unless($repayment->canBeCancelledBy($request->user()), 403, 'Anda hanya bisa membatalkan angsuran yang Anda catat sendiri.');
+
+        try {
+            $this->repayments->reverseRepayment($repayment, $request->validated('reason'), $request->user()->id);
+        } catch (LoanRepaymentException $exception) {
+            return back()->with('error', $exception->getMessage());
+        }
+
+        return redirect()
+            ->route('staf.angsuran.create')
+            ->with('status', "Angsuran {$repayment->loan->loan_number} Rp ".number_format($repayment->amount, 0, ',', '.').' berhasil dibatalkan.');
     }
 }

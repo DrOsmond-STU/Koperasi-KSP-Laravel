@@ -25,4 +25,9 @@ class LoanRepaymentException extends RuntimeException
     {
         return new self('Produk pinjaman ini belum punya akun Piutang Denda — atur dulu di menu Master Produk Pinjaman sebelum mencatat Denda.');
     }
+
+    public static function alreadyCancelled(): self
+    {
+        return new self('Angsuran ini sudah dibatalkan sebelumnya.');
+    }
 }

@@ -4,8 +4,10 @@ namespace Tests\Feature\Loans;
 
 use App\Models\Branch;
 use App\Models\ChartOfAccount;
+use App\Models\JournalEntry;
 use App\Models\Loan;
 use App\Models\LoanProduct;
+use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
 use App\Models\User;
 use App\Models\UserBranchScope;
@@ -429,5 +431,187 @@ class StafLoanRepaymentTest extends TestCase
 
         $response->assertSessionHasErrors('principal_portion');
         $this->assertDatabaseCount('loan_repayments', 0);
+    }
+
+    /**
+     * Laporan staf 26 Agu 2026: "kalau ada edit atau delete angsuran,
+     * jurnal COA harus di-update juga". Membatalkan angsuran HARUS
+     * membalik jurnal (baris asli tidak diubah, dibalik lewat entry baru —
+     * LED-06) DAN mengembalikan loan_schedules ke sebelum pembayaran itu.
+     * "Edit" = batalkan lewat sini lalu catat ulang lewat store() biasa.
+     */
+    public function test_creator_can_cancel_their_own_repayment_reversing_the_journal_and_schedule(): void
+    {
+        $user = $this->petugasKredit();
+        $loan = $this->disbursedLoanWithThreeInstallments();
+
+        $this->actingAs($user)->post(route('staf.angsuran.store'), [
+            'loan_id' => $loan->id,
+            'principal_portion' => 1000000,
+            'interest_portion' => 100000,
+            'penalty_portion' => 0,
+            'cash_account_id' => $this->cashAccountId(),
+        ]);
+
+        $repayment = LoanRepayment::query()->where('loan_id', $loan->id)->firstOrFail();
+        $originalEntryId = $repayment->journal_entry_id;
+
+        $response = $this->actingAs($user)->post(route('staf.angsuran.cancel', $repayment), [
+            'reason' => 'Salah input nominal',
+        ]);
+
+        $response->assertRedirect(route('staf.angsuran.create'));
+        $this->assertDatabaseHas('loan_repayments', [
+            'id' => $repayment->id,
+            'cancellation_reason' => 'Salah input nominal',
+        ]);
+        $repayment->refresh();
+        $this->assertTrue($repayment->isCancelled());
+        $this->assertNotNull($repayment->reversal_journal_entry_id);
+
+        // Jurnal pembalik menukar debit/kredit baris aslinya (kas yang
+        // tadinya didebit 1.100.000, sekarang dikredit sejumlah sama).
+        $this->assertDatabaseHas('journal_lines', [
+            'journal_entry_id' => $repayment->reversal_journal_entry_id,
+            'chart_of_account_id' => $this->cashAccountId(),
+            'credit' => '1100000.00',
+        ]);
+        $this->assertDatabaseHas('journal_entries', [
+            'id' => $repayment->reversal_journal_entry_id,
+            'reversal_of_entry_id' => $originalEntryId,
+        ]);
+
+        // loan_schedules baris 1 kembali ke sebelum pembayaran.
+        $this->assertDatabaseHas('loan_schedules', [
+            'loan_id' => $loan->id,
+            'installment_number' => 1,
+            'paid_principal_amount' => '0.00',
+            'paid_interest_amount' => '0.00',
+            'paid_amount' => '0.00',
+            'status' => 'belum_bayar',
+        ]);
+    }
+
+    public function test_manajer_can_cancel_a_repayment_created_by_someone_else(): void
+    {
+        $creator = $this->petugasKredit();
+        $manajer = User::factory()->create(['two_factor_confirmed_at' => now()]);
+        $manajer->assignRole('manajer');
+        UserBranchScope::query()->create(['user_id' => $manajer->id, 'scope_type' => 'all']);
+
+        $loan = $this->disbursedLoanWithThreeInstallments();
+        $this->actingAs($creator)->post(route('staf.angsuran.store'), [
+            'loan_id' => $loan->id,
+            'principal_portion' => 1000000,
+            'interest_portion' => 100000,
+            'penalty_portion' => 0,
+            'cash_account_id' => $this->cashAccountId(),
+        ]);
+        $repayment = LoanRepayment::query()->where('loan_id', $loan->id)->firstOrFail();
+
+        $response = $this->actingAs($manajer)->post(route('staf.angsuran.cancel', $repayment), [
+            'reason' => 'Koreksi oleh manajer',
+        ]);
+
+        $response->assertRedirect(route('staf.angsuran.create'));
+        $this->assertTrue($repayment->fresh()->isCancelled());
+    }
+
+    public function test_role_without_angsuran_delete_permission_cannot_cancel(): void
+    {
+        $creator = $this->petugasKredit();
+        $loan = $this->disbursedLoanWithThreeInstallments();
+        $this->actingAs($creator)->post(route('staf.angsuran.store'), [
+            'loan_id' => $loan->id,
+            'principal_portion' => 1000000,
+            'interest_portion' => 100000,
+            'penalty_portion' => 0,
+            'cash_account_id' => $this->cashAccountId(),
+        ]);
+        $repayment = LoanRepayment::query()->where('loan_id', $loan->id)->firstOrFail();
+
+        $bendahara = $this->bendahara();
+
+        $this->actingAs($bendahara)->post(route('staf.angsuran.cancel', $repayment), [
+            'reason' => 'Coba batalkan',
+        ])->assertForbidden();
+
+        $this->assertFalse($repayment->fresh()->isCancelled());
+    }
+
+    /** "User tidak bisa mengubah/menghapus data user lain" — AuthorizesOwner. */
+    public function test_a_different_petugas_kredit_who_did_not_create_it_cannot_cancel_it(): void
+    {
+        $creator = $this->petugasKredit();
+        $loan = $this->disbursedLoanWithThreeInstallments();
+        $this->actingAs($creator)->post(route('staf.angsuran.store'), [
+            'loan_id' => $loan->id,
+            'principal_portion' => 1000000,
+            'interest_portion' => 100000,
+            'penalty_portion' => 0,
+            'cash_account_id' => $this->cashAccountId(),
+        ]);
+        $repayment = LoanRepayment::query()->where('loan_id', $loan->id)->firstOrFail();
+
+        $otherPetugasKredit = $this->petugasKredit();
+
+        $this->actingAs($otherPetugasKredit)->post(route('staf.angsuran.cancel', $repayment), [
+            'reason' => 'Bukan punya saya',
+        ])->assertForbidden();
+
+        $this->assertFalse($repayment->fresh()->isCancelled());
+    }
+
+    public function test_cancelling_an_already_cancelled_repayment_is_rejected_with_a_friendly_error(): void
+    {
+        $user = $this->petugasKredit();
+        $loan = $this->disbursedLoanWithThreeInstallments();
+        $this->actingAs($user)->post(route('staf.angsuran.store'), [
+            'loan_id' => $loan->id,
+            'principal_portion' => 1000000,
+            'interest_portion' => 100000,
+            'penalty_portion' => 0,
+            'cash_account_id' => $this->cashAccountId(),
+        ]);
+        $repayment = LoanRepayment::query()->where('loan_id', $loan->id)->firstOrFail();
+        $this->actingAs($user)->post(route('staf.angsuran.cancel', $repayment), ['reason' => 'Pertama']);
+
+        $response = $this->actingAs($user)->post(route('staf.angsuran.cancel', $repayment), ['reason' => 'Kedua']);
+
+        $response->assertSessionHas('error');
+        // Cuma satu jurnal pembalik — percobaan kedua tidak menambah lagi.
+        $this->assertSame(2, JournalEntry::query()->count());
+    }
+
+    /**
+     * previewAllocation()/recordManualPayment() menolak pembayaran susulan
+     * begitu SEMUA baris jadwal lunas (overpayment guard) — jadi status
+     * 'lunas' cuma bisa dipicu oleh SATU angsuran, dan reverseRepayment()
+     * aman membuka kembali ke 'dicairkan' tanpa syarat tambahan.
+     */
+    public function test_cancelling_the_repayment_that_completed_the_loan_reopens_it_to_dicairkan(): void
+    {
+        $user = $this->petugasKredit();
+        $product = LoanProduct::factory()->create();
+        $loan = Loan::factory()->create(['loan_product_id' => $product->id, 'status' => 'dicairkan', 'principal_amount' => 1000000]);
+        LoanSchedule::query()->create([
+            'loan_id' => $loan->id, 'installment_number' => 1, 'due_date' => now(),
+            'principal_amount' => 1000000, 'interest_amount' => 100000, 'total_amount' => 1100000,
+            'paid_amount' => 0, 'status' => 'belum_bayar',
+        ]);
+
+        $this->actingAs($user)->post(route('staf.angsuran.store'), [
+            'loan_id' => $loan->id,
+            'principal_portion' => 1000000,
+            'interest_portion' => 100000,
+            'penalty_portion' => 0,
+            'cash_account_id' => $this->cashAccountId(),
+        ]);
+        $this->assertSame('lunas', $loan->fresh()->status);
+        $repayment = LoanRepayment::query()->where('loan_id', $loan->id)->firstOrFail();
+
+        $this->actingAs($user)->post(route('staf.angsuran.cancel', $repayment), ['reason' => 'Salah catat, pinjaman belum lunas']);
+
+        $this->assertSame('dicairkan', $loan->fresh()->status);
     }
 }

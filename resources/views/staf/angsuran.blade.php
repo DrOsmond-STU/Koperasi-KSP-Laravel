@@ -11,9 +11,15 @@
         .field input, .field select { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; }
         .btn-primary { padding: 10px 18px; background: var(--pine); color: #fff; border: none; border-radius: 9px; font-weight: 700; cursor: pointer; }
         .status-msg { color: var(--ok); font-size: 13px; margin-bottom: 14px; }
+        .error-msg { color: var(--brick); font-size: 13px; margin-bottom: 14px; }
         .error-text { color: var(--brick); font-size: 12px; margin-bottom: 12px; }
         .feed-item { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
         .feed-item-row { display: flex; justify-content: space-between; align-items: center; }
+        .btn-cancel-toggle { background: transparent; border: none; color: var(--brick); font-size: 11px; font-weight: 600; cursor: pointer; padding: 0; text-decoration: underline; }
+        .cancel-form { display: none; margin-top: 8px; gap: 8px; }
+        .cancel-form.open { display: flex; }
+        .cancel-form input[type="text"] { flex: 1; padding: 6px 10px; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; }
+        .cancel-form button { padding: 6px 12px; background: var(--brick); color: #fff; border: none; border-radius: 7px; font-size: 12px; cursor: pointer; }
         @media (max-width: 980px) { .angsuran-grid { grid-template-columns: 1fr; } }
     </style>
 
@@ -22,6 +28,9 @@
 
     @if (session('status'))
         <p class="status-msg">{{ session('status') }}</p>
+    @endif
+    @if (session('error'))
+        <p class="error-msg">{{ session('error') }}</p>
     @endif
     @if ($errors->any())
         <div class="error-text">
@@ -109,10 +118,22 @@
             @forelse ($recentRepayments as $repayment)
                 <div class="feed-item">
                     <div class="feed-item-row">
-                        <span>{{ $repayment->loan->member->name }} — {{ $repayment->loan->loan_number }}</span>
+                        <span @if ($repayment->isCancelled()) style="text-decoration:line-through; color:var(--muted);" @endif>
+                            {{ $repayment->loan->member->name }} — {{ $repayment->loan->loan_number }}
+                        </span>
                         <span>Rp {{ number_format($repayment->amount, 0, ',', '.') }}</span>
                     </div>
                     <a href="{{ route('admin.print.loan-repayment.show', $repayment) }}" target="_blank" style="font-size:11px;">Cetak Bukti</a>
+                    @if ($repayment->isCancelled())
+                        <p style="font-size:11px; color:var(--muted); margin: 2px 0 0;">Dibatalkan: {{ $repayment->cancellation_reason }}</p>
+                    @elseif ($repayment->canBeCancelledBy(auth()->user()))
+                        <button type="button" class="btn-cancel-toggle" data-toggle-cancel="{{ $repayment->id }}">Batalkan</button>
+                        <form method="POST" action="{{ route('staf.angsuran.cancel', $repayment) }}" class="cancel-form" id="cancel-form-{{ $repayment->id }}">
+                            @csrf
+                            <input type="text" name="reason" placeholder="Alasan pembatalan" required>
+                            <button type="submit">Konfirmasi</button>
+                        </form>
+                    @endif
                 </div>
             @empty
                 <p style="color: var(--muted); font-size: 13px;">Belum ada angsuran dicatat hari ini.</p>
@@ -178,5 +199,12 @@
                 applyNormalDefaults();
             }
         })();
+
+        document.querySelectorAll('[data-toggle-cancel]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var form = document.getElementById('cancel-form-' + btn.dataset.toggleCancel);
+                form.classList.toggle('open');
+            });
+        });
     </script>
 @endsection
