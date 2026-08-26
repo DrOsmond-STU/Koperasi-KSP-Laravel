@@ -4,9 +4,12 @@
 
 @section('print-content')
     <h2 style="font-size:13pt; margin:0 0 2px; text-align:center;">LAPORAN HARIAN RETRIBUSI UPF</h2>
-    <p style="font-size:9pt; color:#5C6E64; margin:0 0 16px; text-align:center;">
+    <p style="font-size:9pt; color:#5C6E64; margin:0 0 4px; text-align:center;">
         {{ \Illuminate\Support\Carbon::parse($date)->translatedFormat('d M Y') }}
         @if ($branch) — {{ $branch->name }} @endif
+    </p>
+    <p style="font-size:10pt; font-weight:700; margin:0 0 16px; text-align:center;">
+        Total Pendapatan UPF Keseluruhan: Rp {{ number_format($totalAmount, 0, ',', '.') }}
     </p>
 
     <table class="data-table" style="margin-bottom: 10px; font-size:8pt;">

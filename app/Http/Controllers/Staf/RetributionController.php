@@ -16,6 +16,7 @@ use App\Services\Dashboard\RetributionDashboardService;
 use App\Services\Reporting\ReportTypeRegistry;
 use App\Services\Retribution\RetributionReportService;
 use App\Services\Retribution\RetributionService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -116,18 +117,25 @@ class RetributionController extends Controller
         $branchId = $this->resolveBranchId($request);
         $date = $request->string('tanggal')->value() ?: now()->toDateString();
 
+        // Transaksi dengan total Rp 0 (mis. seluruh nilainya sudah dibatalkan/nihil)
+        // tidak perlu tampil di laporan cetak — hanya menuh-menuhi halaman.
         $rows = $this->reportService->retribusiUpf([
             'branch_id' => $branchId,
             'period_start' => $date,
             'period_end' => $date,
-        ]);
+        ])->filter(fn (array $row) => (float) $row['total_amount'] !== 0.0)->values();
 
-        $pdf = $this->renderPrintPdf('prints.laporan.upf-harian', [
+        // Laporan ini punya kolom per jenis retribusi UPF yang dinamis (bisa banyak),
+        // sehingga A4/F4 sering memotong angka di sisi kanan. Dicetak di A3 lanskap
+        // secara khusus untuk laporan ini saja — tidak lewat GeneratesPrintPdf agar
+        // pengaturan kertas global (dipakai ~20 cetakan lain) tidak ikut berubah.
+        $pdf = Pdf::loadView('prints.laporan.upf-harian', [
             'date' => $date,
             'branch' => $branchId ? Branch::query()->find($branchId) : null,
             'rows' => $rows,
+            'totalAmount' => $rows->sum('total_amount'),
             'activeTypes' => RetributionType::query()->where('is_active', true)->orderBy('sort_order')->orderBy('id')->get(),
-        ]);
+        ])->setPaper('a3', 'landscape');
 
         return $pdf->download('laporan-upf-'.$date.'.pdf');
     }
