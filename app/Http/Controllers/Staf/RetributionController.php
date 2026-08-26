@@ -125,6 +125,11 @@ class RetributionController extends Controller
             'period_end' => $date,
         ])->filter(fn (array $row) => (float) $row['total_amount'] !== 0.0)->values();
 
+        // Kolom jenis retribusi yang totalnya nihil hari itu tidak perlu ikut
+        // tampil — cuma bikin tabel makin lebar tanpa menambah informasi.
+        $activeTypes = RetributionType::query()->where('is_active', true)->orderBy('sort_order')->orderBy('id')->get()
+            ->filter(fn (RetributionType $type) => (float) $rows->sum("retribusi_line_{$type->id}") !== 0.0)->values();
+
         // Laporan ini punya kolom per jenis retribusi UPF yang dinamis (bisa banyak),
         // sehingga A4/F4 sering memotong angka di sisi kanan. Dicetak di A3 lanskap
         // secara khusus untuk laporan ini saja — tidak lewat GeneratesPrintPdf agar
@@ -134,7 +139,7 @@ class RetributionController extends Controller
             'branch' => $branchId ? Branch::query()->find($branchId) : null,
             'rows' => $rows,
             'totalAmount' => $rows->sum('total_amount'),
-            'activeTypes' => RetributionType::query()->where('is_active', true)->orderBy('sort_order')->orderBy('id')->get(),
+            'activeTypes' => $activeTypes,
         ])->setPaper('a3', 'landscape');
 
         return $pdf->download('laporan-upf-'.$date.'.pdf');
