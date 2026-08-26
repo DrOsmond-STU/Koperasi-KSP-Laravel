@@ -35,7 +35,7 @@ class LoanRepaymentController extends Controller
 
         $loans = Loan::query()
             ->where('status', 'dicairkan')
-            ->with(['member', 'loanProduct'])
+            ->with(['member', 'loanProduct', 'schedules'])
             ->orderBy('loan_number')
             ->get();
 
@@ -65,6 +65,12 @@ class LoanRepaymentController extends Controller
             // memilih Pinjaman.
             'normalInstallments' => $loans->mapWithKeys(
                 fn (Loan $loan) => [$loan->id => $this->repayments->normalInstallment($loan)],
+            ),
+            // Saldo outstanding (sisa pokok) per pinjaman, ditampilkan
+            // read-only di form begitu staf memilih Pinjaman — lihat
+            // LoanRepaymentService::outstandingPrincipal().
+            'outstandingBalances' => $loans->mapWithKeys(
+                fn (Loan $loan) => [$loan->id => $this->repayments->outstandingPrincipal($loan)],
             ),
         ]);
     }

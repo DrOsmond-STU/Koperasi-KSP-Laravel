@@ -347,6 +347,33 @@ class StafLoanRepaymentTest extends TestCase
         ]);
     }
 
+    /**
+     * Laporan staf 26 Agu 2026: staf perlu lihat sisa pinjaman anggota
+     * SEBELUM mengetik Nominal Bayar — field read-only di bawah selektor
+     * Pinjaman, diisi JS dari peta outstandingBalances (lihat
+     * LoanRepaymentService::outstandingPrincipal()). Dua baris jadwal di
+     * sini (satu belum dibayar sama sekali, satu sudah dibayar sebagian)
+     * membuktikan hitungannya sum(principal_amount)-sum(paid_principal_amount)
+     * di seluruh baris, bukan cuma baris pertama.
+     */
+    public function test_create_view_exposes_the_selected_loan_outstanding_principal_balance(): void
+    {
+        $user = $this->petugasKredit();
+        $loan = $this->disbursedLoanWithThreeInstallments();
+        $loan->schedules()->where('installment_number', 1)->update([
+            'paid_principal_amount' => 400000,
+            'paid_interest_amount' => 100000,
+            'paid_amount' => 500000,
+            'status' => 'sebagian',
+        ]);
+
+        $response = $this->actingAs($user)->get(route('staf.angsuran.create'));
+
+        $response->assertOk();
+        // Sisa pokok = (1.000.000*3) - 400.000 = 2.600.000.
+        $response->assertSee('"'.$loan->id.'":2600000', false);
+    }
+
     public function test_denda_without_a_configured_penalty_account_is_rejected_with_a_friendly_error(): void
     {
         $user = $this->petugasKredit();

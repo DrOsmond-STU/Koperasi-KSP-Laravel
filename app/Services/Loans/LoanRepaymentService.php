@@ -226,6 +226,24 @@ class LoanRepaymentService
     }
 
     /**
+     * Sisa pokok pinjaman saat ini — sum(schedules.principal_amount) -
+     * sum(schedules.paid_principal_amount), sama persis dengan "Sisa Pokok"
+     * pada cetakan Laporan Pinjaman Anggota (prints/loans/list.blade.php).
+     * Dipakai form Catat Angsuran untuk menampilkan Saldo Outstanding
+     * (read-only) begitu Pinjaman dipilih — laporan staf 26 Agu 2026: staf
+     * perlu lihat sisa pinjaman anggota SEBELUM mengetik Nominal Bayar.
+     * Butuh relasi `schedules` sudah di-eager-load (lihat
+     * LoanRepaymentController::create()) supaya tidak N+1 per baris dropdown.
+     */
+    public function outstandingPrincipal(Loan $loan): float
+    {
+        return round(
+            (float) $loan->schedules->sum('principal_amount') - (float) $loan->schedules->sum('paid_principal_amount'),
+            2,
+        );
+    }
+
+    /**
      * Catat Angsuran (staf/teller) — BEDA dari recordPayment(): staf
      * menentukan sendiri pembagian Pokok/Jasa/Denda (lihat
      * normalInstallment() untuk saran default di form), BUKAN dihitung

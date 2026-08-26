@@ -46,6 +46,13 @@
                     </select>
                 </div>
                 <div class="field">
+                    <label>Saldo Outstanding (Rp)</label>
+                    <input type="text" id="outstanding-balance-display" value="—" readonly style="background: var(--muted-bg, #f2f2f2); color: var(--muted);">
+                    <p style="color: var(--muted); font-size: 11px; margin: 6px 0 0;">
+                        Sisa pokok pinjaman anggota ini saat ini (sebelum pembayaran ini dicatat) — informasi saja, tidak ikut dikirim.
+                    </p>
+                </div>
+                <div class="field">
                     <label>Nominal Bayar (Rp)</label>
                     <input type="number" step="0.01" min="0" name="nominal_bayar" id="nominal-bayar-input" value="{{ old('nominal_bayar') }}">
                     <p style="color: var(--muted); font-size: 11px; margin: 6px 0 0;">
@@ -122,12 +129,21 @@
             // histori: jasa selalu sama persis tiap pembayaran, berapa pun
             // nominalnya, dan Pokok-lah yang menyesuaikan.
             var normalInstallments = @json($normalInstallments);
+            // Saldo outstanding (sisa pokok) per pinjaman — lihat
+            // LoanRepaymentService::outstandingPrincipal(). Murni tampilan,
+            // tidak pernah dikirim ke server (input-nya readonly, tanpa name).
+            var outstandingBalances = @json($outstandingBalances);
 
             var loanSelect = document.querySelector('select[name="loan_id"]');
+            var outstandingDisplay = document.getElementById('outstanding-balance-display');
             var nominalInput = document.getElementById('nominal-bayar-input');
             var principalInput = document.getElementById('principal-portion-input');
             var interestInput = document.getElementById('interest-portion-input');
             var penaltyInput = document.getElementById('penalty-portion-input');
+
+            function formatRupiah(amount) {
+                return 'Rp ' + Math.round(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+            }
 
             function recomputePokok() {
                 var nominal = parseFloat(nominalInput.value) || 0;
@@ -142,6 +158,9 @@
                 penaltyInput.value = 0;
                 nominalInput.value = '';
                 principalInput.value = 0;
+
+                var outstanding = outstandingBalances[loanSelect.value];
+                outstandingDisplay.value = loanSelect.value && outstanding !== undefined ? formatRupiah(outstanding) : '—';
             }
 
             loanSelect.addEventListener('change', applyNormalDefaults);
