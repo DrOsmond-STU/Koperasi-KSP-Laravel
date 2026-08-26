@@ -109,6 +109,40 @@ class StafLoanRepaymentTest extends TestCase
         $response->assertSee($loan->loan_number);
     }
 
+    /**
+     * Laporan staf 26 Agu 2026: tampilkan akun COA (jurnal) di bawah tabel
+     * Komponen pada halaman Konfirmasi Angsuran — supaya staf bisa lihat
+     * akun kas didebit dan akun Piutang/Pendapatan Jasa/Piutang Denda yang
+     * akan dikredit SEBELUM menekan "Konfirmasi & Simpan", bukan cuma
+     * setelah pembayaran benar-benar terposting.
+     */
+    public function test_preview_shows_the_journal_lines_with_their_coa_accounts(): void
+    {
+        $user = $this->petugasKredit();
+        $loan = $this->disbursedLoanWithThreeInstallments();
+        $cashAccount = ChartOfAccount::query()->find($this->cashAccountId());
+        $receivableAccount = $loan->loanProduct->receivableAccount;
+        $interestAccount = $loan->loanProduct->interestIncomeAccount;
+        $penaltyAccount = $loan->loanProduct->penaltyReceivableAccount;
+
+        $response = $this->actingAs($user)->post(route('staf.angsuran.preview'), [
+            'loan_id' => $loan->id,
+            'principal_portion' => 1000000,
+            'interest_portion' => 100000,
+            'penalty_portion' => 50000,
+            'cash_account_id' => $cashAccount->id,
+        ]);
+
+        $response->assertOk();
+        $response->assertSeeInOrder([
+            'Jurnal',
+            $cashAccount->code.' — '.$cashAccount->name,
+            $receivableAccount->code.' — '.$receivableAccount->name,
+            $interestAccount->code.' — '.$interestAccount->name,
+            $penaltyAccount->code.' — '.$penaltyAccount->name,
+        ]);
+    }
+
     public function test_petugas_kredit_can_record_a_full_installment_payment(): void
     {
         $user = $this->petugasKredit();

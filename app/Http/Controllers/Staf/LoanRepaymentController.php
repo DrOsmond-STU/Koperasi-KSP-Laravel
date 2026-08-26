@@ -86,9 +86,11 @@ class LoanRepaymentController extends Controller
 
         if ($plan['remaining_unallocated'] > 0) {
             return back()->withErrors([
-                'principal_portion' => "Angsuran Pokok + Jasa melebihi total tunggakan saat ini (Rp ".number_format($plan['outstanding_before'], 0, ',', '.').').',
+                'principal_portion' => 'Angsuran Pokok + Jasa melebihi total tunggakan saat ini (Rp '.number_format($plan['outstanding_before'], 0, ',', '.').').',
             ])->withInput();
         }
+
+        $cashAccount = ChartOfAccount::query()->find($request->validated('cash_account_id'));
 
         return view('staf.angsuran-preview', [
             'loan' => $loan,
@@ -100,7 +102,19 @@ class LoanRepaymentController extends Controller
             'paidAt' => $request->validated('paid_at') ?: now()->toDateString(),
             'outstandingBefore' => $plan['outstanding_before'],
             'cashAccountId' => $request->validated('cash_account_id'),
-            'cashAccount' => ChartOfAccount::query()->find($request->validated('cash_account_id')),
+            'cashAccount' => $cashAccount,
+            // Akun COA yang akan didebit/dikredit kalau dikonfirmasi — lihat
+            // LoanRepaymentService::previewJournalLines() (laporan staf 26
+            // Agu 2026: tampilkan jurnal di bawah tabel Komponen).
+            'journalLines' => $cashAccount
+                ? $this->repayments->previewJournalLines(
+                    $loan,
+                    $cashAccount,
+                    $principalPortion,
+                    $interestPortion,
+                    $penaltyPortion,
+                )
+                : [],
         ]);
     }
 

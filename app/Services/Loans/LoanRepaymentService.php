@@ -244,6 +244,50 @@ class LoanRepaymentService
     }
 
     /**
+     * Baris jurnal yang AKAN diposting kalau angsuran ini dikonfirmasi —
+     * dipakai staf/angsuran-preview.blade.php untuk menampilkan akun COA di
+     * bawah tabel Komponen, sebelum staf menekan "Konfirmasi & Simpan"
+     * (laporan staf 26 Agu 2026). Murni pratinjau baca-saja — TIDAK
+     * memposting apa pun. Susunan baris SENGAJA disalin persis dari
+     * recordManualPayment() (kas didebit sebesar total, lalu masing-masing
+     * komponen Pokok/Jasa/Denda yang > 0 dikredit ke akun produknya) supaya
+     * pratinjau ini tidak pernah menyesatkan dibanding jurnal yang benar-
+     * benar diposting nanti. Akun bisa null kalau produk pinjamannya belum
+     * dikonfigurasi lengkap (mis. coa_penalty_receivable_account_id kosong)
+     * — view menampilkannya sebagai peringatan, bukan bikin preview gagal.
+     *
+     * @return array<int, array{account: ?ChartOfAccount, debit: float, credit: float}>
+     */
+    public function previewJournalLines(
+        Loan $loan,
+        ChartOfAccount $cashAccount,
+        float $principalPortion,
+        float $interestPortion,
+        float $penaltyPortion,
+    ): array {
+        $product = $loan->loanProduct;
+        $totalAmount = round($principalPortion + $interestPortion + $penaltyPortion, 2);
+
+        $lines = [
+            ['account' => $cashAccount, 'debit' => $totalAmount, 'credit' => 0.0],
+        ];
+
+        if ($principalPortion > 0) {
+            $lines[] = ['account' => $product->receivableAccount, 'debit' => 0.0, 'credit' => $principalPortion];
+        }
+
+        if ($interestPortion > 0) {
+            $lines[] = ['account' => $product->interestIncomeAccount, 'debit' => 0.0, 'credit' => $interestPortion];
+        }
+
+        if ($penaltyPortion > 0) {
+            $lines[] = ['account' => $product->penaltyReceivableAccount, 'debit' => 0.0, 'credit' => $penaltyPortion];
+        }
+
+        return $lines;
+    }
+
+    /**
      * Catat Angsuran (staf/teller) — BEDA dari recordPayment(): staf
      * menentukan sendiri pembagian Pokok/Jasa/Denda (lihat
      * normalInstallment() untuk saran default di form), BUKAN dihitung

@@ -30,6 +30,26 @@
             </tbody>
         </table>
 
+        <h4 style="margin:18px 0 6px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;">Jurnal</h4>
+        <table class="alloc-table">
+            <thead><tr><th>Akun (COA)</th><th>Debit</th><th>Kredit</th></tr></thead>
+            <tbody>
+                @foreach ($journalLines as $line)
+                    <tr>
+                        <td>
+                            @if ($line['account'])
+                                {{ $line['account']->code }} — {{ $line['account']->name }}
+                            @else
+                                <span style="color:#b3261e;">(akun belum diatur pada Produk Pinjaman)</span>
+                            @endif
+                        </td>
+                        <td>{{ $line['debit'] > 0 ? 'Rp '.number_format($line['debit'], 0, ',', '.') : '—' }}</td>
+                        <td>{{ $line['credit'] > 0 ? 'Rp '.number_format($line['credit'], 0, ',', '.') : '—' }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+
         <div class="summary-row total"><span>Total Dibayar</span><span>Rp {{ number_format($totalAmount, 0, ',', '.') }}</span></div>
         <div class="summary-row" style="margin-top:8px;"><span>Tunggakan Pokok+Jasa Sebelum Bayar</span><span>Rp {{ number_format($outstandingBefore, 0, ',', '.') }}</span></div>
 
