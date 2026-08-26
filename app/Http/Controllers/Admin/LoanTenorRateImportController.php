@@ -30,6 +30,14 @@ use Illuminate\View\View;
  * jadi nama reserved (ViewErrorBag validasi form, dari middleware
  * ShareErrorsFromSession); memakainya di sini akan menimpanya jadi null
  * dan meledakkan `@error()` di view manapun yang berbagi layout ini.
+ *
+ * parseCsv() sengaja tidak pakai file()/fgetcsv() langsung — laporan staf
+ * 26 Agu 2026: CSV yang sempat dibuka lewat Excel versi Indonesia berubah
+ * jadi baris tunggal berpemisah ";" dengan line ending gaya Mac klasik
+ * ("\r" saja, tanpa "\n") — file() cuma memecah per "\n", jadi seluruh
+ * berkas terbaca sebagai SATU baris (cuma header, 0 baris data, 0
+ * koreksi). Baca seluruh isi lalu normalisasi \r\n dan \r ke \n dulu, dan
+ * deteksi otomatis pemisah kolom (";" vs ",") dari baris header.
  */
 class LoanTenorRateImportController extends Controller
 {
@@ -44,8 +52,7 @@ class LoanTenorRateImportController extends Controller
     {
         $this->authorize('pinjaman.approve');
 
-        $lines = file($request->file('file')->getRealPath());
-        $rows = array_map('str_getcsv', $lines);
+        $rows = $this->parseCsv($request->file('file')->getRealPath());
         $header = array_map(fn ($h) => trim(strtolower((string) $h)), array_shift($rows) ?? []);
 
         $updated = [];
@@ -127,5 +134,28 @@ class LoanTenorRateImportController extends Controller
             'updated' => $updated,
             'rowErrors' => $rowErrors,
         ]);
+    }
+
+    /**
+     * @return array<int, array<int, string>>
+     */
+    private function parseCsv(string $path): array
+    {
+        $content = (string) file_get_contents($path);
+        // Buang BOM UTF-8 kalau ada (umum dari "CSV UTF-8" hasil Excel).
+        $content = preg_replace('/^\xEF\xBB\xBF/', '', $content);
+        // Normalisasi semua gaya line ending (\r\n Windows, \r Mac klasik) ke \n.
+        $content = str_replace(["\r\n", "\r"], "\n", $content);
+
+        $lines = array_filter(explode("\n", $content), fn (string $line) => trim($line) !== '');
+
+        if ($lines === []) {
+            return [];
+        }
+
+        $headerLine = reset($lines);
+        $delimiter = substr_count($headerLine, ';') > substr_count($headerLine, ',') ? ';' : ',';
+
+        return array_map(fn (string $line) => str_getcsv($line, $delimiter), $lines);
     }
 }

@@ -138,4 +138,35 @@ class LoanTenorRateImportTest extends TestCase
         $this->actingAs($user)->post(route('admin.pinjaman.import-tenor-tarif.store'), ['file' => $csv])
             ->assertForbidden();
     }
+
+    /**
+     * Laporan staf 26 Agu 2026: CSV yang sempat dibuka lewat Excel versi
+     * Indonesia berubah jadi baris tunggal berpemisah ";" dengan line
+     * ending gaya Mac klasik ("\r" saja, tanpa "\n") — file() lama cuma
+     * memecah per "\n", jadi seluruh berkas terbaca sebagai satu baris
+     * (0 koreksi). "\r" di sini literal, BUKAN "\n" — kalau ditulis
+     * "\\r" itu bug yang sama persis yang mau dites di sini.
+     */
+    public function test_semicolon_delimited_csv_with_mac_classic_line_endings_is_parsed_correctly(): void
+    {
+        $user = $this->manajer();
+        $loanA = $this->loan('117-0151-00305', tenorDays: 7, tenorUnit: 'bulan', rate: 12.0);
+        $loanB = $this->loan('117-0151-00426', tenorDays: 3, tenorUnit: 'bulan', rate: 12.0);
+
+        $content = "loan_number;tenor_days;tenor_unit;rate_percentage\r"
+            ."117-0151-00305;200;hari;10.00\r"
+            ."117-0151-00426;100;hari;05.00\r";
+
+        $response = $this->actingAs($user)->post(route('admin.pinjaman.import-tenor-tarif.store'), [
+            'file' => $this->csv($content),
+        ]);
+
+        $response->assertOk();
+        $this->assertDatabaseHas('loans', [
+            'id' => $loanA->id, 'tenor_days' => 200, 'tenor_unit' => 'hari', 'interest_rate_percentage' => '10.000',
+        ]);
+        $this->assertDatabaseHas('loans', [
+            'id' => $loanB->id, 'tenor_days' => 100, 'tenor_unit' => 'hari', 'interest_rate_percentage' => '5.000',
+        ]);
+    }
 }
