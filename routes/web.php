@@ -28,6 +28,7 @@ use App\Http\Controllers\Admin\InventoryReportController;
 use App\Http\Controllers\Admin\JournalAdjustmentController;
 use App\Http\Controllers\Admin\LoanApprovalController;
 use App\Http\Controllers\Admin\LoanProductController;
+use App\Http\Controllers\Admin\LoanTenorRateImportController;
 use App\Http\Controllers\Admin\MemberCardController;
 use App\Http\Controllers\Admin\MemberCardTemplateController;
 use App\Http\Controllers\Admin\MemberController;
@@ -375,6 +376,11 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.pinjaman.decide');
     Route::post('/admin/pinjaman/{loan}/batalkan', [LoanApprovalController::class, 'cancel'])
         ->name('admin.pinjaman.cancel');
+
+    Route::get('/admin/pinjaman/impor-tenor-tarif', [LoanTenorRateImportController::class, 'create'])
+        ->name('admin.pinjaman.import-tenor-tarif.create');
+    Route::post('/admin/pinjaman/impor-tenor-tarif', [LoanTenorRateImportController::class, 'store'])
+        ->name('admin.pinjaman.import-tenor-tarif.store');
 
     Route::get('/admin/cetakan/simpanan', [PrintSavingsController::class, 'index'])
         ->name('admin.print.savings.index');
