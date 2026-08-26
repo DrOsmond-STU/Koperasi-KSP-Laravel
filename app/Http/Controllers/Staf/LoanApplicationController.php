@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Staf;
 
+use App\Exceptions\Loans\InvalidLoanApplicationException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SubmitLoanApplicationRequest;
 use App\Models\LoanProduct;
@@ -64,14 +65,26 @@ class LoanApplicationController extends Controller
         $member = Member::query()->findOrFail($request->validated('member_id'));
         $product = LoanProduct::query()->findOrFail($request->validated('loan_product_id'));
 
-        $loan = $this->loanService->submitApplication(
-            $member,
-            $product,
-            (float) $request->validated('principal_amount'),
-            (int) $request->validated('tenor_days'),
-            $member->branch_id,
-            $request->user()->id,
-        );
+        // Laporan staf 26 Agu 2026: submit pengajuan dengan plafon/tenor di
+        // luar rentang produk menghasilkan 500 (sebelumnya tidak ditangkap
+        // di sini) — simulate() di atas TIDAK memvalidasi rentang produk
+        // (murni pratinjau jadwal), jadi staf baru "kena" validasi ini saat
+        // submit akhir. Pola tangkap-dan-redirect sama dengan
+        // PosController::store() yang sudah menangkap exception yang sama.
+        try {
+            $loan = $this->loanService->submitApplication(
+                $member,
+                $product,
+                (float) $request->validated('principal_amount'),
+                (int) $request->validated('tenor_days'),
+                $member->branch_id,
+                $request->user()->id,
+            );
+        } catch (InvalidLoanApplicationException $exception) {
+            return redirect()
+                ->route('staf.pengajuan-pinjaman.create')
+                ->with('error', $exception->getMessage());
+        }
 
         return redirect()
             ->route('staf.pengajuan-pinjaman.create')

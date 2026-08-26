@@ -109,4 +109,72 @@ class LoanApplicationFlowTest extends TestCase
             ->get(route('admin.pinjaman.index'))
             ->assertForbidden();
     }
+
+    /**
+     * Laporan staf 26 Agu 2026: submit dengan plafon di luar rentang produk
+     * menghasilkan 500 Server Error di /staf/pengajuan-pinjaman —
+     * simulate() (step 1) tidak memvalidasi rentang produk sama sekali
+     * (murni pratinjau jadwal), jadi staf baru "kena" validasi
+     * assertWithinProductLimits() saat submit akhir (step 2), dan
+     * exception-nya sebelumnya tidak ditangkap sama sekali di controller.
+     */
+    public function test_submitting_plafon_out_of_product_range_redirects_with_error_instead_of_500(): void
+    {
+        $petugasKredit = $this->userWithRole('petugas_kredit');
+
+        $member = Member::factory()->create();
+        $product = LoanProduct::factory()->create([
+            'min_plafon' => 500000,
+            'max_plafon' => 20000000,
+            'min_tenor_days' => 100,
+            'max_tenor_days' => 200,
+        ]);
+
+        // Step 1 (simulate) berhasil biar-pun nominalnya nanti ditolak saat
+        // submit — mengonfirmasi simulate() memang tidak memvalidasi
+        // rentang plafon/tenor produk.
+        $this->actingAs($petugasKredit)
+            ->post(route('staf.pengajuan-pinjaman.simulate'), [
+                'member_id' => $member->id,
+                'loan_product_id' => $product->id,
+                'principal_amount' => 1000,
+                'tenor_days' => 100,
+            ])
+            ->assertOk();
+
+        $submit = $this->actingAs($petugasKredit)->post(route('staf.pengajuan-pinjaman.store'), [
+            'member_id' => $member->id,
+            'loan_product_id' => $product->id,
+            'principal_amount' => 1000,
+            'tenor_days' => 100,
+        ]);
+
+        $submit->assertRedirect(route('staf.pengajuan-pinjaman.create'));
+        $submit->assertSessionHas('error');
+        $this->assertDatabaseMissing('loans', ['member_id' => $member->id]);
+    }
+
+    public function test_submitting_tenor_out_of_product_range_redirects_with_error_instead_of_500(): void
+    {
+        $petugasKredit = $this->userWithRole('petugas_kredit');
+
+        $member = Member::factory()->create();
+        $product = LoanProduct::factory()->create([
+            'min_plafon' => 500000,
+            'max_plafon' => 20000000,
+            'min_tenor_days' => 100,
+            'max_tenor_days' => 200,
+        ]);
+
+        $submit = $this->actingAs($petugasKredit)->post(route('staf.pengajuan-pinjaman.store'), [
+            'member_id' => $member->id,
+            'loan_product_id' => $product->id,
+            'principal_amount' => 5000000,
+            'tenor_days' => 5,
+        ]);
+
+        $submit->assertRedirect(route('staf.pengajuan-pinjaman.create'));
+        $submit->assertSessionHas('error');
+        $this->assertDatabaseMissing('loans', ['member_id' => $member->id]);
+    }
 }

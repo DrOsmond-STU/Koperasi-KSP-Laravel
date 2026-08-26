@@ -10,12 +10,16 @@
         .field input, .field select { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; }
         .btn-primary { padding: 10px 18px; background: var(--pine); color: #fff; border: none; border-radius: 9px; font-weight: 700; cursor: pointer; }
         .status-msg { color: var(--ok); font-size: 13px; margin-bottom: 14px; }
+        .error-msg { color: var(--brick); font-size: 13px; margin-bottom: 14px; }
     </style>
 
     <h2>Pengajuan Pinjaman Baru</h2>
 
     @if (session('status'))
         <p class="status-msg">{{ session('status') }}</p>
+    @endif
+    @if (session('error'))
+        <p class="error-msg">{{ session('error') }}</p>
     @endif
 
     <div class="panel">
