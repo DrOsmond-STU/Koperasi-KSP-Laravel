@@ -189,4 +189,62 @@ class GeneralJournalControllerTest extends TestCase
         $response->assertOk();
         $response->assertSee('Beban ATK kantor');
     }
+
+    /**
+     * Tidak ada edit/hapus langsung (LED-06 append-only) — "Batalkan" hanya
+     * menautkan ke Jurnal Penyesuaian yang sudah memposting jurnal balik
+     * lewat JournalEngine::reverse(), bukan mengubah/menghapus entri asal.
+     */
+    public function test_active_entry_shows_batalkan_link_to_adjustment_page(): void
+    {
+        $branch = $this->branch();
+        $user = $this->bendahara($branch);
+
+        $this->actingAs($user)->post(route('admin.jurnal-umum.store'), [
+            'entry_date' => '2026-07-16',
+            'branch_id' => $branch->id,
+            'description' => 'Beban ATK kantor',
+            'lines' => [
+                ['chart_of_account_id' => ChartOfAccount::where('code', '5207')->value('id'), 'position' => 'debit', 'amount' => 150000],
+                ['chart_of_account_id' => ChartOfAccount::where('code', '1101')->value('id'), 'position' => 'kredit', 'amount' => 150000],
+            ],
+        ]);
+        $entry = JournalEntry::query()->where('description', 'Beban ATK kantor')->firstOrFail();
+
+        $response = $this->actingAs($user)->get(route('admin.jurnal-umum.create'));
+
+        $response->assertOk();
+        $response->assertSee('Aktif');
+        $response->assertSee(route('admin.jurnal-penyesuaian.create', ['entry_id' => $entry->id]), false);
+    }
+
+    public function test_cancelled_entry_hides_batalkan_link_and_shows_status(): void
+    {
+        $branch = $this->branch();
+        $user = $this->bendahara($branch);
+
+        $this->actingAs($user)->post(route('admin.jurnal-umum.store'), [
+            'entry_date' => '2026-07-16',
+            'branch_id' => $branch->id,
+            'description' => 'Beban ATK kantor',
+            'lines' => [
+                ['chart_of_account_id' => ChartOfAccount::where('code', '5207')->value('id'), 'position' => 'debit', 'amount' => 150000],
+                ['chart_of_account_id' => ChartOfAccount::where('code', '1101')->value('id'), 'position' => 'kredit', 'amount' => 150000],
+            ],
+        ]);
+        $entry = JournalEntry::query()->where('description', 'Beban ATK kantor')->firstOrFail();
+
+        $this->actingAs($user)->post(route('admin.jurnal-penyesuaian.store', $entry), [
+            'reason' => 'Salah akun',
+            'password' => 'password',
+        ]);
+
+        $response = $this->actingAs($user)->get(route('admin.jurnal-umum.create'));
+
+        $response->assertOk();
+        $response->assertSee('Dibatalkan');
+        $response->assertDontSee(route('admin.jurnal-penyesuaian.create', ['entry_id' => $entry->id]), false);
+        // Entri asal tetap tersimpan utuh — hanya jurnal balik yang ditambahkan.
+        $this->assertDatabaseHas('journal_entries', ['id' => $entry->id, 'description' => 'Beban ATK kantor']);
+    }
 }

@@ -115,19 +115,36 @@
             <p class="hint">Belum ada transaksi jurnal umum.</p>
         @else
             <table class="data-table">
-                <thead><tr><th>Tanggal</th><th>Keterangan</th><th>Cabang</th><th>Total</th><th>Aksi</th></tr></thead>
+                <thead><tr><th>Tanggal</th><th>Keterangan</th><th>Cabang</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
                 <tbody>
                     @foreach ($recentEntries as $entry)
+                        @php $isCancelled = $entry->reversals->isNotEmpty(); @endphp
                         <tr>
                             <td>{{ $entry->entry_date->translatedFormat('d M Y') }}</td>
                             <td>{{ $entry->description }}</td>
                             <td>{{ $entry->branch?->name }}</td>
                             <td>Rp {{ number_format((float) $entry->lines->sum('debit'), 0, ',', '.') }}</td>
-                            <td><a href="{{ route('admin.jurnal-umum.print', $entry) }}" target="_blank">Cetak</a></td>
+                            <td>
+                                @if ($isCancelled)
+                                    <span style="color: var(--brick); font-weight: 600;">Dibatalkan</span>
+                                @else
+                                    <span style="color: var(--ok);">Aktif</span>
+                                @endif
+                            </td>
+                            <td>
+                                <a href="{{ route('admin.jurnal-umum.print', $entry) }}" target="_blank">Cetak</a>
+                                @can('jurnal.adjust')
+                                    @if (! $isCancelled)
+                                        &nbsp;·&nbsp;
+                                        <a href="{{ route('admin.jurnal-penyesuaian.create', ['entry_id' => $entry->id]) }}" style="color: var(--brick);">Batalkan</a>
+                                    @endif
+                                @endcan
+                            </td>
                         </tr>
                     @endforeach
                 </tbody>
             </table>
+            <p class="hint">Transaksi yang sudah diposting tidak dapat diubah atau dihapus langsung (menjaga keabsahan pembukuan/audit trail). Gunakan <strong>Batalkan</strong> untuk membuat jurnal balik (koreksi) — entri asal tetap tersimpan sebagai riwayat, lalu buat entri baru yang benar melalui form di atas.</p>
         @endif
     </div>
 
