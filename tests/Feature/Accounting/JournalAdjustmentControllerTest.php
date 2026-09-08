@@ -84,4 +84,54 @@ class JournalAdjustmentControllerTest extends TestCase
         $response->assertRedirect(route('admin.jurnal-penyesuaian.create'));
         $this->assertDatabaseHas('journal_entries', ['reversal_of_entry_id' => $entry->id]);
     }
+
+    /**
+     * Regresi insiden nyata (entri #3780, Sep 2026): submit ganda pada
+     * tombol "Posting Jurnal Balik" sempat membuat 2 jurnal balik untuk
+     * entri yang sama. AdjustmentService::reverse() sekarang menolak
+     * membalik entri yang sudah pernah dibalik.
+     */
+    public function test_reversing_an_already_reversed_entry_is_rejected(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+        $user = User::factory()->create(['two_factor_confirmed_at' => now(), 'password' => Hash::make('secret123')]);
+        $user->assignRole('bendahara');
+        UserBranchScope::query()->create(['user_id' => $user->id, 'scope_type' => 'all']);
+        $entry = $this->postOriginalEntry($user);
+
+        $first = $this->actingAs($user)->post(route('admin.jurnal-penyesuaian.store', $entry), [
+            'reason' => 'Koreksi pertama',
+            'password' => 'secret123',
+        ]);
+        $first->assertRedirect(route('admin.jurnal-penyesuaian.create'));
+        $first->assertSessionHas('status');
+
+        $second = $this->actingAs($user)->post(route('admin.jurnal-penyesuaian.store', $entry), [
+            'reason' => 'Koreksi kedua (submit ganda)',
+            'password' => 'secret123',
+        ]);
+        $second->assertRedirect(route('admin.jurnal-penyesuaian.create'));
+        $second->assertSessionHas('error');
+
+        $this->assertSame(1, JournalEntry::query()->where('reversal_of_entry_id', $entry->id)->count());
+    }
+
+    public function test_already_reversed_entry_is_hidden_from_selection_list(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+        $user = User::factory()->create(['two_factor_confirmed_at' => now(), 'password' => Hash::make('secret123')]);
+        $user->assignRole('bendahara');
+        UserBranchScope::query()->create(['user_id' => $user->id, 'scope_type' => 'all']);
+        $entry = $this->postOriginalEntry($user);
+
+        $this->actingAs($user)->post(route('admin.jurnal-penyesuaian.store', $entry), [
+            'reason' => 'Koreksi',
+            'password' => 'secret123',
+        ]);
+
+        $response = $this->actingAs($user)->get(route('admin.jurnal-penyesuaian.create'));
+
+        $response->assertOk();
+        $response->assertDontSee("#{$entry->id} —", false);
+    }
 }
