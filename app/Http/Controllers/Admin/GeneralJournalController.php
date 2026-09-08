@@ -47,7 +47,7 @@ class GeneralJournalController extends Controller
                 ->with(['lines.account', 'branch', 'reversals'])
                 ->latest()
                 ->latest('id')
-                ->limit(15)
+                ->limit(100)
                 ->get(),
         ]);
     }
