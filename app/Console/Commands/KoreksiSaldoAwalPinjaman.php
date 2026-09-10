@@ -288,6 +288,23 @@ class KoreksiSaldoAwalPinjaman extends Command
                 continue;
             }
 
+            // Saldo AWAL adalah potret per tanggal cutoff: pinjaman yang akadnya
+            // baru terjadi sesudah tanggal itu mustahil ada di dalamnya. Yang
+            // tertangkap di sini biasanya tanggal tertukar hari/bulan — dan
+            // kolom "jangka waktu" ikut jadi negatif karena ia selisih tanggal.
+            // Ditolak, bukan diperbaiki sendiri: hanya koperasi yang tahu
+            // tanggal akad yang sebenarnya.
+            if ($b['tanggal'] > $batch->cutoff_date->toDateString()) {
+                $galat[] = $b + ['sebab' => sprintf(
+                    'tanggal pinjaman %s melewati cutoff batch %s — periksa kembali tanggalnya (jangka waktu terbaca %s hari)',
+                    $b['tanggal'],
+                    $batch->cutoff_date->toDateString(),
+                    $b['hari'] ?? '?',
+                )];
+
+                continue;
+            }
+
             $kunci = $this->kunci($anggota->member_number, $b['tanggal']);
             $kandidat = $indeksDb[$kunci] ?? [];
             $cocok = null;

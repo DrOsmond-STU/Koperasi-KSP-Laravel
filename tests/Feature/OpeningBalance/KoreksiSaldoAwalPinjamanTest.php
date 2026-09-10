@@ -214,6 +214,26 @@ class KoreksiSaldoAwalPinjamanTest extends TestCase
         $this->assertSame('999999.00', $baris->refresh()->outstanding_principal);
     }
 
+    /**
+     * Tanggal akad sesudah cutoff mustahil ada di saldo awal — biasanya hari
+     * dan bulannya tertukar. Ditolak supaya tidak diam-diam tertulis.
+     */
+    public function test_tanggal_pinjaman_melewati_cutoff_ditolak(): void
+    {
+        $batch = $this->batch();
+        $anggota = $this->anggota('1170100236', 'Susana');
+        $baris = $this->barisSaldoAwal($batch, $anggota);
+
+        $berkas = $this->berkas([
+            ['2026-12-05', '1170100236', 'Susana', 10000000, 1000000, 3900000, 390000, '2026-08-27', -100],
+        ]);
+
+        $this->artisan("saldo-awal:koreksi-pinjaman {$batch->id} {$berkas} --terapkan")
+            ->assertFailed();
+
+        $this->assertSame('999999.00', $baris->refresh()->outstanding_principal);
+    }
+
     public function test_batch_terkunci_ditolak_tanpa_paksa(): void
     {
         $batch = $this->batch('locked');
