@@ -138,6 +138,9 @@ class KoreksiSaldoAwalPinjamanTest extends TestCase
             'remaining_tenor_months' => 2,
             'next_installment_number' => 5,
             'external_loan_number' => 'LAMA-77',
+            // Sengaja dibuat berbeda dari "Jatuh Tempo" di berkas (2026-08-29),
+            // supaya terlihat kalau kolom ini sampai ikut tertimpa.
+            'next_due_date' => '2026-06-30',
         ]);
 
         $berkas = $this->berkas([
@@ -152,13 +155,17 @@ class KoreksiSaldoAwalPinjamanTest extends TestCase
         $this->assertSame(2, $baris->remaining_tenor_months);
         $this->assertSame(5, $baris->next_installment_number);
         $this->assertSame('LAMA-77', $baris->external_loan_number);
+        // next_due_date menyimpan jatuh tempo angsuran berikutnya, bukan akhir
+        // masa pinjaman seperti kolom "Jatuh Tempo" di berkas — jadi ia harus
+        // tetap 30 Juni, bukan berubah jadi 29 Agustus mengikuti berkas.
+        $this->assertSame('2026-06-30', $baris->next_due_date->toDateString());
     }
 
     /**
-     * Koperasi ini menghitung jangka waktu dalam hari, tidak pernah bulan, jadi
-     * angka berkas disalin apa adanya ke `tenor_months` tanpa dikonversi.
+     * Kolom tenor punya satuan yang berbeda antar produk dan tabel saldo awal
+     * belum bisa menyatakannya, jadi bawaannya tidak disentuh sama sekali.
      */
-    public function test_tenor_disalin_dalam_hari_secara_bawaan(): void
+    public function test_tenor_tidak_disentuh_secara_bawaan(): void
     {
         $batch = $this->batch();
         $anggota = $this->anggota('1170100004', 'Maman Sayur');
@@ -171,10 +178,10 @@ class KoreksiSaldoAwalPinjamanTest extends TestCase
         $this->artisan("saldo-awal:koreksi-pinjaman {$batch->id} {$berkas} --terapkan")
             ->assertSuccessful();
 
-        $this->assertSame(200, $baris->refresh()->tenor_months);
+        $this->assertSame(3, $baris->refresh()->tenor_months);
     }
 
-    public function test_opsi_tenor_abaikan_tidak_menyentuh_kolom_tenor(): void
+    public function test_opsi_tenor_hari_menyalin_jangka_waktu_apa_adanya(): void
     {
         $batch = $this->batch();
         $anggota = $this->anggota('1170100004', 'Maman Sayur');
@@ -184,10 +191,10 @@ class KoreksiSaldoAwalPinjamanTest extends TestCase
             ['2026-05-21', '1170100004', 'Maman Sayur', 3000000, 150000, 1074500, 52500, '2026-08-29', 200],
         ]);
 
-        $this->artisan("saldo-awal:koreksi-pinjaman {$batch->id} {$berkas} --terapkan --tenor=abaikan")
+        $this->artisan("saldo-awal:koreksi-pinjaman {$batch->id} {$berkas} --terapkan --tenor=hari")
             ->assertSuccessful();
 
-        $this->assertSame(3, $baris->refresh()->tenor_months);
+        $this->assertSame(200, $baris->refresh()->tenor_months);
     }
 
     /**

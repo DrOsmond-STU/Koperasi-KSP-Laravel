@@ -25,14 +25,20 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
  * sumber data tidak boleh ditebak, sebab menimpanya dengan nilai default
  * justru merusak data yang selama ini benar.
  *
- * Catatan tentang tenor: koperasi ini menghitung jangka waktu pinjaman dalam
- * HARI (100/200/300), tidak pernah dalam bulan. Basis data produksi sudah
- * memakai kolom `tenor_days`/`remaining_tenor_days`, sedangkan migrasi di
- * repositori ini masih `tenor_months`/`remaining_tenor_months` — produksi
- * berjalan lebih jauh daripada repositori. Perintah ini karena itu menanyakan
- * kolom mana yang benar-benar ada lewat Schema::hasColumn dan memakai yang
- * ditemukan, sehingga sama benarnya di kedua skema. Angka berkas disalin apa
- * adanya; --tenor=abaikan tersedia bila kolom itu tidak boleh disentuh.
+ * Catatan tentang tenor. Basis data produksi memakai kolom `tenor_days`,
+ * sedangkan migrasi di repositori ini masih `tenor_months` — produksi berjalan
+ * lebih jauh daripada repositori — jadi kolomnya ditanyakan lewat
+ * Schema::hasColumn, bukan dipatok mati.
+ *
+ * Kolom itu tetap TIDAK disentuh secara bawaan, meskipun berkas memuat jangka
+ * waktunya. Pemeriksaan data produksi menunjukkan `tenor_days` pada tabel
+ * saldo awal justru berisi hitungan bulan (3/6/7/10/16), sementara tabel
+ * `loans` yang memegang angka hari sesungguhnya beserta `tenor_unit`-nya.
+ * Koperasi memakai dua satuan sekaligus — satu seri produk dalam hari, satu
+ * lagi dalam bulan — dan tabel saldo awal belum punya kolom untuk menyatakan
+ * satuan mana yang berlaku. Menuliskan "300" ke baris yang produknya 10 bulan
+ * hanya memindahkan kesalahan, bukan memperbaikinya. Pakai --tenor=hari hanya
+ * bila skema sudah sanggup menyatakan satuannya.
  *
  * Bawaan perintah ini adalah uji-kering: tanpa --terapkan tidak ada satu baris
  * pun yang ditulis, dan laporannya tetap dihasilkan supaya selisihnya dapat
@@ -42,7 +48,7 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
     {batch : ID batch saldo awal (lihat /admin/saldo-awal)}
     {berkas : Path berkas .xlsx daftar pinjaman yang sudah benar}
     {--terapkan : Tulis perubahan; tanpa ini perintah hanya melapor (uji-kering)}
-    {--tenor=hari : Perlakuan kolom tenor — "hari" (bawaan) menyalin jangka waktu apa adanya, "abaikan" tidak menyentuhnya}
+    {--tenor=abaikan : Perlakuan kolom tenor — "abaikan" (bawaan) tidak menyentuhnya, "hari" menyalin jangka waktu berkas apa adanya}
     {--produk= : Kode produk pinjaman untuk baris yang belum ada di basis data}
     {--hapus-selisih : Hapus baris basis data yang tidak ada di berkas}
     {--paksa : Izinkan menyentuh batch yang sudah dikunci (berbahaya, lihat catatan)}
@@ -358,12 +364,19 @@ class KoreksiSaldoAwalPinjaman extends Command
                 }
             }
 
+            // "Jatuh Tempo" di berkas adalah AKHIR MASA PINJAMAN (tanggal akad +
+            // jangka waktu), sedangkan next_due_date menyimpan jatuh tempo
+            // ANGSURAN BERIKUTNYA. Dua hal yang berbeda, dan pada data produksi
+            // hampir seluruh baris berbeda karenanya. Menimpanya membuat sistem
+            // mengira tidak ada angsuran yang jatuh tempo sampai akhir masa
+            // pinjaman, sehingga pengingat jatuh tempo berhenti bekerja untuk
+            // setiap pinjaman yang masih berjalan. Kolom ini karena itu dibaca
+            // untuk dilaporkan, tidak pernah ditulis.
             $nilai = [
                 'disbursement_date' => $b['tanggal'],
                 'original_principal' => $b['pokok'],
                 'outstanding_principal' => $b['sisa_pokok'],
                 'outstanding_interest' => $b['sisa_jasa'],
-                'next_due_date' => $b['jatuh_tempo'],
             ];
 
             if ($this->option('tenor') === 'hari' && $b['hari'] !== null && $b['hari'] > 0) {
@@ -417,6 +430,12 @@ class KoreksiSaldoAwalPinjaman extends Command
                     $this->kolomTenor['tenor'] => $b['hari'],
                     $this->kolomTenor['sisa'] => $b['hari'],
                     'next_installment_number' => 1,
+                    // Baris yang sudah ada tidak pernah ditimpa next_due_date-nya
+                    // (lihat catatan di atas), tetapi baris baru wajib mengisinya
+                    // karena kolomnya NOT NULL — dan jatuh tempo akhir dari berkas
+                    // adalah satu-satunya tanggal yang tersedia untuk baris yang
+                    // belum punya jadwal angsuran sama sekali.
+                    'next_due_date' => $b['jatuh_tempo'],
                     'collectibility' => 'lancar',
                 ],
             ];
