@@ -10,6 +10,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 
@@ -25,10 +26,13 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
  * justru merusak data yang selama ini benar.
  *
  * Catatan tentang tenor: koperasi ini menghitung jangka waktu pinjaman dalam
- * HARI (100/200/300), tidak pernah dalam bulan. Kolom `tenor_months` karena
- * itu menyimpan jumlah hari, bukan bulan — namanya warisan skema dan tidak
- * mencerminkan isinya. Angka dari berkas disalin apa adanya; --tenor=abaikan
- * tersedia bila suatu saat kolom itu tidak boleh disentuh.
+ * HARI (100/200/300), tidak pernah dalam bulan. Basis data produksi sudah
+ * memakai kolom `tenor_days`/`remaining_tenor_days`, sedangkan migrasi di
+ * repositori ini masih `tenor_months`/`remaining_tenor_months` — produksi
+ * berjalan lebih jauh daripada repositori. Perintah ini karena itu menanyakan
+ * kolom mana yang benar-benar ada lewat Schema::hasColumn dan memakai yang
+ * ditemukan, sehingga sama benarnya di kedua skema. Angka berkas disalin apa
+ * adanya; --tenor=abaikan tersedia bila kolom itu tidak boleh disentuh.
  *
  * Bawaan perintah ini adalah uji-kering: tanpa --terapkan tidak ada satu baris
  * pun yang ditulis, dan laporannya tetap dihasilkan supaya selisihnya dapat
@@ -46,6 +50,14 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 #[Description('Menyelaraskan saldo awal pinjaman sebuah batch dengan berkas daftar pinjaman yang benar')]
 class KoreksiSaldoAwalPinjaman extends Command
 {
+    /**
+     * Nama kolom tenor yang benar-benar ada di basis data ini —
+     * `tenor_days` di produksi, `tenor_months` pada migrasi repositori.
+     *
+     * @var array{tenor: string, sisa: string}
+     */
+    private array $kolomTenor;
+
     /** Nama kolom berkas (sudah dinormalkan) -> nama internal. */
     private const KOLOM = [
         'tanggal pinjaman' => 'tanggal',
@@ -61,6 +73,12 @@ class KoreksiSaldoAwalPinjaman extends Command
 
     public function handle(): int
     {
+        if (($galatSkema = $this->kenaliKolomTenor()) !== null) {
+            $this->error($galatSkema);
+
+            return self::FAILURE;
+        }
+
         $batch = OpeningBalanceBatch::query()->find((int) $this->argument('batch'));
 
         if (! $batch) {
@@ -173,6 +191,24 @@ class KoreksiSaldoAwalPinjaman extends Command
         ]);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Produksi memakai `tenor_days`, migrasi repositori masih `tenor_months`.
+     * Menanyakan skema jauh lebih aman daripada memilih salah satu: perintah
+     * yang menulis ke kolom yang tidak ada akan gagal di tengah koreksi.
+     */
+    private function kenaliKolomTenor(): ?string
+    {
+        foreach ([['tenor_days', 'remaining_tenor_days'], ['tenor_months', 'remaining_tenor_months']] as [$tenor, $sisa]) {
+            if (Schema::hasColumn('opening_balance_loans', $tenor)) {
+                $this->kolomTenor = ['tenor' => $tenor, 'sisa' => $sisa];
+
+                return null;
+            }
+        }
+
+        return 'Tabel opening_balance_loans tidak punya kolom tenor_days maupun tenor_months.';
     }
 
     /**
@@ -331,7 +367,7 @@ class KoreksiSaldoAwalPinjaman extends Command
             ];
 
             if ($this->option('tenor') === 'hari' && $b['hari'] !== null && $b['hari'] > 0) {
-                $nilai['tenor_months'] = $b['hari'];
+                $nilai[$this->kolomTenor['tenor']] = $b['hari'];
             }
 
             if ($cocok) {
@@ -378,8 +414,8 @@ class KoreksiSaldoAwalPinjaman extends Command
                     'opening_balance_batch_id' => $batch->id,
                     'member_id' => $anggota->id,
                     'loan_product_id' => $produkBaku->id,
-                    'tenor_months' => $b['hari'],
-                    'remaining_tenor_months' => $b['hari'],
+                    $this->kolomTenor['tenor'] => $b['hari'],
+                    $this->kolomTenor['sisa'] => $b['hari'],
                     'next_installment_number' => 1,
                     'collectibility' => 'lancar',
                 ],
@@ -541,7 +577,7 @@ class KoreksiSaldoAwalPinjaman extends Command
             if (in_array($kolom, ['disbursement_date', 'next_due_date'], true)) {
                 $lamaTeks = $lama?->toDateString() ?? '';
                 $baruTeks = (string) $baru;
-            } elseif ($kolom === 'tenor_months') {
+            } elseif ($kolom === $this->kolomTenor['tenor']) {
                 $lamaTeks = (string) (int) $lama;
                 $baruTeks = (string) (int) $baru;
             } else {

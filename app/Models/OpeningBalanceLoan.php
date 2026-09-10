@@ -21,6 +21,13 @@ class OpeningBalanceLoan extends Model
         'outstanding_interest',
         'tenor_months',
         'remaining_tenor_months',
+        // Basis data produksi menyimpan tenor dalam hari lewat kolom
+        // tenor_days/remaining_tenor_days — koperasi tidak pernah memakai
+        // satuan bulan. Kedua penamaan didaftarkan di sini supaya create()
+        // tidak diam-diam membuang nilainya pada skema mana pun; tanpa ini
+        // baris baru akan tersimpan dengan tenor kosong tanpa galat apa pun.
+        'tenor_days',
+        'remaining_tenor_days',
         'next_installment_number',
         'next_due_date',
         'collectibility',
