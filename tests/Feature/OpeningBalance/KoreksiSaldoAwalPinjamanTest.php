@@ -152,24 +152,42 @@ class KoreksiSaldoAwalPinjamanTest extends TestCase
         $this->assertSame(2, $baris->remaining_tenor_months);
         $this->assertSame(5, $baris->next_installment_number);
         $this->assertSame('LAMA-77', $baris->external_loan_number);
-        // Tenor bulan juga tidak disentuh selama --tenor tidak diminta.
-        $this->assertSame(3, $baris->tenor_months);
     }
 
-    public function test_opsi_tenor_hari_menyalin_jangka_waktu_apa_adanya(): void
+    /**
+     * Koperasi ini menghitung jangka waktu dalam hari, tidak pernah bulan, jadi
+     * angka berkas disalin apa adanya ke `tenor_months` tanpa dikonversi.
+     */
+    public function test_tenor_disalin_dalam_hari_secara_bawaan(): void
     {
         $batch = $this->batch();
         $anggota = $this->anggota('1170100004', 'Maman Sayur');
         $baris = $this->barisSaldoAwal($batch, $anggota);
 
         $berkas = $this->berkas([
-            ['2026-05-21', '1170100004', 'Maman Sayur', 3000000, 150000, 1074500, 52500, '2026-08-29', 100],
+            ['2026-05-21', '1170100004', 'Maman Sayur', 3000000, 150000, 1074500, 52500, '2026-08-29', 200],
         ]);
 
-        $this->artisan("saldo-awal:koreksi-pinjaman {$batch->id} {$berkas} --terapkan --tenor=hari")
+        $this->artisan("saldo-awal:koreksi-pinjaman {$batch->id} {$berkas} --terapkan")
             ->assertSuccessful();
 
-        $this->assertSame(100, $baris->refresh()->tenor_months);
+        $this->assertSame(200, $baris->refresh()->tenor_months);
+    }
+
+    public function test_opsi_tenor_abaikan_tidak_menyentuh_kolom_tenor(): void
+    {
+        $batch = $this->batch();
+        $anggota = $this->anggota('1170100004', 'Maman Sayur');
+        $baris = $this->barisSaldoAwal($batch, $anggota);
+
+        $berkas = $this->berkas([
+            ['2026-05-21', '1170100004', 'Maman Sayur', 3000000, 150000, 1074500, 52500, '2026-08-29', 200],
+        ]);
+
+        $this->artisan("saldo-awal:koreksi-pinjaman {$batch->id} {$berkas} --terapkan --tenor=abaikan")
+            ->assertSuccessful();
+
+        $this->assertSame(3, $baris->refresh()->tenor_months);
     }
 
     /**
@@ -291,6 +309,8 @@ class KoreksiSaldoAwalPinjamanTest extends TestCase
             'member_id' => $anggota->id,
             'outstanding_principal' => 1074500,
             'outstanding_interest' => 52500,
+            'tenor_months' => 100,
+            'remaining_tenor_months' => 100,
         ]);
     }
 

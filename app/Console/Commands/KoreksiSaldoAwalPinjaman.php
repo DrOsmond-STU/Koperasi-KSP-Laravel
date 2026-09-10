@@ -18,12 +18,17 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
  * "Daftar Pinjaman" yang sudah dicocokkan ke neraca.
  *
  * Berkas daftar pinjaman BUKAN template import saldo awal: ia laporan dengan
- * kolom sendiri (Sisa Pinjaman / Sisa Jasa), tanpa kolektibilitas, tanpa kode
- * produk, dan tenornya dalam HARI sedangkan basis data menyimpan bulan. Karena
- * itu perintah ini hanya menyentuh kolom yang benar-benar ada di berkas dan
- * membiarkan sisanya apa adanya — kolom yang tidak punya sumber data tidak
- * boleh ditebak, sebab menimpanya dengan nilai default justru merusak data
- * yang selama ini benar.
+ * kolom sendiri (Sisa Pinjaman / Sisa Jasa), tanpa kolektibilitas dan tanpa
+ * kode produk. Karena itu perintah ini hanya menyentuh kolom yang benar-benar
+ * ada di berkas dan membiarkan sisanya apa adanya — kolom yang tidak punya
+ * sumber data tidak boleh ditebak, sebab menimpanya dengan nilai default
+ * justru merusak data yang selama ini benar.
+ *
+ * Catatan tentang tenor: koperasi ini menghitung jangka waktu pinjaman dalam
+ * HARI (100/200/300), tidak pernah dalam bulan. Kolom `tenor_months` karena
+ * itu menyimpan jumlah hari, bukan bulan — namanya warisan skema dan tidak
+ * mencerminkan isinya. Angka dari berkas disalin apa adanya; --tenor=abaikan
+ * tersedia bila suatu saat kolom itu tidak boleh disentuh.
  *
  * Bawaan perintah ini adalah uji-kering: tanpa --terapkan tidak ada satu baris
  * pun yang ditulis, dan laporannya tetap dihasilkan supaya selisihnya dapat
@@ -33,7 +38,7 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
     {batch : ID batch saldo awal (lihat /admin/saldo-awal)}
     {berkas : Path berkas .xlsx daftar pinjaman yang sudah benar}
     {--terapkan : Tulis perubahan; tanpa ini perintah hanya melapor (uji-kering)}
-    {--tenor=abaikan : Perlakuan kolom tenor — "abaikan" (bawaan) atau "hari" untuk menyalin jangka waktu hari apa adanya}
+    {--tenor=hari : Perlakuan kolom tenor — "hari" (bawaan) menyalin jangka waktu apa adanya, "abaikan" tidak menyentuhnya}
     {--produk= : Kode produk pinjaman untuk baris yang belum ada di basis data}
     {--hapus-selisih : Hapus baris basis data yang tidak ada di berkas}
     {--paksa : Izinkan menyentuh batch yang sudah dikunci (berbahaya, lihat catatan)}
@@ -356,6 +361,15 @@ class KoreksiSaldoAwalPinjaman extends Command
                 continue;
             }
 
+            // Baris baru butuh tenor karena kolomnya NOT NULL, dan satu-satunya
+            // sumbernya adalah kolom jangka waktu berkas — tidak ada nilai
+            // bawaan yang masuk akal untuk ditebak di sini.
+            if ($b['hari'] === null || $b['hari'] <= 0) {
+                $galat[] = $b + ['sebab' => 'baris baru tetapi jangka waktu (hari) kosong atau tidak masuk akal'];
+
+                continue;
+            }
+
             $tambah[] = [
                 'no_anggota' => $anggota->member_number,
                 'nama' => $anggota->name,
@@ -364,8 +378,8 @@ class KoreksiSaldoAwalPinjaman extends Command
                     'opening_balance_batch_id' => $batch->id,
                     'member_id' => $anggota->id,
                     'loan_product_id' => $produkBaku->id,
-                    'tenor_months' => $nilai['tenor_months'] ?? max(1, (int) ceil((float) ($b['hari'] ?? 30) / 30)),
-                    'remaining_tenor_months' => $nilai['tenor_months'] ?? max(1, (int) ceil((float) ($b['hari'] ?? 30) / 30)),
+                    'tenor_months' => $b['hari'],
+                    'remaining_tenor_months' => $b['hari'],
                     'next_installment_number' => 1,
                     'collectibility' => 'lancar',
                 ],
