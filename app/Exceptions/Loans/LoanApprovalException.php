@@ -44,4 +44,17 @@ class LoanApprovalException extends RuntimeException
     {
         return new self('Pinjaman ini tidak memiliki jurnal pencairan tersendiri (berasal dari transaksi lain) dan tidak dapat dibatalkan lewat menu ini.');
     }
+
+    /**
+     * Pencairan gagal karena bagan akun yang dipakai jurnal pencairan tidak
+     * layak posting (mis. akun kas cabang belum diatur dan fallback `1101`
+     * sudah dijadikan akun header, akun piutang/provisi produk kosong, atau
+     * periodenya sudah ditutup). Ini salah konfigurasi yang bisa diperbaiki
+     * admin, jadi ditampilkan sebagai pesan yang bisa ditindaklanjuti —
+     * bukan halaman 500.
+     */
+    public static function disbursementPostingFailed(string $reason): self
+    {
+        return new self("Persetujuan tidak dapat diselesaikan karena jurnal pencairan gagal diposting: {$reason} Periksa akun kas cabang di Pengaturan → Kas Cabang dan akun jurnal produk pinjamannya, lalu ulangi persetujuan ini.");
+    }
 }

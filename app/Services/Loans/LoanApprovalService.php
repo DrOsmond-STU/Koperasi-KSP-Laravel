@@ -2,6 +2,7 @@
 
 namespace App\Services\Loans;
 
+use App\Exceptions\Accounting\JournalPostingException;
 use App\Exceptions\Loans\LoanApprovalException;
 use App\Models\ChartOfAccount;
 use App\Models\Loan;
@@ -129,7 +130,7 @@ class LoanApprovalService
 
         $lines = [
             ['chart_of_account_id' => $product->coa_receivable_account_id, 'debit' => $principal, 'credit' => 0],
-            ['chart_of_account_id' => $this->cashAccount()->id, 'debit' => 0, 'credit' => $netCash],
+            ['chart_of_account_id' => $this->cashAccount($loan)->id, 'debit' => 0, 'credit' => $netCash],
         ];
 
         if ($provisionFee > 0) {
@@ -142,14 +143,23 @@ class LoanApprovalService
             $keterangan .= ' (pencatatan pinjaman lama, akad '.$berlaku->translatedFormat('d M Y').')';
         }
 
-        $this->journalEngine->post([
-            'branch_id' => $loan->branch_id,
-            'entry_date' => now()->toDateString(),
-            'description' => $keterangan,
-            'created_by' => $loan->created_by,
-            'source' => $loan,
-            'lines' => $lines,
-        ]);
+        // Salah konfigurasi bagan akun adalah kesalahan data yang bisa
+        // diperbaiki admin — bukan bug yang pantas menjatuhkan halaman
+        // persetujuan ke 500. Transaksi tetap dibatalkan seutuhnya, jadi
+        // suara approval terakhir ikut mundur dan persetujuan bisa diulang
+        // persis dari keadaan semula setelah akunnya dibetulkan.
+        try {
+            $this->journalEngine->post([
+                'branch_id' => $loan->branch_id,
+                'entry_date' => now()->toDateString(),
+                'description' => $keterangan,
+                'created_by' => $loan->created_by,
+                'source' => $loan,
+                'lines' => $lines,
+            ]);
+        } catch (JournalPostingException $exception) {
+            throw LoanApprovalException::disbursementPostingFailed($exception->getMessage());
+        }
 
         // Satuan tenor (hari/bulan) di-snapshot ke pinjaman saat pengajuan
         // — lihat Loan::usesDailyTenor() / LoanService. Pinjaman anggota
@@ -189,9 +199,23 @@ class LoanApprovalService
         ]);
     }
 
-    private function cashAccount(): ChartOfAccount
+    /**
+     * Akun kas yang dikredit saat pencairan — akun kas cabang pinjaman itu,
+     * dengan fallback `1101` persis seperti LoanRepaymentService::cashAccount().
+     *
+     * Kedua sisi pinjaman yang sama HARUS bertemu di akun yang sama: kalau
+     * pencairan mengkredit satu akun sementara angsurannya mendebit akun
+     * lain, kas kedua akun itu sama-sama salah selamanya. Angsuran sudah
+     * memakai akun kas cabang sejak kolom branches.cash_account_id
+     * diperkenalkan; pencairan tertinggal ikut memakai `1101` — dan di
+     * koperasi yang bagan akunnya sendiri, `1101` bukan akun kas yang
+     * dipakai (bahkan dijadikan akun header), sehingga pencairan selalu
+     * ditolak JournalEngine.
+     */
+    private function cashAccount(Loan $loan): ChartOfAccount
     {
-        return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
+        return $loan->branch?->cashAccount
+            ?? ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
     }
 
     /**
