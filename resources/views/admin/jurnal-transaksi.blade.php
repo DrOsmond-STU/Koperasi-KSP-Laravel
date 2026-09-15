@@ -102,6 +102,19 @@
         </p>
     @endunless
 
+    {{-- Saat difilter per akun, yang tampil adalah transaksi UTUH yang menyentuh
+         akun itu, jadi totalnya ikut menjumlah baris lawan. Tanpa keterangan ini
+         angka besar di atas gampang terbaca sebagai mutasi akun yang dipilih —
+         padahal bukan, dan itu salah baca yang menyangkut angka uang. --}}
+    @if ($filter['chart_of_account_id'])
+        <p class="hint" style="margin-top:-10px; margin-bottom:16px; max-width:760px;">
+            Filter akun menampilkan <strong>seluruh baris</strong> dari transaksi yang menyentuh akun itu,
+            termasuk lawan debet/kreditnya — supaya setiap transaksi tetap terbaca utuh. Karena itu total di
+            atas bukan mutasi akun tersebut. Untuk mutasi dan saldo berjalan satu akun, gunakan
+            <a href="{{ route('admin.jurnal-buku-besar.index', ['chart_of_account_id' => $filter['chart_of_account_id'], 'period_start' => $filter['date_from'], 'period_end' => $filter['date_to']]) }}">Buku Besar</a>.
+        </p>
+    @endif
+
     <div class="tabel-gulir">
         <table class="jurnal-tabel">
             <thead>

@@ -121,6 +121,22 @@ class JournalReportTest extends TestCase
             ->assertSee($barisKredit->account->code);
     }
 
+    /** Angka besar di ringkasan tidak boleh terbaca sebagai mutasi akun yang difilter. */
+    public function test_filtering_by_account_warns_that_totals_are_not_the_account_movement(): void
+    {
+        $entry = $this->postingJurnal('Transaksi dua sisi', '2026-08-10');
+        $akun = $entry->lines->firstWhere('debit', '>', 0)->chart_of_account_id;
+
+        $this->actingAs($this->bendahara())
+            ->get(route('admin.jurnal-transaksi.index', [
+                'date_from' => '2026-08-01',
+                'date_to' => '2026-08-31',
+                'chart_of_account_id' => $akun,
+            ]))
+            ->assertOk()
+            ->assertSee('bukan mutasi akun tersebut');
+    }
+
     public function test_totals_cover_the_whole_filter_and_report_balance(): void
     {
         $this->postingJurnal('Satu', '2026-08-05', null, 100000);
