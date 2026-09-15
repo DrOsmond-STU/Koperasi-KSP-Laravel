@@ -17,6 +17,7 @@ use App\Http\Controllers\Admin\GeneralJournalController;
 use App\Http\Controllers\Admin\GeneralLedgerController;
 use App\Http\Controllers\Admin\InventoryReportController;
 use App\Http\Controllers\Admin\JournalAdjustmentController;
+use App\Http\Controllers\Admin\JournalReportController;
 use App\Http\Controllers\Admin\LaporanController;
 use App\Http\Controllers\Admin\LoanApprovalController;
 use App\Http\Controllers\Admin\LoanProductController;
@@ -174,6 +175,11 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
 
     Route::get('/admin/jurnal-buku-besar', [GeneralLedgerController::class, 'index'])
         ->name('admin.jurnal-buku-besar.index');
+
+    Route::get('/admin/jurnal-transaksi', [JournalReportController::class, 'index'])
+        ->name('admin.jurnal-transaksi.index');
+    Route::get('/admin/jurnal-transaksi/cetak', [JournalReportController::class, 'print'])
+        ->name('admin.jurnal-transaksi.print');
 
     Route::get('/admin/jurnal-penyesuaian', [JournalAdjustmentController::class, 'create'])
         ->name('admin.jurnal-penyesuaian.create');

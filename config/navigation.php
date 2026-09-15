@@ -43,6 +43,7 @@ return [
                 ['label' => 'Import Bagan Akun', 'route' => 'admin.master.chart-of-accounts.import.form', 'permission' => 'chart_of_account.create', 'icon' => 'database'],
                 ['label' => 'Hapus Massal Akun', 'route' => 'admin.master.chart-of-accounts.purge.form', 'permission' => 'chart_of_account.delete', 'icon' => 'archive'],
                 ['label' => 'Jurnal & Buku Besar', 'route' => 'admin.jurnal-buku-besar.index', 'permission' => 'jurnal.read', 'icon' => 'book'],
+                ['label' => 'Laporan Jurnal Transaksi', 'route' => 'admin.jurnal-transaksi.index', 'permission' => 'jurnal.read', 'icon' => 'book'],
                 ['label' => 'Jurnal Umum', 'route' => 'admin.jurnal-umum.create', 'permission' => 'jurnal.create', 'icon' => 'file-text'],
                 ['label' => 'Jurnal Penyesuaian', 'route' => 'admin.jurnal-penyesuaian.create', 'permission' => 'jurnal.adjust', 'icon' => 'sliders'],
                 ['label' => 'Saldo Awal', 'route' => 'admin.saldo-awal.index', 'permission' => 'saldo_awal.read', 'icon' => 'database'],
