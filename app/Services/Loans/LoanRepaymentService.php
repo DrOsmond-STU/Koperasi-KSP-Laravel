@@ -517,10 +517,17 @@ class LoanRepaymentService
      * lawan angsuran jangan di-hardcode ke satu akun tetap).
      *
      * Kalau tidak diisi (mis. dipanggil dari webhook Xendit —
-     * LoanRepaymentGatewayService, yang belum ada UI pemilihan akun), jatuh
-     * ke akun kas cabang si pinjaman kalau sudah dikonfigurasi (Branch::
-     * cashAccount, lihat admin.pengaturan.kas-cabang), lalu fallback ke
-     * `1101` untuk cabang yang belum dikonfigurasi sama sekali.
+     * LoanRepaymentGatewayService, yang belum ada UI pemilihan akun),
+     * urutannya diserahkan ke CashAccountResolver: akun kas cabang si
+     * pinjaman (Branch::cashAccount, lihat admin.pengaturan.kas-cabang),
+     * lalu akun kas bawaan dari config `koperasi.akun_kas_bawaan`.
+     *
+     * Dulu baris terakhirnya `where('code', '1101')->firstOrFail()`. Di
+     * koperasi yang membawa bagan akunnya sendiri, '1101' tidak ada sebagai
+     * akun kas yang bisa diposting, jadi cabang yang belum dikonfigurasi
+     * berujung ke HTTP 500 tanpa keterangan. Lewat resolver, kegagalannya
+     * menyebut cabang mana yang belum diatur dan layar mana yang harus
+     * dibuka.
      */
     private function cashAccount(Loan $loan, ?int $cashAccountId): ChartOfAccount
     {
