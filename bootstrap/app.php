@@ -17,6 +17,20 @@ return Application::configure(basePath: dirname(__DIR__))
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
+        then: function (): void {
+            // Import massal Master Anggota - lihat routes/member-import.php.
+            require __DIR__.'/../routes/member-import.php';
+            // Master Kategori Produk Simpanan.
+            require __DIR__.'/../routes/master-kategori-simpanan.php';
+            // Koreksi Data Saldo Awal (pengosongan massal sebelum dikunci).
+            require __DIR__.'/../routes/saldo-awal-koreksi.php';
+            // Import massal & hapus massal Bagan Akun.
+            require __DIR__.'/../routes/coa-import.php';
+            // Ubah/hapus Produk Simpanan & Produk Pinjaman.
+            require __DIR__.'/../routes/master-produk.php';
+            // Import massal Jadwal Angsuran (tambal jadwal yang luput saat migrasi).
+            require __DIR__.'/../routes/jadwal-angsuran-import.php';
+        },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([

@@ -6,6 +6,7 @@ use App\Exceptions\Loans\InvalidLoanApplicationException;
 use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Models\Member;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -13,6 +14,22 @@ use Illuminate\Support\Facades\DB;
  * produk, snapshot tarif & jumlah approval yang dibutuhkan pada saat
  * pengajuan (bukan dihitung ulang nanti) agar perubahan produk di kemudian
  * hari tidak memengaruhi pengajuan yang sudah berjalan.
+ *
+ * Tenor punya SATUAN per produk (hari ATAU bulan) — laporan staf 24 Agu
+ * 2026: "pinjaman anggota itu harian, 100hari dan 200hari". Ini BUKAN
+ * migrasi "produk lama vs baru": Pinjaman Anggota ditagih harian (anggota
+ * pasar menyetor tiap hari), Piutang Karyawan dipotong gaji bulanan — dua
+ * model bisnis yang hidup berdampingan selamanya, dibedakan lewat
+ * LoanProduct::usesDailyTenor() / tenor_unit (lihat migrasi
+ * add_tenor_unit_to_loan_products_and_loans, 20 Agu 2026). Satuannya
+ * di-snapshot ke pinjaman saat pengajuan, sejalan dengan
+ * interest_rate_percentage, supaya perubahan satuan produk di kemudian
+ * hari tidak memengaruhi pinjaman yang sudah berjalan.
+ *
+ * Tanggal pengajuan bisa dimundurkan supaya pinjaman lama yang belum pernah
+ * masuk sistem dapat dicatat apa adanya. Kolom submitted_at sudah ada sejak
+ * awal, jadi kemampuan ini tidak menambah kolom apa pun — yang berubah hanya
+ * asal nilainya: dulu selalu now(), sekarang boleh dari formulir.
  */
 class LoanService
 {
@@ -22,27 +39,33 @@ class LoanService
         Member $member,
         LoanProduct $product,
         float $principal,
-        int $tenorMonths,
+        int $tenorDays,
         int $branchId,
         int $createdBy,
+        ?Carbon $submittedAt = null,
     ): Loan {
-        $this->assertWithinProductLimits($product, $principal, $tenorMonths);
+        $this->assertWithinProductLimits($product, $principal, $tenorDays);
+
+        // Parameter terakhir dan bernilai bawaan null: pemanggil lama yang
+        // tidak mengirimkannya tetap mendapat hari ini, persis seperti dulu.
+        $tanggal = $submittedAt ?? Carbon::now();
 
         $rate = $product->rateAt();
 
-        return DB::transaction(function () use ($member, $product, $principal, $tenorMonths, $branchId, $createdBy, $rate) {
+        return DB::transaction(function () use ($member, $product, $principal, $tenorDays, $branchId, $createdBy, $rate, $tanggal) {
             return Loan::query()->create([
                 'branch_id' => $branchId,
                 'member_id' => $member->id,
                 'loan_product_id' => $product->id,
-                'loan_number' => $this->generateLoanNumber($product),
+                'loan_number' => $this->generateLoanNumber($product, $tanggal),
                 'principal_amount' => $principal,
-                'tenor_months' => $tenorMonths,
+                'tenor_days' => $tenorDays,
+                'tenor_unit' => $product->tenor_unit,
                 'interest_rate_percentage' => $rate?->rate_percentage ?? 0,
                 'required_approval_count' => $product->requiredApprovalCountFor($principal),
                 'status' => 'diajukan',
                 'created_by' => $createdBy,
-                'submitted_at' => now()->toDateString(),
+                'submitted_at' => $tanggal->toDateString(),
             ]);
         });
     }
@@ -65,11 +88,11 @@ class LoanService
         Member $member,
         LoanProduct $product,
         float $principal,
-        int $tenorMonths,
+        int $tenorDays,
         int $branchId,
         int $createdBy,
     ): Loan {
-        $this->assertWithinProductLimits($product, $principal, $tenorMonths);
+        $this->assertWithinProductLimits($product, $principal, $tenorDays);
 
         $ratePercentage = (float) ($product->rateAt()?->rate_percentage ?? 0);
 
@@ -79,7 +102,8 @@ class LoanService
             'loan_product_id' => $product->id,
             'loan_number' => $this->generateLoanNumber($product),
             'principal_amount' => $principal,
-            'tenor_months' => $tenorMonths,
+            'tenor_days' => $tenorDays,
+            'tenor_unit' => $product->tenor_unit,
             'interest_rate_percentage' => $ratePercentage,
             'provision_fee_amount' => 0,
             'required_approval_count' => $product->requiredApprovalCountFor($principal),
@@ -90,7 +114,11 @@ class LoanService
             'disbursed_at' => now()->toDateString(),
         ]);
 
-        foreach ($this->scheduleCalculator->calculate($principal, $tenorMonths, $ratePercentage, $product->calculation_method, now()) as $row) {
+        $schedule = $product->usesDailyTenor()
+            ? $this->scheduleCalculator->calculateDaily($principal, $tenorDays, $ratePercentage, $product->calculation_method, now())
+            : $this->scheduleCalculator->calculate($principal, $tenorDays, $ratePercentage, $product->calculation_method, now());
+
+        foreach ($schedule as $row) {
             $loan->schedules()->create([
                 'installment_number' => $row['installment_number'],
                 'due_date' => $row['due_date'],
@@ -103,21 +131,36 @@ class LoanService
         return $loan->fresh('schedules');
     }
 
-    private function assertWithinProductLimits(LoanProduct $product, float $principal, int $tenorMonths): void
+    private function assertWithinProductLimits(LoanProduct $product, float $principal, int $tenorDays): void
     {
         if ($principal < (float) $product->min_plafon || $principal > (float) $product->max_plafon) {
             throw InvalidLoanApplicationException::plafonOutOfRange($principal, (float) $product->min_plafon, (float) $product->max_plafon);
         }
 
-        if ($tenorMonths < $product->min_tenor_months || $tenorMonths > $product->max_tenor_months) {
-            throw InvalidLoanApplicationException::tenorOutOfRange($tenorMonths, $product->min_tenor_months, $product->max_tenor_months);
+        if ($tenorDays < $product->min_tenor_days || $tenorDays > $product->max_tenor_days) {
+            throw InvalidLoanApplicationException::tenorOutOfRange(
+                $tenorDays,
+                $product->min_tenor_days,
+                $product->max_tenor_days,
+                $product->usesDailyTenor() ? 'hari' : 'bulan',
+            );
         }
     }
 
-    private function generateLoanNumber(LoanProduct $product): string
+    /**
+     * Ruas tanggal pada nomor pinjaman mengikuti tanggal pengajuan, bukan
+     * tanggal input. Pinjaman lama yang dicatat belakangan karena itu
+     * bernomor sesuai tahun akadnya, bukan tahun pencatatannya — kalau
+     * memakai hari ini, daftar pinjaman yang diurutkan per nomor akan
+     * menempatkan pinjaman 2025 di antara pinjaman 2026. Keunikan tetap
+     * dijaga oleh pemeriksaan berulang di bawah.
+     */
+    private function generateLoanNumber(LoanProduct $product, ?Carbon $tanggal = null): string
     {
+        $ymd = ($tanggal ?? Carbon::now())->format('ymd');
+
         do {
-            $candidate = strtoupper($product->code).'-'.now()->format('ymd').'-'.str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+            $candidate = strtoupper($product->code).'-'.$ymd.'-'.str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
         } while (Loan::query()->where('loan_number', $candidate)->exists());
 
         return $candidate;

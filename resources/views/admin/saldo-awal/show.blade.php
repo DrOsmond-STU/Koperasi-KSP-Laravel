@@ -254,11 +254,11 @@
                     </div>
                     <div>
                         <label>Tenor (bulan)</label>
-                        <input type="number" min="1" name="tenor_months" required>
+                        <input type="number" min="1" name="tenor_days" required>
                     </div>
                     <div>
                         <label>Sisa Tenor (bulan)</label>
-                        <input type="number" min="0" name="remaining_tenor_months" required>
+                        <input type="number" min="0" name="remaining_tenor_days" required>
                     </div>
                     <div>
                         <label>Angsuran ke-</label>

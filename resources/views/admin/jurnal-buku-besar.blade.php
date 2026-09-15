@@ -9,6 +9,7 @@
         .data-table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
         .data-table th, .data-table td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
         .data-table th { background: var(--paper); font-weight: 700; color: var(--muted); }
+        .data-table tr.baris-saldo-awal td { background: var(--paper); font-weight: 700; font-style: italic; }
     </style>
 
     <h2>Buku Besar {{ $isConsolidated ? '— Konsolidasi Seluruh Cabang' : '' }}</h2>
@@ -37,11 +38,11 @@
             <thead><tr><th>Tanggal</th><th>Keterangan</th><th>Debit</th><th>Kredit</th><th>Saldo Berjalan</th></tr></thead>
             <tbody>
                 @forelse ($lines as $line)
-                    <tr>
+                    <tr @class(['baris-saldo-awal' => $line['is_opening'] ?? false])>
                         <td>{{ \Illuminate\Support\Carbon::parse($line['date'])->translatedFormat('d M Y') }}</td>
                         <td>{{ $line['description'] }}</td>
-                        <td>Rp {{ number_format((float) $line['debit'], 0, ',', '.') }}</td>
-                        <td>Rp {{ number_format((float) $line['credit'], 0, ',', '.') }}</td>
+                        <td>{{ ($line['is_opening'] ?? false) ? '—' : 'Rp '.number_format((float) $line['debit'], 0, ',', '.') }}</td>
+                        <td>{{ ($line['is_opening'] ?? false) ? '—' : 'Rp '.number_format((float) $line['credit'], 0, ',', '.') }}</td>
                         <td>Rp {{ number_format((float) $line['running_balance'], 0, ',', '.') }}</td>
                     </tr>
                 @empty

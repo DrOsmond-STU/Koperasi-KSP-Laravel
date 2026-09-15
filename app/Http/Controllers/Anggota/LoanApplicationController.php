@@ -24,6 +24,8 @@ class LoanApplicationController extends Controller
     public function create(Request $request): View
     {
         return view('portal.loan-application', [
+            // Semua produk aktif berlaku — lihat catatan yang sama di
+            // Staf\LoanApplicationController::create().
             'products' => LoanProduct::query()->where('is_active', true)->get(),
             'recentApplications' => $request->user()->member->loans()->latest()->limit(5)->get(),
         ]);
@@ -38,7 +40,7 @@ class LoanApplicationController extends Controller
             $member,
             $product,
             (float) $request->validated('principal_amount'),
-            (int) $request->validated('tenor_months'),
+            (int) $request->validated('tenor_days'),
             $member->branch_id,
             $request->user()->id,
         );

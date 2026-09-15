@@ -4,6 +4,7 @@ namespace App\Services\Savings;
 
 use App\Exceptions\Savings\InsufficientBalanceException;
 use App\Exceptions\Savings\TransactionAlreadyCancelledException;
+use App\Models\Branch;
 use App\Models\ChartOfAccount;
 use App\Models\Member;
 use App\Models\SavingsAccount;
@@ -20,8 +21,35 @@ use Illuminate\Support\Facades\DB;
  */
 class SavingsService
 {
-    /** Default cash account code used for over-the-counter Teller cash transactions. */
-    private const DEFAULT_CASH_ACCOUNT_CODE = '1101';
+    /**
+     * Kode cabang "Unit Koperasi Simpan Pinjam (KSP)" — dipakai sebagai
+     * akun kas transaksi Teller (setor/tarik/buka rekening).
+     *
+     * Sebelumnya di-hardcode ke akun kas konsolidasi 1101 untuk SEMUA
+     * cabang — laporan staf 24 Agu 2026: "akun lawan kas nya salah...
+     * ini harusnya masuk ke cabang KSP". Sempat dicoba dibuat resolusi
+     * PER CABANG rekening (mirror LoanRepaymentService), tapi ternyata
+     * SEMUA 1.226 rekening simpanan aktif di production ber-branch_id ke
+     * cabang ROOT "KPPD Pusat" (bukan ke Unit KSP/USP/UPF sama sekali) —
+     * jadi resolusi per-cabang rekening selalu jatuh ke akun kas KPPD
+     * Pusat (1101100 "KAS KECIL (KSP)"), bukan akun kas Unit KSP yang
+     * dimaksud (laporan susulan: "kenapa saat jurnal jadi 1101100 — KAS
+     * KECIL (KSP)" padahal banner default sudah benar 1101500). Jadi di
+     * sini SELALU dipakai akun kas cabang KSP ini, terlepas dari
+     * branch_id rekeningnya sendiri.
+     *
+     * Yang di-hardcode di sini adalah kode CABANG-nya, bukan kode akun —
+     * akun kas cabang KSP sendiri tetap bisa diedit kapan saja lewat
+     * admin/pengaturan/kas-cabang (branches.cash_account_id), jadi
+     * berubah otomatis tanpa deploy kode baru kalau nanti diganti.
+     */
+    private const DEFAULT_BRANCH_CODE = '001';
+
+    /** Kode akun kas konsolidasi — cuma dipakai sebagai jaring pengaman
+     *  kalau BAHKAN cabang KSP di atas belum/tidak punya akun kas
+     *  terkonfigurasi (seharusnya tidak pernah kejadian, tapi mencegah
+     *  error 500 alih-alih diam-diam salah posting). */
+    private const FALLBACK_CASH_ACCOUNT_CODE = '1101';
 
     public function __construct(private readonly JournalEngine $journalEngine) {}
 
@@ -31,8 +59,9 @@ class SavingsService
         int $branchId,
         float $initialDeposit,
         int $createdBy,
+        ?ChartOfAccount $cashAccount = null,
     ): SavingsAccount {
-        return DB::transaction(function () use ($member, $product, $branchId, $initialDeposit, $createdBy) {
+        return DB::transaction(function () use ($member, $product, $branchId, $initialDeposit, $createdBy, $cashAccount) {
             $account = SavingsAccount::query()->create([
                 'branch_id' => $branchId,
                 'member_id' => $member->id,
@@ -44,33 +73,52 @@ class SavingsService
             ]);
 
             if ($initialDeposit > 0) {
-                $this->deposit($account, $initialDeposit, $createdBy, 'Setoran awal pembukaan rekening');
+                $this->deposit($account, $initialDeposit, $createdBy, 'Setoran awal pembukaan rekening', null, null, $cashAccount);
             }
 
             return $account->fresh();
         });
     }
 
+    /**
+     * $date = tanggal transaksi SEBENARNYA (mis. staf menyusulkan setoran
+     * lama yang belum sempat dicatat) — default ke hari ini kalau tidak
+     * diisi. Dipakai untuk savings_transactions.transaction_date DAN
+     * entry_date jurnal, supaya keduanya selalu konsisten (mirror pola
+     * LoanRepaymentService::recordManualPayment() / RetributionService::
+     * record()).
+     *
+     * $cashAccount = override akun kas lawan transaksi — staf boleh
+     * mengganti dari default cashAccount() lewat field "Rekening Kas" di
+     * form Teller/Buka Rekening (permintaan staf 26 Agu 2026: field itu
+     * sebelumnya cuma info banner read-only). Null = tetap pakai default
+     * seperti sebelumnya, tidak ada perubahan perilaku kalau tidak diisi.
+     */
     public function deposit(
         SavingsAccount $account,
         float $amount,
         int $createdBy,
         ?string $description = null,
         ?string $idempotencyKey = null,
+        ?\DateTimeInterface $date = null,
+        ?ChartOfAccount $cashAccount = null,
     ): SavingsTransaction {
-        return DB::transaction(function () use ($account, $amount, $createdBy, $description, $idempotencyKey) {
+        $entryDate = $date ?? now();
+
+        return DB::transaction(function () use ($account, $amount, $createdBy, $description, $idempotencyKey, $entryDate, $cashAccount) {
             $product = $account->savingsProduct;
             $newBalance = bcadd((string) $account->balance, (string) $amount, 2);
+            $cash = $cashAccount ?? $this->cashAccount();
 
             $entry = $this->journalEngine->post([
                 'branch_id' => $account->branch_id,
-                'entry_date' => now()->toDateString(),
+                'entry_date' => $entryDate->format('Y-m-d'),
                 'description' => $description ?? "Setoran simpanan {$account->account_number}",
                 'created_by' => $createdBy,
                 'source' => $account,
                 'idempotency_key' => $idempotencyKey,
                 'lines' => [
-                    ['chart_of_account_id' => $this->cashAccount()->id, 'debit' => $amount, 'credit' => 0],
+                    ['chart_of_account_id' => $cash->id, 'debit' => $amount, 'credit' => 0],
                     ['chart_of_account_id' => $product->coa_liability_account_id, 'debit' => 0, 'credit' => $amount],
                 ],
             ]);
@@ -81,6 +129,7 @@ class SavingsService
                 'branch_id' => $account->branch_id,
                 'savings_account_id' => $account->id,
                 'type' => 'setor',
+                'transaction_date' => $entryDate->format('Y-m-d'),
                 'amount' => $amount,
                 'balance_after' => $newBalance,
                 'journal_entry_id' => $entry->id,
@@ -90,31 +139,39 @@ class SavingsService
         });
     }
 
+    /**
+     * $cashAccount — lihat penjelasan di deposit().
+     */
     public function withdraw(
         SavingsAccount $account,
         float $amount,
         int $createdBy,
         ?string $description = null,
         ?string $idempotencyKey = null,
+        ?\DateTimeInterface $date = null,
+        ?ChartOfAccount $cashAccount = null,
     ): SavingsTransaction {
         if (bccomp((string) $account->balance, (string) $amount, 2) < 0) {
             throw new InsufficientBalanceException($account->account_number, (string) $account->balance, (string) $amount);
         }
 
-        return DB::transaction(function () use ($account, $amount, $createdBy, $description, $idempotencyKey) {
+        $entryDate = $date ?? now();
+
+        return DB::transaction(function () use ($account, $amount, $createdBy, $description, $idempotencyKey, $entryDate, $cashAccount) {
             $product = $account->savingsProduct;
             $newBalance = bcsub((string) $account->balance, (string) $amount, 2);
+            $cash = $cashAccount ?? $this->cashAccount();
 
             $entry = $this->journalEngine->post([
                 'branch_id' => $account->branch_id,
-                'entry_date' => now()->toDateString(),
+                'entry_date' => $entryDate->format('Y-m-d'),
                 'description' => $description ?? "Penarikan simpanan {$account->account_number}",
                 'created_by' => $createdBy,
                 'source' => $account,
                 'idempotency_key' => $idempotencyKey,
                 'lines' => [
                     ['chart_of_account_id' => $product->coa_liability_account_id, 'debit' => $amount, 'credit' => 0],
-                    ['chart_of_account_id' => $this->cashAccount()->id, 'debit' => 0, 'credit' => $amount],
+                    ['chart_of_account_id' => $cash->id, 'debit' => 0, 'credit' => $amount],
                 ],
             ]);
 
@@ -124,6 +181,7 @@ class SavingsService
                 'branch_id' => $account->branch_id,
                 'savings_account_id' => $account->id,
                 'type' => 'tarik',
+                'transaction_date' => $entryDate->format('Y-m-d'),
                 'amount' => $amount,
                 'balance_after' => $newBalance,
                 'journal_entry_id' => $entry->id,
@@ -208,7 +266,7 @@ class SavingsService
     public function reverseTransaction(SavingsTransaction $transaction, string $reason, int $cancelledBy): SavingsTransaction
     {
         if ($transaction->isCancelled()) {
-            throw new TransactionAlreadyCancelledException();
+            throw new TransactionAlreadyCancelledException;
         }
 
         return DB::transaction(function () use ($transaction, $reason, $cancelledBy) {
@@ -240,16 +298,58 @@ class SavingsService
     }
 
     /**
+     * Edit — laporan staf 26 Agu 2026: staf perlu bisa mengoreksi transaksi
+     * Setor/Tarik yang salah catat (tanggal/jenis/nominal/keterangan)
+     * langsung dari halaman Riwayat. Ledger append-only (JournalEngine,
+     * LED-06) — jadi ini BUKAN update-in-place, melainkan reverseTransaction()
+     * (membalik jurnal + saldo, menandai baris asli dibatalkan) diikuti
+     * deposit()/withdraw() BARU dengan nilai yang sudah dikoreksi, keduanya
+     * dalam SATU transaksi DB supaya atomik (baris asli TIDAK pernah
+     * ditandai dibatalkan kalau langkah kedua gagal, mis. saldo tidak
+     * cukup untuk Tarik yang baru). Rekening TIDAK bisa diganti lewat sini
+     * — kalau salah rekening, batalkan lewat reverseTransaction() lalu
+     * catat manual dari form biasa.
+     */
+    public function editTransaction(
+        SavingsTransaction $transaction,
+        string $newType,
+        float $newAmount,
+        ?string $newDescription,
+        \DateTimeInterface $newDate,
+        string $reason,
+        int $editedBy,
+    ): SavingsTransaction {
+        return DB::transaction(function () use ($transaction, $newType, $newAmount, $newDescription, $newDate, $reason, $editedBy) {
+            $accountId = $transaction->savings_account_id;
+
+            $this->reverseTransaction($transaction, $reason, $editedBy);
+
+            // Diambil ulang (bukan pakai relasi $transaction->savingsAccount
+            // yang sudah di-cache) supaya deposit()/withdraw() di bawah
+            // menghitung dari saldo TERBARU setelah reverseTransaction()
+            // di atas, bukan saldo sebelum dibalik.
+            $account = SavingsAccount::query()->lockForUpdate()->findOrFail($accountId);
+
+            return $newType === 'setor'
+                ? $this->deposit($account, $newAmount, $editedBy, $newDescription, null, $newDate)
+                : $this->withdraw($account, $newAmount, $editedBy, $newDescription, null, $newDate);
+        });
+    }
+
+    /**
      * Preview journal lines without persisting anything — used to render
      * the Journal Preview panel on the Teller form (DESIGN §Transaction Panel)
      * before the Teller confirms the transaction.
      *
+     * $cashAccount — lihat penjelasan di deposit(). Null = tampilkan
+     * default cashAccount(), sama seperti sebelum field ini bisa diedit.
+     *
      * @return array<int, array{account_code: string, account_name: string, debit: float, credit: float}>
      */
-    public function previewLines(SavingsAccount $account, string $type, float $amount): array
+    public function previewLines(SavingsAccount $account, string $type, float $amount, ?ChartOfAccount $cashAccount = null): array
     {
         $product = $account->savingsProduct;
-        $cash = $this->cashAccount();
+        $cash = $cashAccount ?? $this->cashAccount();
         $liability = $product->liabilityAccount;
 
         return $type === 'setor'
@@ -263,9 +363,25 @@ class SavingsService
             ];
     }
 
-    private function cashAccount(): ChartOfAccount
+    /**
+     * Akun kas lawan transaksi Teller — SELALU akun kas cabang KSP (lihat
+     * DEFAULT_BRANCH_CODE), bukan akun kas konsolidasi 1101 lagi, dan
+     * bukan per-cabang rekening (lihat penjelasan di DEFAULT_BRANCH_CODE
+     * kenapa itu tidak dipakai untuk Simpanan).
+     *
+     * Public supaya TellerController bisa menampilkan akun kas ini di
+     * halaman Teller & Buka Rekening — permintaan staf untuk bisa
+     * memverifikasi akun kas lawan SEBELUM transaksi diproses, bukan cuma
+     * lewat panel "Preview Jurnal" setelah submit. Ini juga nilai DEFAULT
+     * yang di-preselect di field "Rekening Kas" (bisa diedit staf) pada
+     * kedua form itu.
+     */
+    public function cashAccount(): ChartOfAccount
     {
-        return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
+        $kspBranch = Branch::query()->where('code', self::DEFAULT_BRANCH_CODE)->first();
+
+        return $kspBranch?->cashAccount
+            ?? ChartOfAccount::query()->where('code', self::FALLBACK_CASH_ACCOUNT_CODE)->firstOrFail();
     }
 
     private function generateAccountNumber(SavingsProduct $product): string

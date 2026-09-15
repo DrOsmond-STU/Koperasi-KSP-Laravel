@@ -13,6 +13,7 @@
         'aktiva_tetap' => 'Pembelian / Pelepasan Aktiva Tetap',
         'laporan_kas_bank' => 'Laporan Harian Kas/Bank',
         'laporan_upf' => 'Laporan Harian Retribusi UPF',
+        'laporan_keuangan' => 'Laporan Keuangan (Neraca / Laba Rugi / dll)',
         'unit_usaha' => 'Transaksi Unit Usaha',
     ];
 @endphp

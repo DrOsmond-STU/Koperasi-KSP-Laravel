@@ -8,6 +8,7 @@ use App\Models\Loan;
 use App\Models\LoanApproval;
 use App\Models\User;
 use App\Services\Accounting\JournalEngine;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -83,9 +84,40 @@ class LoanApprovalService
     }
 
     /**
+     * Tanggal berlakunya pinjaman: tanggal pengajuan bila staf memundurkannya
+     * (pencatatan pinjaman lama), selain itu hari ini.
+     *
+     * Pengajuan biasa di loket diajukan dan disetujui pada hari yang sama,
+     * sehingga keduanya bernilai sama dan perilakunya tidak berubah sedikit
+     * pun. Yang berubah hanya pinjaman yang tanggal pengajuannya sengaja
+     * dimundurkan: jadwal angsurannya dihitung mulai tanggal akad yang
+     * sebenarnya, bukan mulai hari pencatatan — tanpa itu pinjaman lama akan
+     * masuk sistem dengan jadwal yang seluruhnya belum jatuh tempo.
+     */
+    private function tanggalBerlaku(Loan $loan): Carbon
+    {
+        $diajukan = $loan->submitted_at;
+
+        if ($diajukan === null || $diajukan->isToday() || $diajukan->isFuture()) {
+            return Carbon::now();
+        }
+
+        return $diajukan->copy()->startOfDay();
+    }
+
+    /**
      * Jurnal pencairan (Dr Piutang Pinjaman, Cr Kas bersih + Cr Pendapatan
      * Provisi) dan pembentukan jadwal angsuran — dipanggil otomatis begitu
      * approval terakhir yang dibutuhkan masuk.
+     *
+     * CATATAN PENTING soal tanggal jurnal. Jadwal angsuran dan disbursed_at
+     * mengikuti tanggal pengajuan, tetapi entry_date jurnal SENGAJA tetap
+     * hari ini — memundurkan jurnal berarti menyuntik kas keluar ke periode
+     * yang sudah ditutup dan mengubah neraca periode itu. Keputusan seperti
+     * itu milik pengurus, bukan efek samping sebuah formulir. Akibatnya,
+     * mencatat pinjaman lama lewat alur ini tetap memunculkan kas keluar
+     * HARI INI sebesar plafonnya; untuk pinjaman lama yang uangnya sudah
+     * lama keluar, koreksinya ditempuh lewat jurnal penyesuaian.
      */
     private function disburse(Loan $loan): void
     {
@@ -93,6 +125,7 @@ class LoanApprovalService
         $principal = (float) $loan->principal_amount;
         $provisionFee = round($principal * (float) $product->provision_fee_percentage / 100, 2);
         $netCash = round($principal - $provisionFee, 2);
+        $berlaku = $this->tanggalBerlaku($loan);
 
         $lines = [
             ['chart_of_account_id' => $product->coa_receivable_account_id, 'debit' => $principal, 'credit' => 0],
@@ -103,22 +136,40 @@ class LoanApprovalService
             $lines[] = ['chart_of_account_id' => $product->coa_provision_income_account_id, 'debit' => 0, 'credit' => $provisionFee];
         }
 
+        $keterangan = "Pencairan pinjaman {$loan->loan_number}";
+
+        if (! $berlaku->isToday()) {
+            $keterangan .= ' (pencatatan pinjaman lama, akad '.$berlaku->translatedFormat('d M Y').')';
+        }
+
         $this->journalEngine->post([
             'branch_id' => $loan->branch_id,
             'entry_date' => now()->toDateString(),
-            'description' => "Pencairan pinjaman {$loan->loan_number}",
+            'description' => $keterangan,
             'created_by' => $loan->created_by,
             'source' => $loan,
             'lines' => $lines,
         ]);
 
-        $schedule = $this->scheduleCalculator->calculate(
-            $principal,
-            $loan->tenor_months,
-            (float) $loan->interest_rate_percentage,
-            $product->calculation_method,
-            now(),
-        );
+        // Satuan tenor (hari/bulan) di-snapshot ke pinjaman saat pengajuan
+        // — lihat Loan::usesDailyTenor() / LoanService. Pinjaman anggota
+        // (harian) dan piutang karyawan (bulanan, potong gaji) hidup
+        // berdampingan selamanya, bukan "lama vs baru".
+        $schedule = $loan->usesDailyTenor()
+            ? $this->scheduleCalculator->calculateDaily(
+                $principal,
+                $loan->tenor_days,
+                (float) $loan->interest_rate_percentage,
+                $product->calculation_method,
+                $berlaku,
+            )
+            : $this->scheduleCalculator->calculate(
+                $principal,
+                $loan->tenor_days,
+                (float) $loan->interest_rate_percentage,
+                $product->calculation_method,
+                $berlaku,
+            );
 
         foreach ($schedule as $row) {
             $loan->schedules()->create([
@@ -134,7 +185,7 @@ class LoanApprovalService
             'provision_fee_amount' => $provisionFee,
             'status' => 'dicairkan',
             'collectibility' => 'lancar',
-            'disbursed_at' => now()->toDateString(),
+            'disbursed_at' => $berlaku->toDateString(),
         ]);
     }
 

@@ -44,10 +44,10 @@ class GeneralJournalController extends Controller
                 ->whereNull('source_type')
                 ->whereNull('reversal_of_entry_id')
                 ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
-                ->with(['lines.account', 'branch'])
+                ->with(['lines.account', 'branch', 'reversals'])
                 ->latest()
                 ->latest('id')
-                ->limit(15)
+                ->limit(100)
                 ->get(),
         ]);
     }

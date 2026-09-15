@@ -6,6 +6,8 @@ use App\Models\JournalLine;
 use App\Models\Loan;
 use App\Models\LoanSchedule;
 use App\Models\Member;
+use App\Models\OpeningBalanceBatch;
+use App\Models\OpeningBalanceCoa;
 use App\Models\SavingsAccount;
 use App\Models\SavingsTransaction;
 use Illuminate\Support\Carbon;
@@ -142,7 +144,26 @@ class MainDashboardService
 
     /**
      * SHU berjalan = Pendapatan − Beban, dihitung dari saldo bersih
-     * journal_lines per tipe akun (bukan angka tersimpan terpisah).
+     * journal_lines per tipe akun (bukan angka tersimpan terpisah), PLUS
+     * kontribusi migrasi SMIK dari OpeningBalanceCoa (migratedNetFor()) —
+     * sama seperti GeneralLedgerService::balanceFor(), dan disengaja untuk
+     * alasan yang sama: status batch (draft/locked) tidak boleh membuat
+     * SHU Berjalan tampak nol untuk cabang yang migrasinya belum dikunci.
+     * Kedua sumber saling eksklusif (jurnal pembukaan migrasi dikeluarkan
+     * dari sum journal_lines di sini) supaya batch yang sudah dikunci
+     * tidak terhitung dua kali.
+     *
+     * Ini BEDA dengan Laba Rugi per PERIODE (FinancialReportEngine::
+     * periodMovement(), dipakai tab Laba Rugi di Laporan Keuangan): angka
+     * itu sengaja TIDAK memuat migrasi, karena representasinya adalah
+     * "mutasi Pendapatan/Beban dalam rentang tanggal yang dipilih user",
+     * bukan akumulasi sejak awal tahun buku — migrasi cutoff-nya nyaris
+     * selalu jatuh SEBELUM periode yang dilihat, jadi memang tidak relevan
+     * di situ. shu_running di sini justru sebaliknya: akumulasi SEJAK AWAL
+     * ledger (yang dimulai dari migrasi) s.d. sekarang, sama persis dengan
+     * FinancialReportEngine::shuBerjalan() yang mengisi baris SHU Tahun
+     * Berjalan di Neraca — kedua tempat ini HARUS selalu konsisten.
+     *
      * Pendapatan dihitung (kredit − debit); Beban dihitung (debit − kredit)
      * — ini otomatis benar walau ada akun kontra (mis. Retur Penjualan yang
      * bersaldo normal debit di dalam kelompok PENDAPATAN).
@@ -154,18 +175,52 @@ class MainDashboardService
         $baseQuery = fn () => JournalLine::query()
             ->join('journal_entries', 'journal_lines.journal_entry_id', '=', 'journal_entries.id')
             ->join('chart_of_accounts', 'journal_lines.chart_of_account_id', '=', 'chart_of_accounts.id')
-            ->when($branchId, fn ($q) => $q->where('journal_entries.branch_id', $branchId));
+            ->when($branchId, fn ($q) => $q->where('journal_entries.branch_id', $branchId))
+            ->where(function ($q) {
+                $q->whereNull('journal_entries.source_type')
+                    ->orWhere('journal_entries.source_type', '!=', OpeningBalanceBatch::class);
+            });
 
         $pendapatan = (float) $baseQuery()
             ->where('chart_of_accounts.type', 'PENDAPATAN')
             ->selectRaw('COALESCE(SUM(journal_lines.credit - journal_lines.debit), 0) as net')
             ->value('net');
+        $pendapatan += $this->migratedNetFor('PENDAPATAN', $branchId);
 
         $beban = (float) $baseQuery()
             ->where('chart_of_accounts.type', 'BEBAN')
             ->selectRaw('COALESCE(SUM(journal_lines.debit - journal_lines.credit), 0) as net')
             ->value('net');
+        $beban += $this->migratedNetFor('BEBAN', $branchId);
 
         return ['pendapatan' => $pendapatan, 'beban' => $beban, 'shu' => round($pendapatan - $beban, 2)];
+    }
+
+    /**
+     * Kontribusi saldo awal migrasi SMIK untuk SHU Berjalan, dari
+     * OpeningBalanceCoa — dijumlah untuk SEMUA OpeningBalanceBatch (draft
+     * maupun locked, lihat catatan di shuBreakdown() di atas dan
+     * GeneralLedgerService::openingBalanceFor() untuk penjelasan
+     * lengkapnya).
+     */
+    private function migratedNetFor(string $type, ?int $branchId): float
+    {
+        $batchIds = OpeningBalanceBatch::query()
+            ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
+            ->pluck('id');
+
+        if ($batchIds->isEmpty()) {
+            return 0.0;
+        }
+
+        $sums = OpeningBalanceCoa::query()
+            ->whereIn('opening_balance_batch_id', $batchIds)
+            ->whereHas('account', fn ($q) => $q->where('type', $type))
+            ->selectRaw("COALESCE(SUM(CASE WHEN position = 'kredit' THEN amount ELSE 0 END), 0) as total_credit, COALESCE(SUM(CASE WHEN position = 'debit' THEN amount ELSE 0 END), 0) as total_debit")
+            ->first();
+
+        return $type === 'PENDAPATAN'
+            ? (float) $sums->total_credit - (float) $sums->total_debit
+            : (float) $sums->total_debit - (float) $sums->total_credit;
     }
 }

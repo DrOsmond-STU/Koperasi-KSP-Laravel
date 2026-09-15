@@ -26,9 +26,15 @@
         .decide-form input[type="text"] { flex: 1; min-width: 160px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; }
         .btn-approve { padding: 6px 12px; background: var(--ok); color: #fff; border: none; border-radius: 7px; font-size: 12px; cursor: pointer; }
         .btn-reject { padding: 6px 12px; background: var(--brick); color: #fff; border: none; border-radius: 7px; font-size: 12px; cursor: pointer; }
+        .field-hint { color: var(--muted); font-size: 11px; margin: 6px 0 0; }
     </style>
 
     <h2>Layanan Teller — Simpanan</h2>
+    <p style="margin-top: -8px;">
+        <a href="{{ route('staf.teller.buka-rekening.create') }}">+ Buka Rekening Baru (anggota belum punya simpanan)</a>
+        &nbsp;·&nbsp;
+        <a href="{{ route('staf.teller.history') }}">Lihat Riwayat Transaksi ↗</a>
+    </p>
 
     @if (session('status'))
         <p class="status-msg">{{ session('status') }}</p>
@@ -39,6 +45,14 @@
             <h3>Transaksi Simpanan</h3>
             <form method="POST" action="{{ route('staf.teller.preview') }}">
                 @csrf
+                <div class="field">
+                    <label>Tanggal Transaksi</label>
+                    <input type="date" name="transaction_date" value="{{ old('transaction_date') }}" max="{{ now()->toDateString() }}" required>
+                    <p class="field-hint">
+                        Wajib diisi manual — banyak transaksi lama yang belum sempat dicatat, jadi tanggalnya
+                        TIDAK otomatis hari ini. Isi tanggal transaksi yang sebenarnya terjadi.
+                    </p>
+                </div>
                 <div class="field">
                     <label>Rekening</label>
                     <select name="savings_account_id" required class="js-searchable">
@@ -60,6 +74,20 @@
                 <div class="field">
                     <label>Nominal (Rp)</label>
                     <input type="number" step="0.01" name="amount" required>
+                </div>
+                <div class="field">
+                    <label>Rekening Kas</label>
+                    <select name="cash_account_id" required>
+                        @foreach ($cashAccounts as $cashOption)
+                            <option value="{{ $cashOption->id }}" @selected((int) old('cash_account_id', $cashAccount->id) === $cashOption->id)>
+                                {{ $cashOption->code }} — {{ $cashOption->name }}
+                            </option>
+                        @endforeach
+                    </select>
+                    <p class="field-hint">
+                        Default akun kas cabang KSP — ganti kalau transaksi ini memang harus posting ke
+                        akun kas lain. Rekening dari cabang lain tetap posting ke sini kalau tidak diganti.
+                    </p>
                 </div>
                 <div class="field">
                     <label>Keterangan (opsional)</label>

@@ -18,6 +18,7 @@ class BrandingSettingsController extends Controller
 
         return view('admin.pengaturan.branding', [
             'setting' => $this->branding->current(),
+            'sizeModes' => BrandingService::SIZE_MODES,
         ]);
     }
 
@@ -27,8 +28,9 @@ class BrandingSettingsController extends Controller
             $request->validated(),
             $request->file('logo'),
             $request->user()->id,
+            $request->file('login_background'),
         );
 
-        return back()->with('status', 'Pengaturan nama & logo aplikasi berhasil disimpan.');
+        return back()->with('status', 'Pengaturan tampilan aplikasi berhasil disimpan.');
     }
 }

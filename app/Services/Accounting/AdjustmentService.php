@@ -5,6 +5,7 @@ namespace App\Services\Accounting;
 use App\Exceptions\Accounting\AdjustmentException;
 use App\Models\JournalEntry;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 /**
@@ -24,6 +25,22 @@ class AdjustmentService
             throw AdjustmentException::reAuthFailed();
         }
 
-        return $this->journalEngine->reverse($originalEntry, $reason, $user->id);
+        return DB::transaction(function () use ($originalEntry, $reason, $user) {
+            // Kunci baris entri asal supaya dua submit yang hampir bersamaan
+            // (double-click, resubmit setelah koneksi lambat) tidak sama-sama
+            // lolos pengecekan "sudah dibalik?" di bawah sebelum salah
+            // satunya selesai membuat jurnal balik — modul lain (Simpanan,
+            // Pinjaman, dst.) sudah punya pengaman via status transaksinya
+            // sendiri sebelum memanggil reverse(); alur koreksi manual ini
+            // beroperasi langsung di atas JournalEntry tanpa status seperti
+            // itu, jadi pengecekannya harus di sini.
+            $locked = JournalEntry::query()->whereKey($originalEntry->id)->lockForUpdate()->firstOrFail();
+
+            if ($locked->reversals()->exists()) {
+                throw AdjustmentException::alreadyReversed($locked->id);
+            }
+
+            return $this->journalEngine->reverse($originalEntry, $reason, $user->id);
+        });
     }
 }

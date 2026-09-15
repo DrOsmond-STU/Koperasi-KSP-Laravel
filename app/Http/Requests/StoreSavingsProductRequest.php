@@ -32,7 +32,9 @@ class StoreSavingsProductRequest extends FormRequest
         return [
             'code' => ['required', 'string', 'max:30', 'unique:savings_products,code'],
             'name' => ['required', 'string', 'max:150'],
-            'category' => ['required', Rule::in(['pokok', 'wajib', 'sukarela', 'berjangka'])],
+            // Kategori kini data master (savings_product_categories), bukan
+            // enum terkunci — koperasi bisa menambah kategorinya sendiri.
+            'category' => ['required', Rule::exists('savings_product_categories', 'code')->where('is_active', true)],
             'interest_method' => ['required', Rule::in(['flat', 'saldo_harian', 'saldo_rata_rata_bulanan', 'tiered'])],
             'minimum_initial_deposit' => ['nullable', 'numeric', 'min:0'],
             'minimum_subsequent_deposit' => ['nullable', 'numeric', 'min:0'],

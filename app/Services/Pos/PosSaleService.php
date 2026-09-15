@@ -31,7 +31,7 @@ class PosSaleService
 
     /**
      * @param  array<int, array{product_id: int, qty: string}>  $items
-     * @param  array{member: \App\Models\Member, loan_product: \App\Models\LoanProduct, tenor_months: int}|null  $hutang
+     * @param  array{member: \App\Models\Member, loan_product: \App\Models\LoanProduct, tenor_days: int}|null  $hutang
      */
     public function sell(
         int $branchId,
@@ -103,7 +103,7 @@ class PosSaleService
                     $hutang['member'],
                     $hutang['loan_product'],
                     (float) $totalAmount,
-                    $hutang['tenor_months'],
+                    $hutang['tenor_days'],
                     $branchId,
                     $createdBy,
                 );

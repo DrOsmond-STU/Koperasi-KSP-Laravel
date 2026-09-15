@@ -1,20 +1,11 @@
 <?php
 
+use App\Http\Controllers\Admin\BranchCashSettingsController;
 use App\Http\Controllers\Admin\BrandingSettingsController;
-use App\Http\Controllers\Anggota\LoanApplicationController as MemberLoanApplicationController;
-use App\Http\Controllers\Anggota\LoanController as MemberLoanController;
-use App\Http\Controllers\Anggota\LoanRepaymentController;
-use App\Http\Controllers\Staf\LoanRepaymentController as StafLoanRepaymentController;
-use App\Http\Controllers\Anggota\PortalController;
-use App\Http\Controllers\Anggota\PrintLoanController as MemberPrintLoanController;
-use App\Http\Controllers\Anggota\PrintSavingsController as MemberPrintSavingsController;
-use App\Http\Controllers\Anggota\SavingsController as MemberSavingsController;
-use App\Http\Controllers\Anggota\SavingsDepositController;
-use App\Http\Controllers\Anggota\WithdrawalRequestController;
 use App\Http\Controllers\Admin\BusinessUnitController;
+use App\Http\Controllers\Admin\ChartOfAccountController;
 use App\Http\Controllers\Admin\CooperativeEventController;
 use App\Http\Controllers\Admin\CustomReportController;
-use App\Http\Controllers\Admin\LaporanController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FinancialReportController;
 use App\Http\Controllers\Admin\FixedAssetBarcodeController;
@@ -26,8 +17,11 @@ use App\Http\Controllers\Admin\GeneralJournalController;
 use App\Http\Controllers\Admin\GeneralLedgerController;
 use App\Http\Controllers\Admin\InventoryReportController;
 use App\Http\Controllers\Admin\JournalAdjustmentController;
+use App\Http\Controllers\Admin\LaporanController;
 use App\Http\Controllers\Admin\LoanApprovalController;
 use App\Http\Controllers\Admin\LoanProductController;
+use App\Http\Controllers\Admin\LoanScheduleRepairController;
+use App\Http\Controllers\Admin\LoanTenorRateImportController;
 use App\Http\Controllers\Admin\MemberCardController;
 use App\Http\Controllers\Admin\MemberCardTemplateController;
 use App\Http\Controllers\Admin\MemberController;
@@ -35,33 +29,42 @@ use App\Http\Controllers\Admin\MemberTypeController;
 use App\Http\Controllers\Admin\NotificationLogController;
 use App\Http\Controllers\Admin\NotificationTemplateController;
 use App\Http\Controllers\Admin\OpeningBalanceController;
-use App\Http\Controllers\InstallController;
-use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Admin\PrintLoanApplicationController;
 use App\Http\Controllers\Admin\PrintLoanController;
 use App\Http\Controllers\Admin\PrintLoanRepaymentController;
 use App\Http\Controllers\Admin\PrintSavingsController;
-use App\Http\Controllers\Admin\PrintWithdrawalRequestController;
 use App\Http\Controllers\Admin\PrintSettingsController;
+use App\Http\Controllers\Admin\PrintWithdrawalRequestController;
 use App\Http\Controllers\Admin\ProductBarcodeController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\PurchaseController;
 use App\Http\Controllers\Admin\PurchaseReturnController;
 use App\Http\Controllers\Admin\RatPackageController;
-use App\Http\Controllers\Admin\ChartOfAccountController;
 use App\Http\Controllers\Admin\RetributionTypeController;
 use App\Http\Controllers\Admin\RolePermissionController;
-use App\Http\Controllers\Admin\SignatureConfigController;
-use App\Http\Controllers\Staf\RetributionController;
 use App\Http\Controllers\Admin\SavingsProductController;
 use App\Http\Controllers\Admin\SecurityAuditController;
 use App\Http\Controllers\Admin\ShuController;
+use App\Http\Controllers\Admin\SignatureConfigController;
 use App\Http\Controllers\Admin\StockAdjustmentController;
 use App\Http\Controllers\Admin\SupplierController;
 use App\Http\Controllers\Admin\TarifParameterController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Anggota\LoanApplicationController as MemberLoanApplicationController;
+use App\Http\Controllers\Anggota\LoanController as MemberLoanController;
+use App\Http\Controllers\Anggota\LoanRepaymentController;
+use App\Http\Controllers\Anggota\PortalController;
+use App\Http\Controllers\Anggota\PrintLoanController as MemberPrintLoanController;
+use App\Http\Controllers\Anggota\PrintSavingsController as MemberPrintSavingsController;
+use App\Http\Controllers\Anggota\SavingsController as MemberSavingsController;
+use App\Http\Controllers\Anggota\SavingsDepositController;
+use App\Http\Controllers\Anggota\WithdrawalRequestController;
+use App\Http\Controllers\InstallController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Staf\LoanApplicationController;
+use App\Http\Controllers\Staf\LoanRepaymentController as StafLoanRepaymentController;
 use App\Http\Controllers\Staf\PosController;
+use App\Http\Controllers\Staf\RetributionController;
 use App\Http\Controllers\Staf\SalesReturnController;
 use App\Http\Controllers\Staf\TellerCashController;
 use App\Http\Controllers\Staf\TellerController;
@@ -145,6 +148,12 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.laporan.export-pdf');
     Route::get('/admin/laporan/{module}/export-excel', [LaporanController::class, 'exportExcel'])
         ->name('admin.laporan.export-excel');
+    // Route khusus untuk cetak Saldo Awal Neraca dalam bentuk skontro.
+    // Path literal (bukan {module}) sengaja diletakkan sebelum route
+    // `/admin/laporan/{module}` supaya tidak jatuh ke pola catch-all yang
+    // ada di bawahnya.
+    Route::get('/admin/laporan/saldo-awal-neraca/print-scontro', [LaporanController::class, 'printSaldoAwalNeracaSkontro'])
+        ->name('admin.laporan.saldo-awal-neraca.print-scontro');
     Route::get('/admin/laporan/{module}', [LaporanController::class, 'show'])
         ->name('admin.laporan.show');
 
@@ -154,10 +163,14 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.tarif-parameter.savings.update');
     Route::post('/admin/tarif-parameter/simpanan/{product}/tarif', [TarifParameterController::class, 'addSavingsRate'])
         ->name('admin.tarif-parameter.savings.rate');
+    Route::put('/admin/tarif-parameter/simpanan/{product}/tarif/{rate}', [TarifParameterController::class, 'updateSavingsRate'])
+        ->name('admin.tarif-parameter.savings.rate.update');
     Route::put('/admin/tarif-parameter/pinjaman/{product}', [TarifParameterController::class, 'updateLoan'])
         ->name('admin.tarif-parameter.loan.update');
     Route::post('/admin/tarif-parameter/pinjaman/{product}/tarif', [TarifParameterController::class, 'addLoanRate'])
         ->name('admin.tarif-parameter.loan.rate');
+    Route::put('/admin/tarif-parameter/pinjaman/{product}/tarif/{rate}', [TarifParameterController::class, 'updateLoanRate'])
+        ->name('admin.tarif-parameter.loan.rate.update');
 
     Route::get('/admin/jurnal-buku-besar', [GeneralLedgerController::class, 'index'])
         ->name('admin.jurnal-buku-besar.index');
@@ -182,6 +195,8 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.laporan-keuangan.exports');
     Route::get('/admin/laporan-keuangan/ekspor/{export}/unduh', [FinancialReportController::class, 'download'])
         ->name('admin.laporan-keuangan.download');
+    Route::get('/admin/laporan-keuangan/neraca-scontro/cetak', [FinancialReportController::class, 'printScontro'])
+        ->name('admin.laporan-keuangan.print-scontro');
 
     Route::get('/admin/shu', [ShuController::class, 'index'])
         ->name('admin.shu.index');
@@ -247,6 +262,11 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
     Route::delete('/admin/pengaturan/tanda-tangan/slot/{slot}', [SignatureConfigController::class, 'destroySlot'])
         ->name('admin.pengaturan.tanda-tangan.slot.destroy');
 
+    Route::get('/admin/pengaturan/kas-cabang', [BranchCashSettingsController::class, 'index'])
+        ->name('admin.pengaturan.kas-cabang.index');
+    Route::put('/admin/pengaturan/kas-cabang/{branch}', [BranchCashSettingsController::class, 'update'])
+        ->name('admin.pengaturan.kas-cabang.update');
+
     Route::get('/admin/master/jenis-anggota', [MemberTypeController::class, 'index'])
         ->name('admin.master.member-types.index');
     Route::get('/admin/master/jenis-anggota/tambah', [MemberTypeController::class, 'create'])
@@ -306,15 +326,29 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.master.loan-products.create');
     Route::post('/admin/master/produk-pinjaman', [LoanProductController::class, 'store'])
         ->name('admin.master.loan-products.store');
+    Route::get('/admin/master/produk-pinjaman/{loanProduct}/edit', [LoanProductController::class, 'edit'])
+        ->name('admin.master.loan-products.edit');
+    Route::put('/admin/master/produk-pinjaman/{loanProduct}', [LoanProductController::class, 'update'])
+        ->name('admin.master.loan-products.update');
 
     Route::get('/staf/teller', [TellerController::class, 'create'])
         ->name('staf.teller.create');
+    Route::get('/staf/teller/buka-rekening', [TellerController::class, 'createAccount'])
+        ->name('staf.teller.buka-rekening.create');
+    Route::post('/staf/teller/buka-rekening', [TellerController::class, 'storeAccount'])
+        ->name('staf.teller.buka-rekening.store');
     Route::post('/staf/teller/preview', [TellerController::class, 'preview'])
         ->name('staf.teller.preview');
     Route::post('/staf/teller', [TellerController::class, 'store'])
         ->name('staf.teller.store');
     Route::post('/staf/teller/{transaction}/batalkan', [TellerController::class, 'cancel'])
         ->name('staf.teller.cancel');
+    Route::get('/staf/teller/{transaction}/edit', [TellerController::class, 'editForm'])
+        ->name('staf.teller.edit');
+    Route::put('/staf/teller/{transaction}', [TellerController::class, 'update'])
+        ->name('staf.teller.update');
+    Route::get('/staf/teller/riwayat', [TellerController::class, 'history'])
+        ->name('staf.teller.history');
     Route::post('/staf/teller/penarikan/{withdrawalRequest}/keputusan', [TellerController::class, 'decideWithdrawal'])
         ->name('staf.teller.decide-withdrawal');
     Route::get('/staf/teller/{transaction}/cetak', [TellerController::class, 'printReceipt'])
@@ -342,6 +376,8 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('staf.angsuran.preview');
     Route::post('/staf/angsuran', [StafLoanRepaymentController::class, 'store'])
         ->name('staf.angsuran.store');
+    Route::post('/staf/angsuran/{repayment}/batalkan', [StafLoanRepaymentController::class, 'cancel'])
+        ->name('staf.angsuran.cancel');
 
     Route::get('/admin/pinjaman', [LoanApprovalController::class, 'index'])
         ->name('admin.pinjaman.index');
@@ -349,6 +385,20 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.pinjaman.decide');
     Route::post('/admin/pinjaman/{loan}/batalkan', [LoanApprovalController::class, 'cancel'])
         ->name('admin.pinjaman.cancel');
+
+    Route::get('/admin/pinjaman/impor-tenor-tarif', [LoanTenorRateImportController::class, 'create'])
+        ->name('admin.pinjaman.import-tenor-tarif.create');
+    Route::post('/admin/pinjaman/impor-tenor-tarif', [LoanTenorRateImportController::class, 'store'])
+        ->name('admin.pinjaman.import-tenor-tarif.store');
+
+    // Perbaikan Jadwal Angsuran — tool permanen untuk pinjaman aktif yang
+    // loan_schedules-nya kosong (insiden 27 Agu 2026, lihat
+    // LoanScheduleRepairService). 'saldo_awal.update' dipakai supaya
+    // akses sejalan dengan hak koreksi data migrasi/saldo awal lainnya.
+    Route::get('/admin/pinjaman/perbaikan-jadwal', [LoanScheduleRepairController::class, 'index'])
+        ->name('admin.pinjaman.perbaikan-jadwal.index');
+    Route::post('/admin/pinjaman/perbaikan-jadwal', [LoanScheduleRepairController::class, 'store'])
+        ->name('admin.pinjaman.perbaikan-jadwal.store');
 
     Route::get('/admin/cetakan/simpanan', [PrintSavingsController::class, 'index'])
         ->name('admin.print.savings.index');
@@ -400,6 +450,8 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('staf.retribusi-upf.laporan');
     Route::get('/staf/retribusi-upf/cetak-harian', [RetributionController::class, 'printHarian'])
         ->name('staf.retribusi-upf.print-harian');
+    Route::get('/staf/retribusi-upf/cetak-rekap', [RetributionController::class, 'printRekap'])
+        ->name('staf.retribusi-upf.print-rekap');
     Route::post('/staf/retribusi-upf/{transaction}/batalkan', [RetributionController::class, 'cancel'])
         ->name('staf.retribusi-upf.cancel');
 

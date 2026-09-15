@@ -21,7 +21,8 @@ class Loan extends Model
         'loan_product_id',
         'loan_number',
         'principal_amount',
-        'tenor_months',
+        'tenor_days',
+        'tenor_unit',
         'interest_rate_percentage',
         'provision_fee_amount',
         'required_approval_count',
@@ -51,6 +52,25 @@ class Loan extends Model
     public function isCancelled(): bool
     {
         return $this->cancelled_at !== null;
+    }
+
+    /**
+     * Satuan tenor di-snapshot dari produk saat pengajuan (sejalan dengan
+     * interest_rate_percentage) — kalau produknya kelak diubah satuannya,
+     * pinjaman yang terlanjur berjalan tetap terbaca dengan satuan saat ia
+     * dibuat. Lihat LoanProduct::usesDailyTenor().
+     */
+    public function usesDailyTenor(): bool
+    {
+        return $this->tenor_unit === 'hari';
+    }
+
+    /** Label tenor untuk tampilan/cetak — "100 hari" (pinjaman harian) atau "12 bulan" (pinjaman bulanan). */
+    public function tenorLabel(): string
+    {
+        $unit = $this->usesDailyTenor() ? 'hari' : 'bulan';
+
+        return "{$this->tenor_days} {$unit}";
     }
 
     public function member(): BelongsTo

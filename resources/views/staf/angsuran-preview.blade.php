@@ -14,36 +14,54 @@
         .btn-ghost { padding: 10px 18px; background: transparent; color: var(--pine); border: 1px solid var(--line); border-radius: 9px; font-weight: 700; text-decoration: none; display: inline-block; }
     </style>
 
-    <h2>Rincian Alokasi — {{ $loan->loan_number }}</h2>
+    <h2>Konfirmasi Angsuran — {{ $loan->loan_number }}</h2>
 
     <div class="panel">
         <p>Anggota: <strong>{{ $loan->member->name }}</strong></p>
-        <p>Nominal Bayar: <strong>Rp {{ number_format($amount, 0, ',', '.') }}</strong></p>
+        <p>Tanggal Bayar: <strong>{{ \Illuminate\Support\Carbon::parse($paidAt)->translatedFormat('d M Y') }}</strong></p>
+        <p>Akun Kas Penerima: <strong>@if ($cashAccount) {{ $cashAccount->code }} — {{ $cashAccount->name }} @else (tidak ditemukan) @endif</strong></p>
 
         <table class="alloc-table">
-            <thead><tr><th>Angsuran ke-</th><th>Pokok</th><th>Jasa</th><th>Total Dialokasikan</th></tr></thead>
+            <thead><tr><th>Komponen</th><th>Nominal</th></tr></thead>
             <tbody>
-                @foreach ($plan['allocations'] as $allocation)
+                <tr><td>Angsuran Pokok</td><td>Rp {{ number_format($principalPortion, 0, ',', '.') }}</td></tr>
+                <tr><td>Jasa</td><td>Rp {{ number_format($interestPortion, 0, ',', '.') }}</td></tr>
+                <tr><td>Denda</td><td>Rp {{ number_format($penaltyPortion, 0, ',', '.') }}</td></tr>
+            </tbody>
+        </table>
+
+        <h4 style="margin:18px 0 6px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;">Jurnal</h4>
+        <table class="alloc-table">
+            <thead><tr><th>Akun (COA)</th><th>Debit</th><th>Kredit</th></tr></thead>
+            <tbody>
+                @foreach ($journalLines as $line)
                     <tr>
-                        <td>{{ $allocation['installment_number'] }}</td>
-                        <td>{{ number_format($allocation['principal_share'], 0, ',', '.') }}</td>
-                        <td>{{ number_format($allocation['interest_share'], 0, ',', '.') }}</td>
-                        <td>{{ number_format($allocation['allocated'], 0, ',', '.') }}</td>
+                        <td>
+                            @if ($line['account'])
+                                {{ $line['account']->code }} — {{ $line['account']->name }}
+                            @else
+                                <span style="color:#b3261e;">(akun belum diatur pada Produk Pinjaman)</span>
+                            @endif
+                        </td>
+                        <td>{{ $line['debit'] > 0 ? 'Rp '.number_format($line['debit'], 0, ',', '.') : '—' }}</td>
+                        <td>{{ $line['credit'] > 0 ? 'Rp '.number_format($line['credit'], 0, ',', '.') : '—' }}</td>
                     </tr>
                 @endforeach
             </tbody>
         </table>
 
-        <div class="summary-row"><span>Tunggakan Sebelum Bayar</span><span>Rp {{ number_format($plan['outstanding_before'], 0, ',', '.') }}</span></div>
-        <div class="summary-row"><span>Total Pokok</span><span>Rp {{ number_format($plan['total_principal'], 0, ',', '.') }}</span></div>
-        <div class="summary-row"><span>Total Jasa</span><span>Rp {{ number_format($plan['total_interest'], 0, ',', '.') }}</span></div>
-        <div class="summary-row total"><span>Sisa Tunggakan Setelah Bayar</span><span>Rp {{ number_format($plan['outstanding_before'] - $plan['total_allocated'], 0, ',', '.') }}</span></div>
+        <div class="summary-row total"><span>Total Dibayar</span><span>Rp {{ number_format($totalAmount, 0, ',', '.') }}</span></div>
+        <div class="summary-row" style="margin-top:8px;"><span>Tunggakan Pokok+Jasa Sebelum Bayar</span><span>Rp {{ number_format($outstandingBefore, 0, ',', '.') }}</span></div>
 
         <form method="POST" action="{{ route('staf.angsuran.store') }}" style="margin-top:16px;">
             @csrf
             <input type="hidden" name="loan_id" value="{{ $loan->id }}">
-            <input type="hidden" name="amount" value="{{ $amount }}">
+            <input type="hidden" name="principal_portion" value="{{ $principalPortion }}">
+            <input type="hidden" name="interest_portion" value="{{ $interestPortion }}">
+            <input type="hidden" name="penalty_portion" value="{{ $penaltyPortion }}">
             <input type="hidden" name="description" value="{{ $description }}">
+            <input type="hidden" name="paid_at" value="{{ $paidAt }}">
+            <input type="hidden" name="cash_account_id" value="{{ $cashAccountId }}">
             <button type="submit" class="btn-primary">Konfirmasi &amp; Simpan</button>
             <a href="{{ route('staf.angsuran.create') }}" class="btn-ghost">Batal</a>
         </form>

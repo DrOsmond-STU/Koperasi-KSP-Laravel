@@ -16,8 +16,8 @@ class InvalidLoanApplicationException extends RuntimeException
         ));
     }
 
-    public static function tenorOutOfRange(int $requested, int $min, int $max): self
+    public static function tenorOutOfRange(int $requested, int $min, int $max, string $unit = 'bulan'): self
     {
-        return new self("Tenor {$requested} bulan di luar rentang produk ({$min}–{$max} bulan).");
+        return new self("Tenor {$requested} {$unit} di luar rentang produk ({$min}–{$max} {$unit}).");
     }
 }

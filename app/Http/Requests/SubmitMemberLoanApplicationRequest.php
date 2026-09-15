@@ -33,7 +33,7 @@ class SubmitMemberLoanApplicationRequest extends FormRequest
         return [
             'loan_product_id' => ['required', Rule::exists('loan_products', 'id')->where('is_active', true)],
             'principal_amount' => ['required', 'numeric', 'min:1'],
-            'tenor_months' => ['required', 'integer', 'min:1'],
+            'tenor_days' => ['required', 'integer', 'min:1'],
         ];
     }
 }

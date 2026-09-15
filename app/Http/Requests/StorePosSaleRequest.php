@@ -22,7 +22,7 @@ class StorePosSaleRequest extends FormRequest
      *
      * The touchscreen cart also always submits the potong_simpanan/hutang
      * hidden fields (savings_account_id, member_id, loan_product_id,
-     * tenor_months) regardless of which payment method tab is active —
+     * tenor_days) regardless of which payment method tab is active —
      * they're only CSS-hidden, not removed from the DOM — so their value is
      * an empty string rather than genuinely absent whenever the other
      * payment method is chosen. Normalize those to null so the `nullable`
@@ -43,7 +43,7 @@ class StorePosSaleRequest extends FormRequest
             'savings_account_id' => $blankToNull('savings_account_id'),
             'member_id' => $blankToNull('member_id'),
             'loan_product_id' => $blankToNull('loan_product_id'),
-            'tenor_months' => $blankToNull('tenor_months'),
+            'tenor_days' => $blankToNull('tenor_days'),
         ]);
     }
 
@@ -72,7 +72,7 @@ class StorePosSaleRequest extends FormRequest
                 'required_if:payment_method,hutang',
                 Rule::exists('loan_products', 'id')->where('is_active', true),
             ],
-            'tenor_months' => ['nullable', 'required_if:payment_method,hutang', 'integer', 'min:1'],
+            'tenor_days' => ['nullable', 'required_if:payment_method,hutang', 'integer', 'min:1'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', Rule::exists('products', 'id')->where('is_active', true)],
             'items.*.qty' => ['required', 'numeric', 'min:0.0001'],
