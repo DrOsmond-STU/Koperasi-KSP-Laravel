@@ -28,6 +28,33 @@
         <p class="status-msg">{{ session('status') }}</p>
     @endif
 
+    @if ($errors->any())
+        <p class="not-set">{{ $errors->first() }}</p>
+    @endif
+
+    <div class="panel">
+        <h3 style="margin-top: 0; font-size: 15px;">Kas Pencairan Pinjaman</h3>
+        <p style="color: var(--muted); font-size: 13px; max-width: 640px;">
+            Akun kas sumber uang saat pinjaman dicairkan — satu untuk seluruh koperasi, bukan per
+            cabang. Sengaja dipisah dari tabel di bawah: uang pencairan keluar dari kas kecil unit,
+            sementara angsurannya masuk lewat kas AO, jadi keduanya memang akun yang berbeda.
+            Selama belum diisi, pencairan memakai akun kas cabang pinjamannya seperti sebelumnya.
+        </p>
+        <form method="POST" action="{{ route('admin.pengaturan.kas-pencairan.update') }}" class="row-form">
+            @csrf
+            @method('PUT')
+            <select name="loan_disbursement_account_id">
+                <option value="">— Pakai akun kas cabang pinjaman —</option>
+                @foreach ($cashAccounts as $account)
+                    <option value="{{ $account->id }}" @selected($loanDisbursementAccountId === $account->id)>
+                        {{ $account->code }} — {{ $account->name }}
+                    </option>
+                @endforeach
+            </select>
+            <button type="submit" class="btn-save">Simpan</button>
+        </form>
+    </div>
+
     <div class="panel">
         <table class="data-table">
             <thead>

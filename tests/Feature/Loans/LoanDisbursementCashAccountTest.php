@@ -9,6 +9,7 @@ use App\Models\JournalEntry;
 use App\Models\Loan;
 use App\Models\User;
 use App\Services\Loans\LoanApprovalService;
+use App\Services\Settings\CashSettingsService;
 use Database\Seeders\ChartOfAccountsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -16,12 +17,14 @@ use Tests\TestCase;
 /**
  * Regresi produksi (sik-kppd.com, pinjaman 578): menekan "Setuju" membalas
  * HTTP 500 karena jurnal pencairan selalu mengkredit akun berkode `1101`
- * yang dipatok mati, padahal koperasi ini memakai akun kas per cabang
- * (branches.cash_account_id) dan sudah menjadikan `1101` akun header.
+ * yang dipatok mati, padahal koperasi ini memakai bagan akunnya sendiri dan
+ * sudah menjadikan `1101` akun header.
  *
- * Angsuran sudah memakai akun kas cabang sejak kolom itu diperkenalkan;
- * pencairan tertinggal. Uji di sini mengunci keduanya agar bertemu di akun
- * yang sama.
+ * Yang dikunci di sini adalah urutan penentuan akun kas pencairan: kas
+ * pencairan yang ditetapkan di Pengaturan → Kas Cabang lebih dulu, lalu akun
+ * kas cabang, lalu `1101`. Pencairan sengaja TIDAK memakai akun kas cabang
+ * seperti angsuran — uangnya keluar dari kas kecil unit, sementara
+ * angsurannya masuk lewat kas AO.
  */
 class LoanDisbursementCashAccountTest extends TestCase
 {
@@ -55,15 +58,27 @@ class LoanDisbursementCashAccountTest extends TestCase
         ]);
     }
 
-    /** Pencairan mengkredit akun kas cabang pinjaman, bukan `1101`. */
-    public function test_disbursement_credits_the_branch_cash_account(): void
+    /**
+     * Pencairan mengkredit kas pencairan yang ditetapkan di Pengaturan → Kas
+     * Cabang — BUKAN akun kas cabang pinjamannya.
+     *
+     * Uang pencairan keluar dari kas kecil unit (1101200 KAS KECIL (USP) di
+     * koperasi ini), sementara angsurannya masuk lewat kas AO. Keduanya
+     * memang akun yang berbeda. Cabang pinjaman juga bukan penunjuk yang
+     * bisa dipakai: 131 dari 150 pinjaman tersimpan di cabang root "KPPD
+     * Pusat".
+     */
+    public function test_disbursement_credits_the_configured_disbursement_account(): void
     {
         $creator = User::factory()->create();
         $approver = User::factory()->create();
 
+        $kasPencairan = $this->postableAccount('1101200', 'KAS KECIL (USP)');
         $kasCabang = $this->postableAccount('1101500', 'KAS AO ASMAWI KSP');
         $branch = Branch::factory()->create(['cash_account_id' => $kasCabang->id]);
         $loan = $this->loanInBranch($branch, $creator);
+
+        app(CashSettingsService::class)->update($kasPencairan->id, $creator->id);
 
         // `1101` sengaja dilumpuhkan seperti di produksi: kalau pencairan
         // masih menyentuhnya, uji ini gagal alih-alih diam-diam benar.
@@ -78,12 +93,40 @@ class LoanDisbursementCashAccountTest extends TestCase
             ->where('source_id', $loan->id)
             ->firstOrFail();
 
-        $kasLine = $entry->lines->firstWhere('chart_of_account_id', $kasCabang->id);
+        $kasLine = $entry->lines->firstWhere('chart_of_account_id', $kasPencairan->id);
 
-        $this->assertNotNull($kasLine, 'Jurnal pencairan harus mengkredit akun kas cabang.');
+        $this->assertNotNull($kasLine, 'Jurnal pencairan harus mengkredit kas pencairan yang diatur.');
         $this->assertEquals(0, (float) $kasLine->debit);
         $this->assertGreaterThan(0, (float) $kasLine->credit);
         $this->assertEquals($entry->lines->sum('debit'), $entry->lines->sum('credit'));
+
+        // Kas cabang dipakai angsuran, bukan pencairan — tidak boleh ikut tersentuh.
+        $this->assertNull(
+            $entry->lines->firstWhere('chart_of_account_id', $kasCabang->id),
+            'Pencairan tidak boleh menyentuh akun kas cabang.',
+        );
+    }
+
+    /** Selama kas pencairan belum diatur, perilakunya sama seperti sebelumnya. */
+    public function test_without_a_configured_account_it_falls_back_to_the_branch_account(): void
+    {
+        $creator = User::factory()->create();
+        $approver = User::factory()->create();
+
+        $kasCabang = $this->postableAccount('1101500', 'KAS AO ASMAWI KSP');
+        $branch = Branch::factory()->create(['cash_account_id' => $kasCabang->id]);
+        $loan = $this->loanInBranch($branch, $creator);
+
+        $result = app(LoanApprovalService::class)->approve($loan, $approver);
+
+        $this->assertEquals('dicairkan', $result->status);
+
+        $entry = JournalEntry::query()
+            ->where('source_type', Loan::class)
+            ->where('source_id', $loan->id)
+            ->firstOrFail();
+
+        $this->assertNotNull($entry->lines->firstWhere('chart_of_account_id', $kasCabang->id));
     }
 
     /** Cabang yang belum diatur akun kasnya tetap jatuh ke `1101` seperti dulu. */

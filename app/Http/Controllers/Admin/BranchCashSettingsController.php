@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateBranchCashAccountRequest;
+use App\Http\Requests\UpdateLoanDisbursementCashAccountRequest;
 use App\Models\Branch;
 use App\Models\ChartOfAccount;
+use App\Services\Settings\CashSettingsService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 
@@ -20,12 +22,15 @@ use Illuminate\View\View;
  */
 class BranchCashSettingsController extends Controller
 {
+    public function __construct(private readonly CashSettingsService $cashSettings) {}
+
     public function index(): View
     {
         $this->authorize('master_data.update');
 
         return view('admin.pengaturan.kas-cabang', [
             'branches' => Branch::query()->with('cashAccount')->orderBy('name')->get(),
+            'loanDisbursementAccountId' => $this->cashSettings->current()->loan_disbursement_account_id,
             // Postable + mengandung "kas" di nama supaya daftar tetap relevan
             // (COA produksi bisa ratusan baris — lihat temuan investigasi
             // 24 Agu 2026: 275 baris chart_of_accounts).
@@ -43,5 +48,21 @@ class BranchCashSettingsController extends Controller
 
         return redirect()->route('admin.pengaturan.kas-cabang.index')
             ->with('status', "Akun kas {$branch->name} berhasil diperbarui.");
+    }
+
+    /**
+     * Akun kas sumber pencairan pinjaman — satu untuk seluruh koperasi,
+     * bukan per cabang. Lihat CashAccountResolver::forLoanDisbursement()
+     * kenapa alur ini tidak memakai akun kas cabang seperti angsuran.
+     */
+    public function updateLoanDisbursement(UpdateLoanDisbursementCashAccountRequest $request): RedirectResponse
+    {
+        $this->cashSettings->update(
+            $request->validated('loan_disbursement_account_id'),
+            $request->user()->id,
+        );
+
+        return redirect()->route('admin.pengaturan.kas-cabang.index')
+            ->with('status', 'Akun kas pencairan pinjaman berhasil diperbarui.');
     }
 }

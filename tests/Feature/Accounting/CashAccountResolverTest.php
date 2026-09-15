@@ -5,7 +5,9 @@ namespace Tests\Feature\Accounting;
 use App\Exceptions\Accounting\CashAccountException;
 use App\Models\Branch;
 use App\Models\ChartOfAccount;
+use App\Models\User;
 use App\Services\Accounting\CashAccountResolver;
+use App\Services\Settings\CashSettingsService;
 use Database\Seeders\ChartOfAccountsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -122,5 +124,43 @@ class CashAccountResolverTest extends TestCase
 
         $this->assertNull($this->resolver()->tryForBranchCode('tidak-ada'));
         $this->assertNull($this->resolver()->tryForBranch(null));
+    }
+
+    /**
+     * Pencairan pinjaman punya akunnya sendiri: kas kecil unit tempat uang
+     * keluar, bukan kas cabang tempat angsuran masuk.
+     */
+    public function test_loan_disbursement_uses_the_configured_account_over_the_branch(): void
+    {
+        $kasPencairan = $this->kas('1101200', 'KAS KECIL (USP)');
+        $kasCabang = $this->kas('1101500', 'KAS AO ASMAWI KSP');
+        $branch = Branch::factory()->create(['cash_account_id' => $kasCabang->id]);
+
+        app(CashSettingsService::class)->update($kasPencairan->id, User::factory()->create()->id);
+
+        $this->assertEquals($kasPencairan->id, $this->resolver()->forLoanDisbursement($branch->id)->id);
+        // Alur lain tidak ikut berubah.
+        $this->assertEquals($kasCabang->id, $this->resolver()->forBranch($branch->id)->id);
+    }
+
+    public function test_loan_disbursement_falls_back_to_the_branch_when_unset(): void
+    {
+        $kasCabang = $this->kas('1101500', 'KAS AO ASMAWI KSP');
+        $branch = Branch::factory()->create(['cash_account_id' => $kasCabang->id]);
+
+        $this->assertEquals($kasCabang->id, $this->resolver()->forLoanDisbursement($branch->id)->id);
+    }
+
+    public function test_non_postable_disbursement_account_is_rejected(): void
+    {
+        $kasPencairan = $this->kas('1101200', 'KAS KECIL (USP)', postable: false);
+        $branch = Branch::factory()->create(['cash_account_id' => null]);
+
+        app(CashSettingsService::class)->update($kasPencairan->id, User::factory()->create()->id);
+
+        $this->expectException(CashAccountException::class);
+        $this->expectExceptionMessageMatches('/1101200/');
+
+        $this->resolver()->forLoanDisbursement($branch->id);
     }
 }

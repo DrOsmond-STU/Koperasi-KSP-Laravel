@@ -204,21 +204,23 @@ class LoanApprovalService
     }
 
     /**
-     * Akun kas yang dikredit saat pencairan — akun kas cabang pinjaman itu,
-     * lewat resolver yang sama dengan yang dipakai angsuran.
+     * Akun kas yang dikredit saat pencairan: kas pencairan pinjaman yang
+     * ditetapkan di Pengaturan → Kas Cabang.
      *
-     * Kedua sisi pinjaman yang sama HARUS bertemu di akun yang sama: kalau
-     * pencairan mengkredit satu akun sementara angsurannya mendebit akun
-     * lain, kas kedua akun itu sama-sama salah selamanya. Angsuran sudah
-     * memakai akun kas cabang sejak kolom branches.cash_account_id
-     * diperkenalkan; pencairan tertinggal memakai konstanta '1101' — dan di
-     * koperasi yang bagan akunnya sendiri, '1101' bukan akun kas yang
-     * dipakai (bahkan dijadikan akun header), sehingga pencairan selalu
-     * ditolak JournalEngine.
+     * Bukan akun kas cabang seperti angsuran. Uang pencairan keluar dari kas
+     * kecil unit, sementara angsurannya masuk lewat kas AO — keduanya memang
+     * akun yang berbeda, dan menyamakannya justru membuat salah satunya
+     * salah. `loans.branch_id` juga tidak bisa dipakai sebagai penunjuk unit
+     * (temuan 25 Agu 2026: 142 pinjaman aktif seluruhnya tersimpan di cabang
+     * root "KPPD Pusat"), jadi akunnya memang harus ditetapkan sendiri.
+     *
+     * Sebelumnya di sini tertulis konstanta '1101'. Di koperasi yang bagan
+     * akunnya sendiri, '1101' bukan akun kas yang dipakai — malah dijadikan
+     * akun header — sehingga pencairan selalu ditolak JournalEngine.
      */
     private function cashAccount(Loan $loan): ChartOfAccount
     {
-        return $this->cashAccounts->forBranch($loan->branch_id);
+        return $this->cashAccounts->forLoanDisbursement($loan->branch_id);
     }
 
     /**

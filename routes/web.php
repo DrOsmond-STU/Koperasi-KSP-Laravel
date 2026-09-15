@@ -264,6 +264,8 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
 
     Route::get('/admin/pengaturan/kas-cabang', [BranchCashSettingsController::class, 'index'])
         ->name('admin.pengaturan.kas-cabang.index');
+    Route::put('/admin/pengaturan/kas-cabang/pencairan-pinjaman', [BranchCashSettingsController::class, 'updateLoanDisbursement'])
+        ->name('admin.pengaturan.kas-pencairan.update');
     Route::put('/admin/pengaturan/kas-cabang/{branch}', [BranchCashSettingsController::class, 'update'])
         ->name('admin.pengaturan.kas-cabang.update');
 
