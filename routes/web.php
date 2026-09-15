@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\BranchCashSettingsController;
+use App\Http\Controllers\Admin\BranchController;
 use App\Http\Controllers\Admin\BrandingSettingsController;
 use App\Http\Controllers\Admin\BusinessUnitController;
 use App\Http\Controllers\Admin\ChartOfAccountController;
@@ -272,8 +273,27 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.pengaturan.kas-cabang.index');
     Route::put('/admin/pengaturan/kas-cabang/pencairan-pinjaman', [BranchCashSettingsController::class, 'updateLoanDisbursement'])
         ->name('admin.pengaturan.kas-pencairan.update');
+    Route::put('/admin/pengaturan/kas-cabang/cabang-pinjaman', [BranchCashSettingsController::class, 'updateLoanBranch'])
+        ->name('admin.pengaturan.cabang-pinjaman.update');
     Route::put('/admin/pengaturan/kas-cabang/{branch}', [BranchCashSettingsController::class, 'update'])
         ->name('admin.pengaturan.kas-cabang.update');
+
+    // Master Cabang. Controller, FormRequest, dan ketiga viewnya sudah ada
+    // sejak lama, tapi rutenya tidak pernah didaftarkan — jadi menunya tidak
+    // pernah muncul dan pengurus tidak punya cara melihat kode cabangnya
+    // sendiri (laporan 16 Sep 2026).
+    Route::get('/admin/master/cabang', [BranchController::class, 'index'])
+        ->name('admin.master.branches.index');
+    Route::get('/admin/master/cabang/tambah', [BranchController::class, 'create'])
+        ->name('admin.master.branches.create');
+    Route::post('/admin/master/cabang', [BranchController::class, 'store'])
+        ->name('admin.master.branches.store');
+    Route::get('/admin/master/cabang/{branch}/ubah', [BranchController::class, 'edit'])
+        ->name('admin.master.branches.edit');
+    Route::put('/admin/master/cabang/{branch}', [BranchController::class, 'update'])
+        ->name('admin.master.branches.update');
+    Route::delete('/admin/master/cabang/{branch}', [BranchController::class, 'destroy'])
+        ->name('admin.master.branches.destroy');
 
     Route::get('/admin/master/jenis-anggota', [MemberTypeController::class, 'index'])
         ->name('admin.master.member-types.index');

@@ -56,6 +56,35 @@
     </div>
 
     <div class="panel">
+        <h3 style="margin-top:0;">Cabang Transaksi Pinjaman</h3>
+        <p style="color: var(--muted); font-size: 13px; max-width: 640px;">
+            Unit usaha yang membukukan seluruh kegiatan pinjaman — pengajuan, pencairan, dan
+            angsurannya. Dipakai untuk laba rugi per unit, jadi yang benar adalah unit yang
+            <strong>menjalankan</strong> pinjamannya, bukan unit tempat anggotanya terdaftar:
+            anggota UPF yang meminjam tetap meminjam dari unit simpan pinjam, dan pendapatan
+            jasanya milik unit itu. Selama belum diisi, cabangnya diambil dari cabang anggota
+            seperti sebelumnya.
+        </p>
+        <form method="POST" action="{{ route('admin.pengaturan.cabang-pinjaman.update') }}" class="row-form">
+            @csrf
+            @method('PUT')
+            <select name="loan_branch_id">
+                <option value="">— Pakai cabang anggota —</option>
+                @foreach ($branches as $branch)
+                    <option value="{{ $branch->id }}" @selected($loanBranchId === $branch->id)>
+                        {{ $branch->code }} — {{ $branch->name }}
+                    </option>
+                @endforeach
+            </select>
+            <button type="submit" class="btn-save">Simpan</button>
+        </form>
+        <p style="color: var(--muted); font-size: 12px; margin-bottom:0;">
+            Mengubah setelan ini hanya berlaku untuk transaksi berikutnya. Pinjaman dan jurnal
+            yang sudah tercatat tetap di cabang lamanya.
+        </p>
+    </div>
+
+    <div class="panel">
         <table class="data-table">
             <thead>
                 <tr>

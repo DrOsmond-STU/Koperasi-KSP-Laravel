@@ -79,6 +79,7 @@ return [
             'label' => 'Usaha & Anggota',
             'items' => [
                 ['label' => 'Unit Usaha', 'route' => 'admin.unit-usaha.index', 'permission' => 'unit_usaha.read', 'icon' => 'briefcase'],
+                ['label' => 'Master Cabang', 'route' => 'admin.master.branches.index', 'permission' => 'master_data.read', 'icon' => 'briefcase'],
                 ['label' => 'Data Anggota', 'route' => 'admin.members.index', 'permission' => 'master_data.read', 'icon' => 'users'],
                 ['label' => 'Jenis Anggota', 'route' => 'admin.master.member-types.index', 'permission' => 'master_data.read', 'icon' => 'tag'],
                 ['label' => 'Template Kartu Anggota', 'route' => 'admin.master.member-card-templates.index', 'permission' => 'member_card.manage', 'icon' => 'credit-card'],
@@ -102,6 +103,7 @@ return [
                 ['label' => 'Template Notifikasi', 'route' => 'admin.notifikasi.template.index', 'permission' => 'notifikasi_template.manage', 'icon' => 'mail'],
                 ['label' => 'Log Notifikasi', 'route' => 'admin.notifikasi.log.index', 'permission' => 'notifikasi_log.read', 'icon' => 'bell'],
                 ['label' => 'Keamanan & Audit', 'route' => 'admin.keamanan-audit.index', 'permission' => 'keamanan_audit.read', 'icon' => 'shield-check'],
+                ['label' => 'Kas & Cabang', 'route' => 'admin.pengaturan.kas-cabang.index', 'permission' => 'master_data.update', 'icon' => 'wallet'],
                 ['label' => 'Pengaturan Branding', 'route' => 'admin.branding.edit', 'permission' => 'branding.manage', 'icon' => 'image'],
                 ['label' => 'Pengaturan Cetakan', 'route' => 'admin.pengaturan.cetakan.edit', 'permission' => 'cetakan.manage', 'icon' => 'file-text'],
                 ['label' => 'Setup Tanda Tangan', 'route' => 'admin.pengaturan.tanda-tangan.index', 'permission' => 'cetakan.manage', 'icon' => 'sliders'],

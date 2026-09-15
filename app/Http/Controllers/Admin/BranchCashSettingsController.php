@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateBranchCashAccountRequest;
+use App\Http\Requests\UpdateLoanBranchRequest;
 use App\Http\Requests\UpdateLoanDisbursementCashAccountRequest;
 use App\Models\Branch;
 use App\Models\ChartOfAccount;
@@ -31,6 +32,7 @@ class BranchCashSettingsController extends Controller
         return view('admin.pengaturan.kas-cabang', [
             'branches' => Branch::query()->with('cashAccount')->orderBy('name')->get(),
             'loanDisbursementAccountId' => $this->cashSettings->current()->loan_disbursement_account_id,
+            'loanBranchId' => $this->cashSettings->loanBranchId(),
             // Postable + mengandung "kas" di nama supaya daftar tetap relevan
             // (COA produksi bisa ratusan baris — lihat temuan investigasi
             // 24 Agu 2026: 275 baris chart_of_accounts).
@@ -60,9 +62,30 @@ class BranchCashSettingsController extends Controller
         $this->cashSettings->update(
             $request->validated('loan_disbursement_account_id'),
             $request->user()->id,
+            // Setelan lain pada baris yang sama dipertahankan — keduanya
+            // tersimpan di satu baris singleton, jadi menyimpan yang satu
+            // tidak boleh mengosongkan yang lain.
+            $this->cashSettings->loanBranchId(),
         );
 
         return redirect()->route('admin.pengaturan.kas-cabang.index')
             ->with('status', 'Akun kas pencairan pinjaman berhasil diperbarui.');
+    }
+
+    /**
+     * Cabang pemilik transaksi pinjaman — dipakai untuk laba rugi per unit
+     * usaha. Lihat LoanBranchResolver kenapa cabang anggota bukan jawaban
+     * yang benar untuk ini.
+     */
+    public function updateLoanBranch(UpdateLoanBranchRequest $request): RedirectResponse
+    {
+        $this->cashSettings->update(
+            $this->cashSettings->current()->loan_disbursement_account_id,
+            $request->user()->id,
+            $request->validated('loan_branch_id'),
+        );
+
+        return redirect()->route('admin.pengaturan.kas-cabang.index')
+            ->with('status', 'Cabang transaksi pinjaman berhasil diperbarui.');
     }
 }

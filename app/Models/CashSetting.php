@@ -18,12 +18,18 @@ class CashSetting extends Model
     protected $fillable = [
         'id',
         'loan_disbursement_account_id',
+        'loan_branch_id',
         'updated_by',
     ];
 
     public function loanDisbursementAccount(): BelongsTo
     {
         return $this->belongsTo(ChartOfAccount::class, 'loan_disbursement_account_id');
+    }
+
+    public function loanBranch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class, 'loan_branch_id');
     }
 
     public function updatedBy(): BelongsTo

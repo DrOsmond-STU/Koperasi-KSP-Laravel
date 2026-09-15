@@ -2,6 +2,7 @@
 
 namespace App\Services\Settings;
 
+use App\Models\Branch;
 use App\Models\CashSetting;
 use App\Models\ChartOfAccount;
 use Illuminate\Support\Facades\Cache;
@@ -34,12 +35,36 @@ class CashSettingsService
         return $id === null ? null : ChartOfAccount::query()->find($id);
     }
 
-    public function update(?int $loanDisbursementAccountId, int $userId): CashSetting
+    /**
+     * Cabang pemilik seluruh transaksi pinjaman (pengajuan, pencairan,
+     * angsuran), atau null kalau belum diatur — dalam hal itu cabangnya
+     * tetap diturunkan dari cabang anggota seperti perilaku lama.
+     *
+     * Yang dikembalikan id-nya saja: pemanggilnya hanya butuh mengisi
+     * kolom branch_id, dan menghindari query Branch di jalur posting
+     * jurnal yang dipanggil per transaksi.
+     */
+    public function loanBranchId(): ?int
+    {
+        $id = $this->current()->loan_branch_id;
+
+        return $id === null ? null : (int) $id;
+    }
+
+    public function loanBranch(): ?Branch
+    {
+        $id = $this->loanBranchId();
+
+        return $id === null ? null : Branch::query()->find($id);
+    }
+
+    public function update(?int $loanDisbursementAccountId, int $userId, ?int $loanBranchId = null): CashSetting
     {
         $setting = CashSetting::query()->firstOrCreate(['id' => 1]);
 
         $setting->update([
             'loan_disbursement_account_id' => $loanDisbursementAccountId,
+            'loan_branch_id' => $loanBranchId,
             'updated_by' => $userId,
         ]);
 

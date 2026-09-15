@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\SubmitLoanApplicationRequest;
 use App\Models\LoanProduct;
 use App\Models\Member;
+use App\Services\Loans\LoanBranchResolver;
 use App\Services\Loans\LoanScheduleCalculator;
 use App\Services\Loans\LoanService;
 use Illuminate\Http\RedirectResponse;
@@ -18,6 +19,7 @@ class LoanApplicationController extends Controller
     public function __construct(
         private readonly LoanService $loanService,
         private readonly LoanScheduleCalculator $scheduleCalculator,
+        private readonly LoanBranchResolver $loanBranches,
     ) {}
 
     public function create(): View
@@ -93,7 +95,9 @@ class LoanApplicationController extends Controller
                 $product,
                 (float) $request->validated('principal_amount'),
                 (int) $request->validated('tenor_days'),
-                $member->branch_id,
+                // Cabang unit yang menjalankan pinjaman, bukan cabang tempat
+                // anggotanya terdaftar — lihat LoanBranchResolver.
+                $this->loanBranches->resolveOrFail($member->branch_id),
                 $request->user()->id,
                 $this->tanggalPengajuan($request),
             );

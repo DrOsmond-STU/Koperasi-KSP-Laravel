@@ -25,6 +25,7 @@ class LoanApprovalService
         private readonly JournalEngine $journalEngine,
         private readonly LoanScheduleCalculator $scheduleCalculator,
         private readonly CashAccountResolver $cashAccounts,
+        private readonly LoanBranchResolver $loanBranches,
     ) {}
 
     /**
@@ -179,7 +180,9 @@ class LoanApprovalService
             }
 
             $this->journalEngine->post([
-                'branch_id' => $loan->branch_id,
+                // Cabang unit yang menjalankan pinjaman, bukan cabang yang
+                // kebetulan tersimpan di barisnya — lihat LoanBranchResolver.
+                'branch_id' => $this->loanBranches->resolveOrFail($loan->branch_id),
                 'entry_date' => $berlaku->toDateString(),
                 'description' => $keterangan,
                 'created_by' => $loan->created_by,
@@ -225,6 +228,10 @@ class LoanApprovalService
             'status' => 'dicairkan',
             'collectibility' => 'lancar',
             'disbursed_at' => $berlaku->toDateString(),
+            // Disamakan dengan cabang jurnalnya. Tanpa ini baris pinjaman dan
+            // jurnalnya menunjuk cabang berbeda, dan angsurannya nanti ikut
+            // yang salah.
+            'branch_id' => $this->loanBranches->resolveOrFail($loan->branch_id),
         ]);
     }
 
