@@ -38,7 +38,12 @@ class LoanApprovalController extends Controller
     {
         try {
             if ($request->validated('decision') === 'setuju') {
-                $this->approvalService->approve($loan, $request->user(), $request->validated('notes'));
+                $this->approvalService->approve(
+                    $loan,
+                    $request->user(),
+                    $request->validated('notes'),
+                    $request->validated('disbursed_on'),
+                );
                 $fresh = $loan->fresh();
                 $message = $fresh->status === 'dicairkan'
                     ? "Pinjaman {$loan->loan_number} disetujui penuh dan dicairkan."

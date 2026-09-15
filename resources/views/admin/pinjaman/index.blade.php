@@ -10,15 +10,26 @@
         .btn-primary { padding: 6px 12px; background: var(--pine); color: #fff; border: none; border-radius: 7px; font-weight: 700; cursor: pointer; font-size: 12px; }
         .btn-danger { padding: 6px 12px; background: transparent; color: var(--brick); border: 1px solid var(--brick); border-radius: 7px; font-weight: 700; cursor: pointer; font-size: 12px; }
         .status-msg { color: var(--ok); font-size: 13px; margin-bottom: 14px; }
+        .approve-form { display: flex; align-items: flex-end; gap: 6px; margin-bottom: 6px; }
+        .approve-form label { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted); }
+        .approve-form input[type="date"] { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
     </style>
 
     <h2>Antrian Persetujuan Pinjaman</h2>
+    <p style="color: var(--muted); font-size: 13px; margin-top: -8px; max-width: 680px;">
+        Tanggal pencairan adalah tanggal uang benar-benar keluar — dipakai untuk jurnal kas,
+        tanggal cair, dan awal jadwal angsuran. Untuk akad lama yang baru dicatat sekarang,
+        isikan tanggal akad yang sebenarnya, bukan hari ini.
+    </p>
 
     @if (session('status'))
         <p class="status-msg">{{ session('status') }}</p>
     @endif
     @if (session('error'))
         <p style="color:var(--brick); font-size:13px; margin-bottom:14px;">{{ session('error') }}</p>
+    @endif
+    @if ($errors->any())
+        <p style="color:var(--brick); font-size:13px; margin-bottom:14px;">{{ $errors->first() }}</p>
     @endif
 
     <table class="data-table">
@@ -34,9 +45,16 @@
                     <td>Rp {{ number_format($loan->principal_amount, 0, ',', '.') }}</td>
                     <td>{{ $loan->approvalCount() }}/{{ $loan->required_approval_count }}</td>
                     <td>
-                        <form method="POST" action="{{ route('admin.pinjaman.decide', $loan) }}" style="display:inline;">
+                        <form method="POST" action="{{ route('admin.pinjaman.decide', $loan) }}" class="approve-form">
                             @csrf
                             <input type="hidden" name="decision" value="setuju">
+                            <label>
+                                Tgl. pencairan
+                                <input type="date" name="disbursed_on" required
+                                    value="{{ old('disbursed_on', now()->toDateString()) }}"
+                                    min="{{ $loan->submitted_at?->toDateString() }}"
+                                    max="{{ now()->toDateString() }}">
+                            </label>
                             <button type="submit" class="btn-primary">Setujui</button>
                         </form>
                         <form method="POST" action="{{ route('admin.pinjaman.decide', $loan) }}" style="display:inline;">

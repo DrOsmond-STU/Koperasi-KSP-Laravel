@@ -27,24 +27,39 @@ class LoanApprovalService
         private readonly CashAccountResolver $cashAccounts,
     ) {}
 
-    public function approve(Loan $loan, User $approver, ?string $notes = null): Loan
+    /**
+     * $disbursedOn = tanggal persetujuan, yang sekaligus tanggal uang
+     * benar-benar keluar. Diisi staf di layar persetujuan, bukan diambil
+     * dari hari ini: koperasi mencatat pinjaman lama secara susulan (akad
+     * Agustus baru masuk sistem sekarang), jadi menyamakan hari pencatatan
+     * dengan hari pencairan membuat kas keluar dan seluruh jadwal
+     * angsurannya meleset berbulan-bulan.
+     *
+     * Null hanya untuk pemanggil non-formulir; perilakunya jatuh ke
+     * tanggalBerlaku().
+     */
+    public function approve(Loan $loan, User $approver, ?string $notes = null, ?string $disbursedOn = null): Loan
     {
         $this->guardCanDecide($loan, $approver);
 
-        return DB::transaction(function () use ($loan, $approver, $notes) {
+        $tanggal = $disbursedOn === null ? null : Carbon::parse($disbursedOn)->startOfDay();
+
+        return DB::transaction(function () use ($loan, $approver, $notes, $tanggal) {
             LoanApproval::query()->create([
                 'loan_id' => $loan->id,
                 'approved_by' => $approver->id,
                 'decision' => 'setuju',
                 'notes' => $notes,
-                'decided_at' => now(),
+                // Keputusan yang dicatat susulan tetap tercatat pada tanggal
+                // keputusan yang sebenarnya, bukan tanggal penginputan.
+                'decided_at' => $tanggal ?? now(),
             ]);
 
             $loan->refresh();
 
             if ($loan->isFullyApproved()) {
                 $loan->update(['status' => 'disetujui']);
-                $this->disburse($loan);
+                $this->disburse($loan, $tanggal);
             }
 
             return $loan->fresh();
@@ -112,27 +127,37 @@ class LoanApprovalService
      * Provisi) dan pembentukan jadwal angsuran — dipanggil otomatis begitu
      * approval terakhir yang dibutuhkan masuk.
      *
-     * CATATAN PENTING soal tanggal jurnal. Jadwal angsuran dan disbursed_at
-     * mengikuti tanggal pengajuan, tetapi entry_date jurnal SENGAJA tetap
-     * hari ini — memundurkan jurnal berarti menyuntik kas keluar ke periode
-     * yang sudah ditutup dan mengubah neraca periode itu. Keputusan seperti
-     * itu milik pengurus, bukan efek samping sebuah formulir. Akibatnya,
-     * mencatat pinjaman lama lewat alur ini tetap memunculkan kas keluar
-     * HARI INI sebesar plafonnya; untuk pinjaman lama yang uangnya sudah
-     * lama keluar, koreksinya ditempuh lewat jurnal penyesuaian.
+     * CATATAN PENTING soal tanggal jurnal. Seluruh tanggal — entry_date
+     * jurnal, disbursed_at, dan awal jadwal angsuran — mengikuti tanggal
+     * pencairan yang diisi penyetuju di layar persetujuan.
+     *
+     * Sebelumnya entry_date dipatok ke hari ini dengan alasan memundurkan
+     * jurnal bisa menyuntik kas keluar ke periode yang sudah ditutup.
+     * Kekhawatirannya benar, tapi penyelesaiannya salah sasaran: memaksa
+     * tanggal hari ini tidak mencegah apa pun, ia hanya memindahkan
+     * kesalahan ke tempat yang lebih sulit dilihat — kas keluar tercatat di
+     * bulan yang salah, dan neraca kedua bulan itu ikut salah. Yang benar
+     * menjaga periode adalah AccountingPeriod: JournalEngine menolak posting
+     * ke periode yang sudah ditutup, dan penolakan itu kini muncul sebagai
+     * pesan yang bisa ditindaklanjuti (lihat blok try di bawah). Jadi
+     * pencairan susulan masuk pada tanggal yang sebenarnya selama periodenya
+     * masih terbuka, dan ditolak dengan jelas kalau sudah ditutup.
      */
-    private function disburse(Loan $loan): void
+    private function disburse(Loan $loan, ?Carbon $disbursedOn = null): void
     {
         $product = $loan->loanProduct;
         $principal = (float) $loan->principal_amount;
         $provisionFee = round($principal * (float) $product->provision_fee_percentage / 100, 2);
         $netCash = round($principal - $provisionFee, 2);
-        $berlaku = $this->tanggalBerlaku($loan);
+        $berlaku = $disbursedOn ?? $this->tanggalBerlaku($loan);
 
         $keterangan = "Pencairan pinjaman {$loan->loan_number}";
 
+        // Jurnalnya sendiri sudah bertanggal pencairan yang sebenarnya, jadi
+        // yang perlu dicatat di keterangan justru KAPAN ia diinput — supaya
+        // pemeriksa tahu baris ini masuk susulan, bukan hari itu juga.
         if (! $berlaku->isToday()) {
-            $keterangan .= ' (pencatatan pinjaman lama, akad '.$berlaku->translatedFormat('d M Y').')';
+            $keterangan .= ' (dicatat susulan pada '.now()->translatedFormat('d M Y').')';
         }
 
         // Salah konfigurasi bagan akun adalah kesalahan data yang bisa
@@ -155,7 +180,7 @@ class LoanApprovalService
 
             $this->journalEngine->post([
                 'branch_id' => $loan->branch_id,
-                'entry_date' => now()->toDateString(),
+                'entry_date' => $berlaku->toDateString(),
                 'description' => $keterangan,
                 'created_by' => $loan->created_by,
                 'source' => $loan,
