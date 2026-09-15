@@ -28,6 +28,7 @@ class LoanProduct extends Model
         'coa_interest_income_account_id',
         'coa_provision_income_account_id',
         'coa_penalty_receivable_account_id',
+        'coa_cash_account_id',
         'is_active',
     ];
 
@@ -56,6 +57,15 @@ class LoanProduct extends Model
     public function provisionIncomeAccount(): BelongsTo
     {
         return $this->belongsTo(ChartOfAccount::class, 'coa_provision_income_account_id');
+    }
+
+    /**
+     * Akun kas tujuan kredit saat pencairan. Boleh kosong — LoanApprovalService
+     * akan jatuh ke akun kas bawaan (kode 1101) seperti perilaku lama.
+     */
+    public function cashAccount(): BelongsTo
+    {
+        return $this->belongsTo(ChartOfAccount::class, 'coa_cash_account_id');
     }
 
     public function penaltyReceivableAccount(): BelongsTo

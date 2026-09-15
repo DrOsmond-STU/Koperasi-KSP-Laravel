@@ -3,6 +3,7 @@
 namespace Tests\Feature\Loans;
 
 use App\Exceptions\Loans\LoanApprovalException;
+use App\Models\ChartOfAccount;
 use App\Models\JournalEntry;
 use App\Models\Loan;
 use App\Models\LoanProduct;
@@ -106,6 +107,87 @@ class LoanApprovalServiceTest extends TestCase
 
         $this->assertEquals('ditolak', $result->status);
         $this->assertDatabaseCount('loan_schedules', 0);
+    }
+
+    /**
+     * Regresi produksi: akun kas 1101 pernah diubah jadi akun header lewat
+     * menu Bagan Akun, sehingga jurnal pencairan ditolak JournalEngine dan
+     * halaman persetujuan balas 500. Sekarang kegagalan itu harus muncul
+     * sebagai LoanApprovalException yang bisa ditangkap controller.
+     */
+    public function test_disbursement_on_non_postable_cash_account_raises_approval_exception(): void
+    {
+        $creator = User::factory()->create();
+        $approver = User::factory()->create();
+        $loan = Loan::factory()->create([
+            'created_by' => $creator->id,
+            'required_approval_count' => 1,
+            'principal_amount' => 5_000_000,
+            'tenor_months' => 10,
+        ]);
+
+        ChartOfAccount::query()->where('code', '1101')->update(['is_postable' => false]);
+
+        try {
+            app(LoanApprovalService::class)->approve($loan, $approver);
+            $this->fail('Persetujuan seharusnya gagal karena akun kas tidak bisa diposting.');
+        } catch (LoanApprovalException $exception) {
+            $this->assertStringContainsString('1101', $exception->getMessage());
+        }
+
+        // Seluruh transaksi harus mundur: status tetap diajukan, tidak ada
+        // suara approval yang tercatat separuh jalan, dan tidak ada jadwal
+        // angsuran atau jurnal yang terbentuk.
+        $loan->refresh();
+        $this->assertEquals('diajukan', $loan->status);
+        $this->assertNull($loan->disbursed_at);
+        $this->assertDatabaseCount('loan_approvals', 0);
+        $this->assertDatabaseCount('loan_schedules', 0);
+        $this->assertDatabaseCount('journal_entries', 0);
+    }
+
+    /**
+     * Koperasi yang memakai bagan akun sendiri mengarahkan tiap produk ke akun
+     * kasnya masing-masing; jurnal pencairan harus mengkredit akun itu, bukan
+     * akun bawaan 1101.
+     */
+    public function test_disbursement_credits_the_cash_account_configured_on_the_product(): void
+    {
+        $creator = User::factory()->create();
+        $approver = User::factory()->create();
+
+        $unitCash = ChartOfAccount::factory()->create([
+            'code' => '1101200',
+            'name' => 'KAS KECIL (USP)',
+            'type' => 'ASET',
+            'normal_balance' => 'DEBIT',
+            'statement' => 'NERACA',
+            'is_postable' => true,
+        ]);
+
+        $loan = Loan::factory()->create([
+            'created_by' => $creator->id,
+            'required_approval_count' => 1,
+            'principal_amount' => 30_000_000,
+            'tenor_months' => 12,
+        ]);
+        $loan->loanProduct->update(['coa_cash_account_id' => $unitCash->id]);
+
+        // Akun bawaan sengaja dilumpuhkan: kalau kode masih memakainya,
+        // pencairan akan gagal alih-alih diam-diam salah akun.
+        ChartOfAccount::query()->where('code', '1101')->update(['is_postable' => false]);
+
+        $result = app(LoanApprovalService::class)->approve($loan, $approver);
+
+        $this->assertEquals('dicairkan', $result->status);
+
+        $entry = JournalEntry::query()->where('source_type', Loan::class)->where('source_id', $loan->id)->firstOrFail();
+        $cashLine = $entry->lines->firstWhere('chart_of_account_id', $unitCash->id);
+
+        $this->assertNotNull($cashLine, 'Jurnal pencairan harus mengkredit akun kas produk.');
+        $this->assertEquals(0, (float) $cashLine->debit);
+        $this->assertGreaterThan(0, (float) $cashLine->credit);
+        $this->assertEquals($entry->lines->sum('debit'), $entry->lines->sum('credit'));
     }
 
     public function test_decision_on_non_pending_loan_is_rejected(): void

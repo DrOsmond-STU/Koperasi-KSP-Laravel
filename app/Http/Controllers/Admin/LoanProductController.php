@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreLoanProductRequest;
+use App\Http\Requests\UpdateLoanProductAccountsRequest;
 use App\Models\ChartOfAccount;
 use App\Models\LoanProduct;
 use Illuminate\Http\RedirectResponse;
@@ -51,5 +52,24 @@ class LoanProductController extends Controller
         return redirect()
             ->route('admin.master.loan-products.index')
             ->with('status', "Produk pinjaman \"{$product->name}\" berhasil dibuat.");
+    }
+
+    public function editAccounts(LoanProduct $loanProduct): View
+    {
+        $this->authorize('master_data.update');
+
+        return view('admin.master.produk-pinjaman.akun', [
+            'product' => $loanProduct,
+            'postableAccounts' => ChartOfAccount::query()->where('is_postable', true)->orderBy('code')->get(),
+        ]);
+    }
+
+    public function updateAccounts(UpdateLoanProductAccountsRequest $request, LoanProduct $loanProduct): RedirectResponse
+    {
+        $loanProduct->update($request->validated());
+
+        return redirect()
+            ->route('admin.master.loan-products.index')
+            ->with('status', "Akun jurnal produk pinjaman \"{$loanProduct->name}\" berhasil diperbarui.");
     }
 }

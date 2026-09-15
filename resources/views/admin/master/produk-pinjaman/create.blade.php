@@ -83,6 +83,14 @@
                     @foreach ($postableAccounts as $account)<option value="{{ $account->id }}">{{ $account->code }} — {{ $account->name }}</option>@endforeach
                 </select>
             </div>
+            <div class="field">
+                <label>Akun COA — Kas Pencairan</label>
+                <select name="coa_cash_account_id" class="js-searchable">
+                    <option value="">— Pakai akun kas bawaan (1101) —</option>
+                    @foreach ($postableAccounts as $account)<option value="{{ $account->id }}">{{ $account->code }} — {{ $account->name }}</option>@endforeach
+                </select>
+                <small>Akun yang dikredit saat pinjaman dicairkan. Kosongkan hanya bila akun 1101 memang akun kas yang dipakai koperasi.</small>
+            </div>
 
             <button type="submit" class="btn-primary">Simpan Produk</button>
         </form>

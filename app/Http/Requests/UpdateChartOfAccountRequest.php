@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\ChartOfAccount;
 use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -22,6 +23,12 @@ class UpdateChartOfAccountRequest extends FormRequest
      * literal string in core services, not by FK) and `parent_code` is
      * checked for cycles by walking its ancestor chain, since the DB has
      * no self-referencing constraint on `parent_code` to catch either.
+     *
+     * `is_postable` is locked on for those same codes: core services post
+     * to them directly, so demoting one to a header account makes
+     * JournalEngine reject every posting that touches it — loan
+     * disbursement, savings, teller cash, POS, retribution — with nothing
+     * at the DB layer to catch it.
      *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
@@ -58,6 +65,27 @@ class UpdateChartOfAccountRequest extends FormRequest
             'statement' => ['required', Rule::in(['NERACA', 'LABA_RUGI'])],
             'notes' => ['nullable', 'string'],
         ];
+    }
+
+    /**
+     * Checked here rather than as a rule on `is_postable` so it also fires
+     * when the checkbox is absent from the payload (unchecked boxes submit
+     * nothing), matching what the controller actually persists via
+     * `$request->boolean('is_postable')`.
+     */
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator) {
+            /** @var ChartOfAccount $account */
+            $account = $this->route('chartOfAccount');
+
+            if ($account->isProtected() && ! $this->boolean('is_postable')) {
+                $validator->errors()->add(
+                    'is_postable',
+                    "Akun \"{$account->code}\" dipakai inti sistem sebagai tujuan jurnal dan harus tetap bisa diposting — jadikan akun header akan menggagalkan pencairan pinjaman, setoran/penarikan simpanan, kas teller, POS, dan retribusi."
+                );
+            }
+        });
     }
 
     private function isDescendant(ChartOfAccount $account, string $candidateParentCode): bool

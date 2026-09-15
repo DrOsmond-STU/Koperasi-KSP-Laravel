@@ -190,6 +190,48 @@ class ChartOfAccountControllerTest extends TestCase
         $this->assertEquals('1101', $kas->fresh()->code);
     }
 
+    /**
+     * Akar masalah 500 pada persetujuan pinjaman di produksi: akun kas 1101
+     * dijadikan akun header lewat layar ini, lalu setiap posting kas ditolak
+     * JournalEngine. Kode akunnya sudah dikunci sejak awal, keterpostingannya
+     * belum — sekarang ikut dikunci.
+     */
+    public function test_protected_account_cannot_be_demoted_to_header(): void
+    {
+        $admin = $this->adminSistem();
+        $kas = ChartOfAccount::factory()->create(['code' => '1101', 'name' => 'Kas', 'is_postable' => true]);
+
+        $response = $this->actingAs($admin)->put(route('admin.master.chart-of-accounts.update', $kas), [
+            'code' => '1101',
+            'name' => 'Kas',
+            'type' => $kas->type,
+            'normal_balance' => $kas->normal_balance,
+            'statement' => $kas->statement,
+            // kotak centang tidak dicentang => tidak ikut terkirim sama sekali
+        ]);
+
+        $response->assertSessionHasErrors('is_postable');
+        $this->assertTrue($kas->fresh()->is_postable);
+    }
+
+    /** Akun biasa (bukan inti sistem) tetap bebas dijadikan akun header. */
+    public function test_unprotected_account_can_still_be_made_a_header(): void
+    {
+        $admin = $this->adminSistem();
+        $account = ChartOfAccount::factory()->create(['code' => '1555', 'is_postable' => true]);
+
+        $response = $this->actingAs($admin)->put(route('admin.master.chart-of-accounts.update', $account), [
+            'code' => '1555',
+            'name' => $account->name,
+            'type' => $account->type,
+            'normal_balance' => $account->normal_balance,
+            'statement' => $account->statement,
+        ]);
+
+        $response->assertSessionHasNoErrors();
+        $this->assertFalse($account->fresh()->is_postable);
+    }
+
     public function test_protected_account_cannot_be_deleted(): void
     {
         $admin = $this->adminSistem();

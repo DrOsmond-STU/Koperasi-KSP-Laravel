@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Loans;
 
+use App\Models\ChartOfAccount;
 use App\Models\Loan;
 use App\Models\User;
 use App\Models\UserBranchScope;
@@ -19,6 +20,37 @@ class LoanApprovalControllerTest extends TestCase
     {
         parent::setUp();
         $this->seed(ChartOfAccountsSeeder::class);
+    }
+
+    /**
+     * Regresi produksi (pinjaman 578): dengan akun kas 1101 diubah jadi akun
+     * header, menekan "Setuju" membalas HTTP 500. Sekarang harus balik ke
+     * daftar pinjaman membawa pesan kesalahan yang bisa ditindaklanjuti.
+     */
+    public function test_approval_with_non_postable_cash_account_redirects_with_error_instead_of_500(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+
+        $creator = User::factory()->create(['two_factor_confirmed_at' => now()]);
+        $creator->assignRole('manajer');
+        UserBranchScope::query()->create(['user_id' => $creator->id, 'scope_type' => 'all']);
+
+        $approver = User::factory()->create(['two_factor_confirmed_at' => now()]);
+        $approver->assignRole('manajer');
+        UserBranchScope::query()->create(['user_id' => $approver->id, 'scope_type' => 'all']);
+
+        $loan = Loan::factory()->create(['created_by' => $creator->id, 'required_approval_count' => 1]);
+
+        ChartOfAccount::query()->where('code', '1101')->update(['is_postable' => false]);
+
+        $response = $this->actingAs($approver)->post(route('admin.pinjaman.decide', $loan), [
+            'decision' => 'setuju',
+            'notes' => 'Disetujui',
+        ]);
+
+        $response->assertRedirect(route('admin.pinjaman.index'));
+        $response->assertSessionHas('error');
+        $this->assertEquals('diajukan', $loan->fresh()->status);
     }
 
     public function test_creator_can_cancel_own_loan_disbursement(): void

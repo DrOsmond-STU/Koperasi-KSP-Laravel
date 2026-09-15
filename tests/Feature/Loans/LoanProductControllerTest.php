@@ -3,6 +3,7 @@
 namespace Tests\Feature\Loans;
 
 use App\Models\ChartOfAccount;
+use App\Models\LoanProduct;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -86,5 +87,68 @@ class LoanProductControllerTest extends TestCase
 
         $response->assertRedirect(route('admin.master.loan-products.index'));
         $this->assertDatabaseHas('loan_products', ['code' => 'PINJ-001', 'is_active' => 1]);
+    }
+
+    /**
+     * Pemetaan akun produk lama sebelumnya tidak bisa diubah dari mana pun —
+     * koperasi yang mengganti bagan akunnya terjebak dengan akun kas lama
+     * yang membuat pencairan gagal posting.
+     */
+    public function test_existing_product_journal_accounts_can_be_reassigned(): void
+    {
+        $user = $this->manajer();
+        $accounts = ChartOfAccount::factory()->count(4)->create();
+
+        $this->actingAs($user)->post(route('admin.master.loan-products.store'), [
+            ...$this->baseFields(),
+            'coa_receivable_account_id' => $accounts[0]->id,
+            'coa_interest_income_account_id' => $accounts[1]->id,
+            'coa_provision_income_account_id' => $accounts[2]->id,
+            'coa_penalty_receivable_account_id' => $accounts[3]->id,
+        ]);
+
+        $product = LoanProduct::query()->where('code', 'PINJ-001')->firstOrFail();
+        $this->assertNull($product->coa_cash_account_id);
+
+        $unitCash = ChartOfAccount::factory()->create(['code' => '1101200', 'name' => 'KAS KECIL (USP)']);
+
+        $response = $this->actingAs($user)->put(route('admin.master.loan-products.accounts.update', $product), [
+            'coa_receivable_account_id' => $accounts[0]->id,
+            'coa_interest_income_account_id' => $accounts[1]->id,
+            'coa_provision_income_account_id' => $accounts[2]->id,
+            'coa_penalty_receivable_account_id' => $accounts[3]->id,
+            'coa_cash_account_id' => $unitCash->id,
+        ]);
+
+        $response->assertRedirect(route('admin.master.loan-products.index'));
+        $this->assertEquals($unitCash->id, $product->fresh()->coa_cash_account_id);
+    }
+
+    public function test_cash_account_on_a_product_must_be_postable(): void
+    {
+        $user = $this->manajer();
+        $accounts = ChartOfAccount::factory()->count(4)->create();
+        $header = ChartOfAccount::factory()->nonPostable()->create();
+
+        $this->actingAs($user)->post(route('admin.master.loan-products.store'), [
+            ...$this->baseFields(),
+            'coa_receivable_account_id' => $accounts[0]->id,
+            'coa_interest_income_account_id' => $accounts[1]->id,
+            'coa_provision_income_account_id' => $accounts[2]->id,
+            'coa_penalty_receivable_account_id' => $accounts[3]->id,
+        ]);
+
+        $product = LoanProduct::query()->where('code', 'PINJ-001')->firstOrFail();
+
+        $response = $this->actingAs($user)->put(route('admin.master.loan-products.accounts.update', $product), [
+            'coa_receivable_account_id' => $accounts[0]->id,
+            'coa_interest_income_account_id' => $accounts[1]->id,
+            'coa_provision_income_account_id' => $accounts[2]->id,
+            'coa_penalty_receivable_account_id' => $accounts[3]->id,
+            'coa_cash_account_id' => $header->id,
+        ]);
+
+        $response->assertSessionHasErrors('coa_cash_account_id');
+        $this->assertNull($product->fresh()->coa_cash_account_id);
     }
 }

@@ -40,6 +40,8 @@ class StoreLoanProductRequest extends FormRequest
             'coa_interest_income_account_id' => ['required', $postableAccount()],
             'coa_provision_income_account_id' => ['required', $postableAccount()],
             'coa_penalty_receivable_account_id' => ['required', $postableAccount()],
+            // Boleh kosong: yang kosong tetap memakai akun kas bawaan (1101).
+            'coa_cash_account_id' => ['nullable', $postableAccount()],
             'initial_rate_percentage' => ['required', 'numeric', 'min:0'],
             'initial_rate_effective_from' => ['nullable', 'date'],
         ];

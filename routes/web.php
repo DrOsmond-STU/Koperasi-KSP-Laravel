@@ -306,6 +306,10 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.master.loan-products.create');
     Route::post('/admin/master/produk-pinjaman', [LoanProductController::class, 'store'])
         ->name('admin.master.loan-products.store');
+    Route::get('/admin/master/produk-pinjaman/{loanProduct}/akun', [LoanProductController::class, 'editAccounts'])
+        ->name('admin.master.loan-products.accounts.edit');
+    Route::put('/admin/master/produk-pinjaman/{loanProduct}/akun', [LoanProductController::class, 'updateAccounts'])
+        ->name('admin.master.loan-products.accounts.update');
 
     Route::get('/staf/teller', [TellerController::class, 'create'])
         ->name('staf.teller.create');

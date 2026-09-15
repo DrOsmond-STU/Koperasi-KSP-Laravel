@@ -2,10 +2,12 @@
 
 namespace App\Services\Loans;
 
+use App\Exceptions\Accounting\JournalPostingException;
 use App\Exceptions\Loans\LoanApprovalException;
 use App\Models\ChartOfAccount;
 use App\Models\Loan;
 use App\Models\LoanApproval;
+use App\Models\LoanProduct;
 use App\Models\User;
 use App\Services\Accounting\JournalEngine;
 use Illuminate\Support\Facades\DB;
@@ -96,21 +98,31 @@ class LoanApprovalService
 
         $lines = [
             ['chart_of_account_id' => $product->coa_receivable_account_id, 'debit' => $principal, 'credit' => 0],
-            ['chart_of_account_id' => $this->cashAccount()->id, 'debit' => 0, 'credit' => $netCash],
+            ['chart_of_account_id' => $this->cashAccountFor($product)->id, 'debit' => 0, 'credit' => $netCash],
         ];
 
         if ($provisionFee > 0) {
             $lines[] = ['chart_of_account_id' => $product->coa_provision_income_account_id, 'debit' => 0, 'credit' => $provisionFee];
         }
 
-        $this->journalEngine->post([
-            'branch_id' => $loan->branch_id,
-            'entry_date' => now()->toDateString(),
-            'description' => "Pencairan pinjaman {$loan->loan_number}",
-            'created_by' => $loan->created_by,
-            'source' => $loan,
-            'lines' => $lines,
-        ]);
+        // Salah konfigurasi bagan akun (akun kas dijadikan header, akun
+        // piutang/provisi produk kosong, periode sudah ditutup) adalah
+        // kesalahan data yang bisa diperbaiki admin — bukan bug yang pantas
+        // menjatuhkan halaman persetujuan ke 500. Transaksi tetap dibatalkan
+        // seutuhnya, jadi suara approval terakhir ikut mundur dan persetujuan
+        // bisa diulang persis dari keadaan semula setelah akunnya dibetulkan.
+        try {
+            $this->journalEngine->post([
+                'branch_id' => $loan->branch_id,
+                'entry_date' => now()->toDateString(),
+                'description' => "Pencairan pinjaman {$loan->loan_number}",
+                'created_by' => $loan->created_by,
+                'source' => $loan,
+                'lines' => $lines,
+            ]);
+        } catch (JournalPostingException $exception) {
+            throw LoanApprovalException::disbursementPostingFailed($exception->getMessage());
+        }
 
         $schedule = $this->scheduleCalculator->calculate(
             $principal,
@@ -138,9 +150,35 @@ class LoanApprovalService
         ]);
     }
 
-    private function cashAccount(): ChartOfAccount
+    /**
+     * Akun kas yang dikredit saat pencairan: milik produk pinjaman kalau
+     * ditetapkan (koperasi dengan bagan akun sendiri mengarahkan tiap produk
+     * ke akun kas unitnya — KSP, USP, UPF), selain itu jatuh ke akun kas
+     * bawaan kode 1101 seperti perilaku lama.
+     */
+    private function cashAccountFor(LoanProduct $product): ChartOfAccount
     {
-        return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
+        if ($product->coa_cash_account_id !== null) {
+            $account = $product->cashAccount;
+
+            if ($account === null) {
+                throw LoanApprovalException::disbursementPostingFailed(
+                    "Akun kas yang ditetapkan pada produk pinjaman \"{$product->name}\" tidak ada di Bagan Akun."
+                );
+            }
+
+            return $account;
+        }
+
+        $account = ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->first();
+
+        if ($account === null) {
+            throw LoanApprovalException::disbursementPostingFailed(
+                'Akun kas bawaan '.self::DEFAULT_CASH_ACCOUNT_CODE.' tidak ada di Bagan Akun, dan produk pinjaman ini belum menetapkan akun kas sendiri.'
+            );
+        }
+
+        return $account;
     }
 
     /**

@@ -24,7 +24,7 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th>Kode</th><th>Nama</th><th>Plafon</th><th>Tenor</th><th>Metode</th><th>Ambang Approval</th>
+                <th>Kode</th><th>Nama</th><th>Plafon</th><th>Tenor</th><th>Metode</th><th>Ambang Approval</th><th>Akun Jurnal</th>
             </tr>
         </thead>
         <tbody>
@@ -36,9 +36,10 @@
                     <td>{{ $product->min_tenor_months }}–{{ $product->max_tenor_months }} bulan</td>
                     <td>{{ ucfirst($product->calculation_method) }}</td>
                     <td>{{ $product->approval_threshold ? 'Rp '.number_format($product->approval_threshold, 0, ',', '.').' (2 approval di atasnya)' : '1 approval' }}</td>
+                    <td><a href="{{ route('admin.master.loan-products.accounts.edit', $product) }}">Atur akun</a></td>
                 </tr>
             @empty
-                <tr><td colspan="6">Belum ada produk pinjaman — tambahkan yang pertama.</td></tr>
+                <tr><td colspan="7">Belum ada produk pinjaman — tambahkan yang pertama.</td></tr>
             @endforelse
         </tbody>
     </table>
