@@ -3,12 +3,12 @@
 namespace App\Services\Inventory;
 
 use App\Exceptions\Inventory\ReturnException;
-use App\Models\ChartOfAccount;
 use App\Models\PosSaleItem;
 use App\Models\PurchaseItem;
 use App\Models\PurchaseReturn;
 use App\Models\SalesReturn;
 use App\Models\StockReason;
+use App\Services\Accounting\CashAccountResolver;
 use App\Services\Accounting\JournalEngine;
 use App\Services\Savings\SavingsService;
 use Illuminate\Support\Facades\DB;
@@ -21,12 +21,11 @@ use Illuminate\Support\Facades\DB;
  */
 class ReturnService
 {
-    private const DEFAULT_CASH_ACCOUNT_CODE = '1101';
-
     public function __construct(
         private readonly StockLedgerEngine $stockLedgerEngine,
         private readonly JournalEngine $journalEngine,
         private readonly SavingsService $savingsService,
+        private readonly CashAccountResolver $cashAccounts,
     ) {}
 
     /**
@@ -76,7 +75,7 @@ class ReturnService
 
             $debitAccountId = $purchase->isKredit()
                 ? $purchase->supplier->coa_payable_account_id
-                : $this->cashAccount()->id;
+                : $this->cashAccounts->forBranch($purchase->branch_id)->id;
 
             $entry = $this->journalEngine->post([
                 'branch_id' => $purchase->branch_id,
@@ -145,7 +144,7 @@ class ReturnService
 
             $creditAccountId = $sale->isPotongSimpanan()
                 ? $sale->savingsAccount->savingsProduct->coa_liability_account_id
-                : $this->cashAccount()->id;
+                : $this->cashAccounts->forBranch($sale->branch_id)->id;
 
             $entry = $this->journalEngine->post([
                 'branch_id' => $sale->branch_id,
@@ -175,10 +174,5 @@ class ReturnService
 
             return $return->fresh();
         });
-    }
-
-    private function cashAccount(): ChartOfAccount
-    {
-        return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
     }
 }

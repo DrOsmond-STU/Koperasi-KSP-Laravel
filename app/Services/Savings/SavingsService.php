@@ -4,12 +4,12 @@ namespace App\Services\Savings;
 
 use App\Exceptions\Savings\InsufficientBalanceException;
 use App\Exceptions\Savings\TransactionAlreadyCancelledException;
-use App\Models\Branch;
 use App\Models\ChartOfAccount;
 use App\Models\Member;
 use App\Models\SavingsAccount;
 use App\Models\SavingsProduct;
 use App\Models\SavingsTransaction;
+use App\Services\Accounting\CashAccountResolver;
 use App\Services\Accounting\JournalEngine;
 use Illuminate\Support\Facades\DB;
 
@@ -38,20 +38,19 @@ class SavingsService
      * sini SELALU dipakai akun kas cabang KSP ini, terlepas dari
      * branch_id rekeningnya sendiri.
      *
-     * Yang di-hardcode di sini adalah kode CABANG-nya, bukan kode akun —
-     * akun kas cabang KSP sendiri tetap bisa diedit kapan saja lewat
+     * Yang disebut adalah kode CABANG-nya, bukan kode akun — akun kas
+     * cabang KSP sendiri tetap bisa diedit kapan saja lewat
      * admin/pengaturan/kas-cabang (branches.cash_account_id), jadi
      * berubah otomatis tanpa deploy kode baru kalau nanti diganti.
+     *
+     * Kode cabangnya sendiri kini di config/koperasi.php
+     * (`cabang_kas_simpanan`), dan jaring pengaman terakhirnya ditangani
+     * CashAccountResolver — bukan lagi konstanta '1101' di kelas ini.
      */
-    private const DEFAULT_BRANCH_CODE = '001';
-
-    /** Kode akun kas konsolidasi — cuma dipakai sebagai jaring pengaman
-     *  kalau BAHKAN cabang KSP di atas belum/tidak punya akun kas
-     *  terkonfigurasi (seharusnya tidak pernah kejadian, tapi mencegah
-     *  error 500 alih-alih diam-diam salah posting). */
-    private const FALLBACK_CASH_ACCOUNT_CODE = '1101';
-
-    public function __construct(private readonly JournalEngine $journalEngine) {}
+    public function __construct(
+        private readonly JournalEngine $journalEngine,
+        private readonly CashAccountResolver $cashAccounts,
+    ) {}
 
     public function openAccount(
         Member $member,
@@ -365,8 +364,9 @@ class SavingsService
 
     /**
      * Akun kas lawan transaksi Teller — SELALU akun kas cabang KSP (lihat
-     * DEFAULT_BRANCH_CODE), bukan akun kas konsolidasi 1101 lagi, dan
-     * bukan per-cabang rekening (lihat penjelasan di DEFAULT_BRANCH_CODE
+     * config koperasi.cabang_kas_simpanan), bukan akun kas konsolidasi 1101
+     * lagi, dan
+     * bukan per-cabang rekening (lihat penjelasan di docblock konstruktor
      * kenapa itu tidak dipakai untuk Simpanan).
      *
      * Public supaya TellerController bisa menampilkan akun kas ini di
@@ -378,10 +378,7 @@ class SavingsService
      */
     public function cashAccount(): ChartOfAccount
     {
-        $kspBranch = Branch::query()->where('code', self::DEFAULT_BRANCH_CODE)->first();
-
-        return $kspBranch?->cashAccount
-            ?? ChartOfAccount::query()->where('code', self::FALLBACK_CASH_ACCOUNT_CODE)->firstOrFail();
+        return $this->cashAccounts->forBranchCode(config('koperasi.cabang_kas_simpanan'));
     }
 
     private function generateAccountNumber(SavingsProduct $product): string

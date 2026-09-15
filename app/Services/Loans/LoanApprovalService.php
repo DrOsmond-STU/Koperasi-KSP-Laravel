@@ -2,12 +2,14 @@
 
 namespace App\Services\Loans;
 
+use App\Exceptions\Accounting\CashAccountException;
 use App\Exceptions\Accounting\JournalPostingException;
 use App\Exceptions\Loans\LoanApprovalException;
 use App\Models\ChartOfAccount;
 use App\Models\Loan;
 use App\Models\LoanApproval;
 use App\Models\User;
+use App\Services\Accounting\CashAccountResolver;
 use App\Services\Accounting\JournalEngine;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -19,11 +21,10 @@ use Illuminate\Support\Facades\DB;
  */
 class LoanApprovalService
 {
-    private const DEFAULT_CASH_ACCOUNT_CODE = '1101';
-
     public function __construct(
         private readonly JournalEngine $journalEngine,
         private readonly LoanScheduleCalculator $scheduleCalculator,
+        private readonly CashAccountResolver $cashAccounts,
     ) {}
 
     public function approve(Loan $loan, User $approver, ?string $notes = null): Loan
@@ -128,15 +129,6 @@ class LoanApprovalService
         $netCash = round($principal - $provisionFee, 2);
         $berlaku = $this->tanggalBerlaku($loan);
 
-        $lines = [
-            ['chart_of_account_id' => $product->coa_receivable_account_id, 'debit' => $principal, 'credit' => 0],
-            ['chart_of_account_id' => $this->cashAccount($loan)->id, 'debit' => 0, 'credit' => $netCash],
-        ];
-
-        if ($provisionFee > 0) {
-            $lines[] = ['chart_of_account_id' => $product->coa_provision_income_account_id, 'debit' => 0, 'credit' => $provisionFee];
-        }
-
         $keterangan = "Pencairan pinjaman {$loan->loan_number}";
 
         if (! $berlaku->isToday()) {
@@ -145,10 +137,22 @@ class LoanApprovalService
 
         // Salah konfigurasi bagan akun adalah kesalahan data yang bisa
         // diperbaiki admin — bukan bug yang pantas menjatuhkan halaman
-        // persetujuan ke 500. Transaksi tetap dibatalkan seutuhnya, jadi
-        // suara approval terakhir ikut mundur dan persetujuan bisa diulang
-        // persis dari keadaan semula setelah akunnya dibetulkan.
+        // persetujuan ke 500. Penentuan akun kasnya ikut masuk ke dalam
+        // try: cabang yang belum diatur akun kasnya gagal di situ, sebelum
+        // JournalEngine sempat dipanggil. Transaksi tetap dibatalkan
+        // seutuhnya, jadi suara approval terakhir ikut mundur dan
+        // persetujuan bisa diulang persis dari keadaan semula setelah
+        // akunnya dibetulkan.
         try {
+            $lines = [
+                ['chart_of_account_id' => $product->coa_receivable_account_id, 'debit' => $principal, 'credit' => 0],
+                ['chart_of_account_id' => $this->cashAccount($loan)->id, 'debit' => 0, 'credit' => $netCash],
+            ];
+
+            if ($provisionFee > 0) {
+                $lines[] = ['chart_of_account_id' => $product->coa_provision_income_account_id, 'debit' => 0, 'credit' => $provisionFee];
+            }
+
             $this->journalEngine->post([
                 'branch_id' => $loan->branch_id,
                 'entry_date' => now()->toDateString(),
@@ -157,7 +161,7 @@ class LoanApprovalService
                 'source' => $loan,
                 'lines' => $lines,
             ]);
-        } catch (JournalPostingException $exception) {
+        } catch (CashAccountException|JournalPostingException $exception) {
             throw LoanApprovalException::disbursementPostingFailed($exception->getMessage());
         }
 
@@ -201,21 +205,20 @@ class LoanApprovalService
 
     /**
      * Akun kas yang dikredit saat pencairan — akun kas cabang pinjaman itu,
-     * dengan fallback `1101` persis seperti LoanRepaymentService::cashAccount().
+     * lewat resolver yang sama dengan yang dipakai angsuran.
      *
      * Kedua sisi pinjaman yang sama HARUS bertemu di akun yang sama: kalau
      * pencairan mengkredit satu akun sementara angsurannya mendebit akun
      * lain, kas kedua akun itu sama-sama salah selamanya. Angsuran sudah
      * memakai akun kas cabang sejak kolom branches.cash_account_id
-     * diperkenalkan; pencairan tertinggal ikut memakai `1101` — dan di
-     * koperasi yang bagan akunnya sendiri, `1101` bukan akun kas yang
+     * diperkenalkan; pencairan tertinggal memakai konstanta '1101' — dan di
+     * koperasi yang bagan akunnya sendiri, '1101' bukan akun kas yang
      * dipakai (bahkan dijadikan akun header), sehingga pencairan selalu
      * ditolak JournalEngine.
      */
     private function cashAccount(Loan $loan): ChartOfAccount
     {
-        return $loan->branch?->cashAccount
-            ?? ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
+        return $this->cashAccounts->forBranch($loan->branch_id);
     }
 
     /**

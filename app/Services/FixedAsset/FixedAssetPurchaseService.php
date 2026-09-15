@@ -4,10 +4,10 @@ namespace App\Services\FixedAsset;
 
 use App\Exceptions\FixedAsset\FixedAssetApprovalException;
 use App\Models\ApprovalThreshold;
-use App\Models\ChartOfAccount;
 use App\Models\FixedAsset;
 use App\Models\FixedAssetCategory;
 use App\Models\User;
+use App\Services\Accounting\CashAccountResolver;
 use App\Services\Accounting\JournalEngine;
 use Illuminate\Support\Facades\DB;
 
@@ -20,9 +20,10 @@ use Illuminate\Support\Facades\DB;
  */
 class FixedAssetPurchaseService
 {
-    private const DEFAULT_CASH_ACCOUNT_CODE = '1101';
-
-    public function __construct(private readonly JournalEngine $journalEngine) {}
+    public function __construct(
+        private readonly JournalEngine $journalEngine,
+        private readonly CashAccountResolver $cashAccounts,
+    ) {}
 
     /**
      * @param  array{
@@ -92,7 +93,7 @@ class FixedAssetPurchaseService
 
         $creditAccountId = $asset->isKredit()
             ? $asset->supplier->coa_payable_account_id
-            : $this->cashAccount()->id;
+            : $this->cashAccounts->forBranch($asset->branch_id)->id;
 
         $entry = $this->journalEngine->post([
             'branch_id' => $asset->branch_id,
@@ -110,10 +111,5 @@ class FixedAssetPurchaseService
             'status' => 'aktif',
             'journal_entry_id' => $entry->id,
         ]);
-    }
-
-    private function cashAccount(): ChartOfAccount
-    {
-        return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
     }
 }

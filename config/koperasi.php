@@ -45,6 +45,42 @@ return [
     )),
 
     /*
+     | Akun kas terakhir yang dipakai kalau sebuah transaksi tidak menemukan
+     | akun kas cabangnya sendiri (branches.cash_account_id, diatur lewat
+     | Pengaturan → Kas Cabang).
+     |
+     | Dulu kode '1101' ditulis langsung di sepuluh service sebagai konstanta
+     | masing-masing. Koperasi yang membawa bagan akunnya sendiri memakai
+     | penomoran lain dan justru menjadikan 1101 akun header — dan karena
+     | akun header ditolak JournalEngine, setiap posting yang jatuh ke sini
+     | gagal total. Sekarang kodenya satu tempat dan bisa ditimpa lewat .env.
+     |
+     | Kosongkan (KOPERASI_AKUN_KAS_BAWAAN=) untuk mematikan jaring pengaman
+     | ini sama sekali: transaksi yang cabangnya belum diatur akan ditolak
+     | dengan pesan yang menyebut cabangnya, alih-alih diam-diam memakai akun
+     | kas yang belum tentu benar.
+     */
+    'akun_kas_bawaan' => env('KOPERASI_AKUN_KAS_BAWAAN', '1101'),
+
+    /*
+     | Dua alur memakai akun kas satu cabang tertentu, bukan akun kas cabang
+     | yang tercatat di transaksinya sendiri:
+     |
+     | - Simpanan (setor/tarik/buka rekening). Seluruh rekening simpanan di
+     |   produksi ber-branch_id ke cabang root "KPPD Pusat", sehingga resolusi
+     |   per-cabang rekening selalu jatuh ke kas KPPD Pusat — bukan kas Unit
+     |   KSP yang dimaksud staf (laporan 24 Agu 2026).
+     | - Retribusi UPF, yang memang selalu diterima petugas UPF.
+     |
+     | Yang disebut di sini kode CABANG-nya, bukan kode akun: akun kasnya
+     | sendiri tetap mengikuti Pengaturan → Kas Cabang, jadi bisa diganti
+     | tanpa deploy.
+     */
+    'cabang_kas_simpanan' => env('KOPERASI_CABANG_KAS_SIMPANAN', '001'),
+
+    'cabang_kas_retribusi' => env('KOPERASI_CABANG_KAS_RETRIBUSI', '003'),
+
+    /*
     |--------------------------------------------------------------------------
     | Kewajiban MFA untuk peran internal
     |--------------------------------------------------------------------------

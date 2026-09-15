@@ -5,11 +5,11 @@ namespace App\Services\Inventory;
 use App\Exceptions\Inventory\PurchaseApprovalException;
 use App\Exceptions\Inventory\PurchasePaymentException;
 use App\Models\ApprovalThreshold;
-use App\Models\ChartOfAccount;
 use App\Models\PurchasePayment;
 use App\Models\PurchaseTransaction;
 use App\Models\Supplier;
 use App\Models\User;
+use App\Services\Accounting\CashAccountResolver;
 use App\Services\Accounting\JournalEngine;
 use Illuminate\Support\Facades\DB;
 
@@ -22,11 +22,10 @@ use Illuminate\Support\Facades\DB;
  */
 class PurchaseService
 {
-    private const DEFAULT_CASH_ACCOUNT_CODE = '1101';
-
     public function __construct(
         private readonly StockLedgerEngine $stockLedgerEngine,
         private readonly JournalEngine $journalEngine,
+        private readonly CashAccountResolver $cashAccounts,
     ) {}
 
     /**
@@ -132,7 +131,7 @@ class PurchaseService
                 'source' => $purchase,
                 'lines' => [
                     ['chart_of_account_id' => $purchase->supplier->coa_payable_account_id, 'debit' => $amount, 'credit' => 0],
-                    ['chart_of_account_id' => $this->cashAccount()->id, 'debit' => 0, 'credit' => $amount],
+                    ['chart_of_account_id' => $this->cashAccounts->forBranch($purchase->branch_id)->id, 'debit' => 0, 'credit' => $amount],
                 ],
             ]);
 
@@ -190,7 +189,7 @@ class PurchaseService
 
         $creditAccountId = $purchase->payment_method === 'kredit'
             ? $purchase->supplier->coa_payable_account_id
-            : $this->cashAccount()->id;
+            : $this->cashAccounts->forBranch($purchase->branch_id)->id;
 
         $lines[] = [
             'chart_of_account_id' => $creditAccountId,
@@ -222,10 +221,5 @@ class PurchaseService
         } while (PurchaseTransaction::query()->where('purchase_number', $candidate)->exists());
 
         return $candidate;
-    }
-
-    private function cashAccount(): ChartOfAccount
-    {
-        return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
     }
 }

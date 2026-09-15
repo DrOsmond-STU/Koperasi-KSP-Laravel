@@ -6,6 +6,7 @@ use App\Exceptions\FixedAsset\FixedAssetDisposalException;
 use App\Models\ChartOfAccount;
 use App\Models\FixedAsset;
 use App\Models\FixedAssetDisposal;
+use App\Services\Accounting\CashAccountResolver;
 use App\Services\Accounting\JournalEngine;
 use Illuminate\Support\Facades\DB;
 
@@ -22,9 +23,10 @@ class FixedAssetDisposalService
 
     private const LOSS_ACCOUNT_CODE = '5904'; // Rugi Pelepasan Aset Tetap
 
-    private const DEFAULT_CASH_ACCOUNT_CODE = '1101';
-
-    public function __construct(private readonly JournalEngine $journalEngine) {}
+    public function __construct(
+        private readonly JournalEngine $journalEngine,
+        private readonly CashAccountResolver $cashAccounts,
+    ) {}
 
     public function dispose(
         FixedAsset $asset,
@@ -54,7 +56,7 @@ class FixedAssetDisposalService
             }
 
             if (bccomp($saleAmount, '0', 2) > 0) {
-                $lines[] = ['chart_of_account_id' => $this->cashAccount()->id, 'debit' => $saleAmount, 'credit' => 0];
+                $lines[] = ['chart_of_account_id' => $this->cashAccounts->forBranch($asset->branch_id)->id, 'debit' => $saleAmount, 'credit' => 0];
             }
 
             if (bccomp($gainLoss, '0', 2) > 0) {
@@ -120,11 +122,6 @@ class FixedAssetDisposalService
 
             return $disposal->fresh();
         });
-    }
-
-    private function cashAccount(): ChartOfAccount
-    {
-        return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
     }
 
     private function gainAccount(): ChartOfAccount

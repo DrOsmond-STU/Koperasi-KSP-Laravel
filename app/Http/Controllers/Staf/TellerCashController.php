@@ -45,7 +45,12 @@ class TellerCashController extends Controller
             'branchId' => $request->validated('branch_id'),
             'amount' => (float) $request->validated('amount'),
             'description' => $request->validated('description'),
-            'lines' => $this->cashService->previewLines($category, (float) $request->validated('amount')),
+            'lines' => $this->cashService->previewLines(
+                $category,
+                (float) $request->validated('amount'),
+                null,
+                (int) $request->validated('branch_id'),
+            ),
         ]);
     }
 

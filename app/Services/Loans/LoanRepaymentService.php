@@ -8,6 +8,7 @@ use App\Models\ChartOfAccount;
 use App\Models\Loan;
 use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
+use App\Services\Accounting\CashAccountResolver;
 use App\Services\Accounting\JournalEngine;
 use Illuminate\Support\Facades\DB;
 
@@ -23,11 +24,10 @@ use Illuminate\Support\Facades\DB;
  */
 class LoanRepaymentService
 {
-    private const DEFAULT_CASH_ACCOUNT_CODE = '1101';
-
     public function __construct(
         private readonly JournalEngine $journalEngine,
         private readonly LoanScheduleCalculator $scheduleCalculator,
+        private readonly CashAccountResolver $cashAccounts,
     ) {}
 
     /**
@@ -524,12 +524,11 @@ class LoanRepaymentService
      */
     private function cashAccount(Loan $loan, ?int $cashAccountId): ChartOfAccount
     {
-        if ($cashAccountId !== null) {
-            return ChartOfAccount::query()->findOrFail($cashAccountId);
-        }
+        $override = $cashAccountId === null
+            ? null
+            : ChartOfAccount::query()->findOrFail($cashAccountId);
 
-        return $loan->branch?->cashAccount
-            ?? ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
+        return $this->cashAccounts->forBranch($loan->branch_id, $override);
     }
 
     /**

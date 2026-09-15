@@ -7,6 +7,7 @@ use App\Models\ChartOfAccount;
 use App\Models\Member;
 use App\Models\RetributionTransaction;
 use App\Models\RetributionType;
+use App\Services\Accounting\CashAccountResolver;
 use App\Services\Accounting\JournalEngine;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -17,24 +18,29 @@ use Illuminate\Support\Facades\DB;
  * Ada dua mode transaksi:
  *  - UMUM     : petugas memilih SATU jenis retribusi (percentage = 100%).
  *               Jurnal = 1 baris kredit (akun pendapatan jenis tsb) + 1
- *               baris debit ke akun kas KAS AO RIDWAN (UPF). Tidak ada
- *               pembagian otomatis.
+ *               baris debit ke akun kas cabang UPF. Tidak ada pembagian
+ *               otomatis.
  *  - ANGGOTA  : total dipecah otomatis ke seluruh jenis retribusi "split"
  *               (percentage < 100, jumlah persentasenya = 100) via
  *               RetributionSplitCalculator, mirror pola SHU/UPF lama.
  *
- * Jurnal LAWAN (debit) untuk kedua mode diarahkan ke akun kas khusus
- * petugas UPF (code 1101600 - KAS AO RIDWAN (UPF)) — fallback ke akun
- * kas umum (1101) hanya bila 1101600 belum ada (misal DB sangat lama
- * yang belum ke-migrate).
+ * Jurnal LAWAN (debit) untuk kedua mode diarahkan ke akun kas cabang UPF,
+ * yang ditentukan lewat Pengaturan → Kas Cabang. Kode cabangnya ada di
+ * config/koperasi.php (`cabang_kas_retribusi`).
+ *
+ * Sebelumnya yang ditulis di sini nomor AKUN-nya langsung ('1101600'),
+ * dengan fallback ke '1101'. Itu nomor akun milik satu koperasi tertentu
+ * yang tertanam di kode yang dipakai semua koperasi: begitu akunnya
+ * dirapikan atau koperasi lain memakai penomoran sendiri, retribusi
+ * memposting ke akun yang salah — atau ke '1101' yang di koperasi ini
+ * justru akun header dan ditolak JournalEngine.
  */
 class RetributionService
 {
-    private const DEFAULT_CASH_ACCOUNT_CODE = '1101600';
-
-    private const FALLBACK_CASH_ACCOUNT_CODE = '1101';
-
-    public function __construct(private readonly JournalEngine $journalEngine) {}
+    public function __construct(
+        private readonly JournalEngine $journalEngine,
+        private readonly CashAccountResolver $cashAccounts,
+    ) {}
 
     public function record(
         int $branchId,
@@ -249,9 +255,15 @@ class RetributionService
         return $candidate;
     }
 
+    /**
+     * Versi yang melempar, bukan yang nullable di bawah: kalau akun kasnya
+     * belum bisa ditentukan, posting harus berhenti dengan pesan yang
+     * menyebut cabangnya — sebelumnya `cashAccount()->id` pada nilai null
+     * berujung "Attempt to read property id on null" di halaman 500.
+     */
     private function cashAccountId(): int
     {
-        return $this->cashAccount()->id;
+        return $this->cashAccounts->forBranchCode(config('koperasi.cabang_kas_retribusi'))->id;
     }
 
     /**
@@ -265,9 +277,6 @@ class RetributionService
      */
     public function cashAccount(): ?ChartOfAccount
     {
-        return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->first()
-            // Fallback (backward compat) — production DB yang belum ke-migrate
-            // untuk baris 1101600 akan tetap bisa memposting ke akun kas umum.
-            ?? ChartOfAccount::query()->where('code', self::FALLBACK_CASH_ACCOUNT_CODE)->first();
+        return $this->cashAccounts->tryForBranchCode(config('koperasi.cabang_kas_retribusi'));
     }
 }
