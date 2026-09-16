@@ -21,7 +21,7 @@ class PrintLoanApplicationController extends Controller
         $this->authorize('pinjaman.read');
 
         $pdf = $this->renderPrintPdf('prints.loans.application', [
-            'loan' => $loan->load('member', 'loanProduct', 'createdBy', 'approvals.approvedBy'),
+            'loan' => $loan->load('member', 'loanProduct', 'createdBy', 'cancelledBy', 'approvals.approvedBy'),
             'generatedAt' => now(),
         ]);
 

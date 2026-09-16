@@ -88,6 +88,11 @@ class Loan extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
+    }
+
     public function approvals(): HasMany
     {
         return $this->hasMany(LoanApproval::class);
