@@ -430,6 +430,8 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.pinjaman.index');
     Route::post('/admin/pinjaman/{loan}/keputusan', [LoanApprovalController::class, 'decide'])
         ->name('admin.pinjaman.decide');
+    Route::post('/admin/pinjaman/{loan}/batalkan-pengajuan', [LoanApprovalController::class, 'cancelApplication'])
+        ->name('admin.pinjaman.batalkan-pengajuan');
     Route::post('/admin/pinjaman/{loan}/batalkan', [LoanApprovalController::class, 'cancel'])
         ->name('admin.pinjaman.cancel');
 

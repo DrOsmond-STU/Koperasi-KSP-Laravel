@@ -269,6 +269,48 @@ class LoanApprovalService
     }
 
     /**
+     * Membatalkan PENGAJUAN yang belum pernah dicairkan — salah input,
+     * pengajuan ganda, atau yang diajukan ulang karena datanya keliru.
+     *
+     * Berbeda dari cancelDisbursement() di bawah, yang menangani pinjaman
+     * yang uangnya sudah keluar dan karena itu perlu jurnal pembalik. Di
+     * sini belum ada jurnal sama sekali, jadi tidak ada yang dibalik: yang
+     * dicatat hanya status, alasan, dan siapa yang membatalkan.
+     *
+     * Ini menutup jalan buntu yang nyata. Aturan satu-orang-satu-suara di
+     * guardCanDecide() berlaku untuk menyetujui MAUPUN menolak, jadi
+     * penyetuju yang sudah terlanjur memberi suara tidak bisa lagi menolak
+     * pengajuan yang ternyata salah — sementara "tolak" adalah satu-satunya
+     * jalan keluar yang tersedia sebelumnya. Pembatalan di sini tidak
+     * melanggar aturan itu: ia bukan suara, melainkan penarikan pengajuan,
+     * dan dibatasi ke pembuatnya sendiri atau admin_sistem/manajer lewat
+     * canBeCancelledBy().
+     *
+     * Suara yang sudah masuk sengaja TIDAK dihapus: jejak siapa pernah
+     * menyetujui apa adalah catatan audit, dan pinjaman yang dibatalkan
+     * tidak akan pernah dinilai ulang dari baris yang sama.
+     */
+    public function cancelApplication(Loan $loan, string $reason, int $cancelledBy): Loan
+    {
+        if ($loan->isCancelled()) {
+            throw LoanApprovalException::alreadyCancelled();
+        }
+
+        if ($loan->status !== 'diajukan') {
+            throw LoanApprovalException::applicationNotPending($loan->status);
+        }
+
+        $loan->update([
+            'status' => 'dibatalkan',
+            'cancelled_at' => now(),
+            'cancelled_by' => $cancelledBy,
+            'cancellation_reason' => $reason,
+        ]);
+
+        return $loan->fresh();
+    }
+
+    /**
      * Membatalkan pencairan pinjaman yang belum ada angsurannya sama sekali
      * (bukan restrukturisasi/pelunasan dipercepat — di luar cakupan ini).
      * Jadwal angsuran yang belum dibayar dihapus (murni derivasi hasil

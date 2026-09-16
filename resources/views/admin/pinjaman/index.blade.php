@@ -13,6 +13,7 @@
         .approve-form { display: flex; align-items: flex-end; gap: 6px; margin-bottom: 6px; }
         .approve-form label { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted); }
         .approve-form input[type="date"] { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+        .catatan-putusan { font-size: 11.5px; color: var(--muted); margin: 0 0 6px; max-width: 320px; }
     </style>
 
     <h2>Antrian Persetujuan Pinjaman</h2>
@@ -44,25 +45,58 @@
                     <td>{{ $loan->loanProduct->name }}</td>
                     <td>Rp {{ number_format($loan->principal_amount, 0, ',', '.') }}</td>
                     <td>{{ $loan->approvalCount() }}/{{ $loan->required_approval_count }}</td>
+                    @php
+                        $pembuat = $loan->created_by === auth()->id();
+                        $sudahMemutus = $loan->approvals->contains('approved_by', auth()->id());
+                        $bolehMemutus = ! $pembuat && ! $sudahMemutus;
+                        $belumMemutus = $approverNames
+                            ->except($loan->approvals->pluck('approved_by')->push($loan->created_by)->all());
+                    @endphp
                     <td>
-                        <form method="POST" action="{{ route('admin.pinjaman.decide', $loan) }}" class="approve-form">
-                            @csrf
-                            <input type="hidden" name="decision" value="setuju">
-                            <label>
-                                Tgl. pencairan
-                                <input type="date" name="disbursed_on" required
-                                    value="{{ old('disbursed_on', now()->toDateString()) }}"
-                                    min="{{ $loan->submitted_at?->toDateString() }}"
-                                    max="{{ now()->toDateString() }}">
-                            </label>
-                            <button type="submit" class="btn-primary">Setujui</button>
-                        </form>
-                        <form method="POST" action="{{ route('admin.pinjaman.decide', $loan) }}" style="display:inline;">
-                            @csrf
-                            <input type="hidden" name="decision" value="tolak">
-                            <input type="hidden" name="notes" value="Ditolak oleh pengurus">
-                            <button type="submit" class="btn-danger">Tolak</button>
-                        </form>
+                        @if ($bolehMemutus)
+                            <form method="POST" action="{{ route('admin.pinjaman.decide', $loan) }}" class="approve-form">
+                                @csrf
+                                <input type="hidden" name="decision" value="setuju">
+                                <label>
+                                    Tgl. pencairan
+                                    {{-- Bawaannya tanggal pengajuan, bukan hari ini. Untuk akad
+                                         lama yang dicatat susulan, hari ini hampir selalu salah:
+                                         pinjaman 51-100H-260813-9703 batal 16 Sep 2026 justru
+                                         karena tanggalnya terlewat dibiarkan di hari itu. Untuk
+                                         pengajuan hari ini keduanya bernilai sama. --}}
+                                    <input type="date" name="disbursed_on" required
+                                        value="{{ old('disbursed_on', ($loan->submitted_at ?? now())->toDateString()) }}"
+                                        min="{{ $loan->submitted_at?->toDateString() }}"
+                                        max="{{ now()->toDateString() }}">
+                                </label>
+                                <button type="submit" class="btn-primary">Setujui</button>
+                            </form>
+                            <form method="POST" action="{{ route('admin.pinjaman.decide', $loan) }}" style="display:inline;">
+                                @csrf
+                                <input type="hidden" name="decision" value="tolak">
+                                <input type="hidden" name="notes" value="Ditolak oleh pengurus">
+                                <button type="submit" class="btn-danger">Tolak</button>
+                            </form>
+                        @else
+                            <p class="catatan-putusan">
+                                {{ $pembuat ? 'Anda pembuat pengajuan ini.' : 'Anda sudah memberi keputusan.' }}
+                                @if ($belumMemutus->isNotEmpty())
+                                    Menunggu: {{ $belumMemutus->take(4)->implode(', ') }}{{ $belumMemutus->count() > 4 ? ', dan '.($belumMemutus->count() - 4).' lainnya' : '' }}.
+                                @else
+                                    <strong>Tidak ada lagi yang berhak memutus</strong> — batalkan pengajuannya.
+                                @endif
+                            </p>
+                        @endif
+
+                        @if ($loan->canBeCancelledBy(auth()->user()))
+                            <button type="button" class="btn-danger" data-toggle-cancel="ajuan-{{ $loan->id }}">Batalkan Pengajuan</button>
+                            <form method="POST" action="{{ route('admin.pinjaman.batalkan-pengajuan', $loan) }}" class="cancel-form" id="cancel-form-ajuan-{{ $loan->id }}" style="display:none; gap:6px; margin-top:6px;">
+                                @csrf
+                                <input type="text" name="reason" placeholder="Alasan" required style="width:140px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; font-size:11px;">
+                                <button type="submit" class="btn-danger">OK</button>
+                            </form>
+                        @endif
+
                         <a href="{{ route('admin.print.loan-application.show', $loan) }}" class="btn-link" target="_blank">Cetak</a>
                     </td>
                 </tr>

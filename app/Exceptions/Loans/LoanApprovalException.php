@@ -46,6 +46,16 @@ class LoanApprovalException extends RuntimeException
     }
 
     /**
+     * Pembatalan pengajuan hanya berlaku selagi statusnya masih 'diajukan'.
+     * Pinjaman yang sudah cair punya jalurnya sendiri (cancelDisbursement)
+     * karena jurnalnya harus dibalik.
+     */
+    public static function applicationNotPending(string $status): self
+    {
+        return new self("Hanya pengajuan yang masih menunggu persetujuan yang bisa dibatalkan. Status pinjaman ini sekarang \"{$status}\".");
+    }
+
+    /**
      * Pencairan gagal karena bagan akun yang dipakai jurnal pencairan tidak
      * layak posting (mis. akun kas cabang belum diatur dan fallback `1101`
      * sudah dijadikan akun header, akun piutang/provisi produk kosong, atau
