@@ -76,6 +76,15 @@ class UpdateChartOfAccountRequest extends FormRequest
      * sekali — checkbox yang tidak dicentang memang tidak mengirim apa pun,
      * dan itulah yang disimpan controller lewat `$request->boolean()`.
      * Aturan biasa akan terlewat begitu saja pada kasus itu.
+     *
+     * Yang dijaga adalah PERUBAHANNYA, bukan keadaannya: hanya akun inti
+     * yang sekarang masih bisa diposting yang dilarang dimatikan. Koperasi
+     * yang membawa bagan akunnya sendiri boleh saja sudah menjadikan salah
+     * satu kode ini akun header — di sik-kppd.com, '1101' memang header
+     * dengan akun-akun anak di bawahnya, dan sistem di sana tidak lagi
+     * menjurnal ke sana sejak akun kasnya ditetapkan sendiri. Memaksa akun
+     * seperti itu kembali postable hanya menghalangi admin menyunting
+     * namanya, tanpa melindungi apa pun.
      */
     public function withValidator(Validator $validator): void
     {
@@ -83,7 +92,7 @@ class UpdateChartOfAccountRequest extends FormRequest
             /** @var ChartOfAccount $account */
             $account = $this->route('chartOfAccount');
 
-            if ($account->isProtected() && ! $this->boolean('is_postable')) {
+            if ($account->isProtected() && $account->is_postable && ! $this->boolean('is_postable')) {
                 $validator->errors()->add(
                     'is_postable',
                     "Akun \"{$account->code}\" dipakai inti sistem sebagai tujuan jurnal dan harus tetap bisa diposting — menjadikannya akun header akan menggagalkan pencairan pinjaman, setoran/penarikan simpanan, kas teller, POS, dan retribusi.",

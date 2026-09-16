@@ -100,6 +100,33 @@ class ProtectedAccountPostableTest extends TestCase
         $this->assertSame('Kas Konsolidasi', $akun->fresh()->name);
     }
 
+    /**
+     * Akun inti yang MEMANG SUDAH header tidak dipaksa kembali postable.
+     *
+     * Koperasi yang membawa bagan akunnya sendiri boleh menjadikan salah
+     * satu kode ini akun header — di sik-kppd.com '1101' justru header
+     * dengan akun anak di bawahnya. Memaksanya postable hanya menghalangi
+     * admin menyunting namanya, tanpa melindungi apa pun: yang dijaga
+     * adalah perubahannya, bukan keadaannya.
+     */
+    public function test_a_core_account_that_is_already_a_header_can_still_be_edited(): void
+    {
+        $akun = ChartOfAccount::query()
+            ->whereIn('code', ChartOfAccount::PROTECTED_CODES)
+            ->firstOrFail();
+        $akun->forceFill(['is_postable' => false])->save();
+
+        $this->actingAs($this->admin())
+            ->put(route('admin.master.chart-of-accounts.update', $akun), $this->payload($akun, [
+                'is_postable' => null,
+                'name' => 'Kas (akun induk)',
+            ]))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('Kas (akun induk)', $akun->fresh()->name);
+        $this->assertFalse((bool) $akun->fresh()->is_postable);
+    }
+
     /** Akun biasa tetap bebas dijadikan akun header — penguncian ini hanya untuk akun inti. */
     public function test_an_ordinary_account_may_become_a_header(): void
     {
