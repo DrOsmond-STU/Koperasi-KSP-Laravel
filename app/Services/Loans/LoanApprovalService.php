@@ -124,9 +124,26 @@ class LoanApprovalService
     }
 
     /**
-     * Jurnal pencairan (Dr Piutang Pinjaman, Cr Kas bersih + Cr Pendapatan
-     * Provisi) dan pembentukan jadwal angsuran — dipanggil otomatis begitu
-     * approval terakhir yang dibutuhkan masuk.
+     * Jurnal pencairan (Dr Piutang Pinjaman, Cr Kas — tepat dua baris) dan
+     * pembentukan jadwal angsuran, dipanggil otomatis begitu approval
+     * terakhir yang dibutuhkan masuk.
+     *
+     * BIAYA PROVISI/ADMIN SENGAJA TIDAK IKUT DI SINI. Dulu jurnal ini punya
+     * baris ketiga, Cr Pendapatan Provisi sebesar persentase produk, dan kas
+     * hanya dikredit sebesar pokok dikurangi provisi. Instruksi pengurus 16
+     * Sep 2026: biaya admin dijurnal manual, tidak otomatis saat pencairan.
+     *
+     * Keputusan itu bukan sekadar selera pencatatan. Memotong provisi di muka
+     * berarti anggota menerima uang lebih kecil dari plafonnya (pinjaman 30
+     * juta cair 29,7 juta) sementara utangnya tetap 30 juta — dan kapan
+     * potongan itu boleh diakui sebagai pendapatan bergantung pada akad yang
+     * dipakai koperasi, bukan pada kode. Menjadikannya jurnal manual
+     * mengembalikan keputusan itu ke pengurus.
+     *
+     * `loans.provision_fee_amount` karena itu tidak lagi diisi di sini dan
+     * tetap 0 sejak pengajuan (LoanService). Kolom
+     * `coa_provision_income_account_id` pada produk sengaja dibiarkan — akun
+     * itulah yang dipakai jurnal manualnya nanti.
      *
      * CATATAN PENTING soal tanggal jurnal. Seluruh tanggal — entry_date
      * jurnal, disbursed_at, dan awal jadwal angsuran — mengikuti tanggal
@@ -148,8 +165,6 @@ class LoanApprovalService
     {
         $product = $loan->loanProduct;
         $principal = (float) $loan->principal_amount;
-        $provisionFee = round($principal * (float) $product->provision_fee_percentage / 100, 2);
-        $netCash = round($principal - $provisionFee, 2);
         $berlaku = $disbursedOn ?? $this->tanggalBerlaku($loan);
 
         $keterangan = "Pencairan pinjaman {$loan->loan_number}";
@@ -170,14 +185,13 @@ class LoanApprovalService
         // persetujuan bisa diulang persis dari keadaan semula setelah
         // akunnya dibetulkan.
         try {
+            // Tepat dua baris, keduanya sebesar pokok penuh: anggota menerima
+            // seluruh plafonnya dan berutang sebesar itu juga. Lihat catatan
+            // method ini soal biaya provisi/admin.
             $lines = [
                 ['chart_of_account_id' => $product->coa_receivable_account_id, 'debit' => $principal, 'credit' => 0],
-                ['chart_of_account_id' => $this->cashAccount($loan)->id, 'debit' => 0, 'credit' => $netCash],
+                ['chart_of_account_id' => $this->cashAccount($loan)->id, 'debit' => 0, 'credit' => $principal],
             ];
-
-            if ($provisionFee > 0) {
-                $lines[] = ['chart_of_account_id' => $product->coa_provision_income_account_id, 'debit' => 0, 'credit' => $provisionFee];
-            }
 
             $this->journalEngine->post([
                 // Cabang unit yang menjalankan pinjaman, bukan cabang yang
@@ -224,7 +238,6 @@ class LoanApprovalService
         }
 
         $loan->update([
-            'provision_fee_amount' => $provisionFee,
             'status' => 'dicairkan',
             'collectibility' => 'lancar',
             'disbursed_at' => $berlaku->toDateString(),
