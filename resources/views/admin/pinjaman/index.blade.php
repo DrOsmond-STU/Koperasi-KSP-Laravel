@@ -14,6 +14,17 @@
         .approve-form label { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted); }
         .approve-form input[type="date"] { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
         .catatan-putusan { font-size: 11.5px; color: var(--muted); margin: 0 0 6px; max-width: 320px; }
+        .bilah-saring { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px; }
+        .bilah-saring label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); font-weight: 600; }
+        {{-- Warna latar/teks sengaja tidak diatur di sini: layouts.app sudah
+             menatanya global untuk input/select, dan menimpanya dengan nilai
+             terang membuat kotak ini putih menyala di tema gelap. --}}
+        .bilah-saring input[type="search"], .bilah-saring select { padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; font-size: 13px; }
+        .bilah-saring input[type="search"] { min-width: 260px; }
+        .btn-secondary { padding: 8px 14px; background: var(--paper); color: var(--pine); border: 1px solid var(--line); border-radius: 9px; font-weight: 700; font-size: 13px; cursor: pointer; text-decoration: none; display: inline-block; }
+        .hasil-saring { font-size: 12px; color: var(--muted); margin: -6px 0 10px; }
+        .penavigasi { display: flex; align-items: center; gap: 12px; margin: -10px 0 24px; flex-wrap: wrap; }
+        .penavigasi .nonaktif { opacity: .45; cursor: default; }
     </style>
 
     <h2>Antrian Persetujuan Pinjaman</h2>
@@ -32,6 +43,50 @@
     @if ($errors->any())
         <p style="color:var(--brick); font-size:13px; margin-bottom:14px;">{{ $errors->first() }}</p>
     @endif
+
+    {{-- Satu bilah untuk kedua tabel: pencari satu nomor pinjaman belum tentu
+         tahu pinjaman itu masih menunggu atau sudah cair. Filter Status hanya
+         mengenai tabel bawah, karena tabel atas menurut definisinya berisi
+         satu status saja. --}}
+    <form method="GET" action="{{ route('admin.pinjaman.index') }}" class="bilah-saring">
+        <label>
+            Cari
+            <input type="search" name="cari" value="{{ $cari }}"
+                placeholder="No. pinjaman, nama, atau no. anggota...">
+        </label>
+        <label>
+            Produk
+            <select name="produk">
+                <option value="">Semua produk</option>
+                @foreach ($daftarProduk as $p)
+                    <option value="{{ $p->id }}" @selected($produk === $p->id)>{{ $p->name }}</option>
+                @endforeach
+            </select>
+        </label>
+        @if ($daftarCabang->count() > 1)
+            <label>
+                Cabang
+                <select name="cabang">
+                    <option value="">Semua cabang</option>
+                    @foreach ($daftarCabang as $c)
+                        <option value="{{ $c->id }}" @selected($cabang === $c->id)>{{ $c->code }} — {{ $c->name }}</option>
+                    @endforeach
+                </select>
+            </label>
+        @endif
+        <label>
+            Status (pinjaman cair)
+            <select name="status">
+                <option value="">Semua</option>
+                <option value="dicairkan" @selected($status === 'dicairkan')>Dicairkan</option>
+                <option value="dibatalkan" @selected($status === 'dibatalkan')>Dibatalkan</option>
+            </select>
+        </label>
+        <button type="submit" class="btn-primary" style="padding:9px 16px;">Cari</button>
+        @if ($cari !== '' || $produk || $cabang || $status !== '')
+            <a href="{{ route('admin.pinjaman.index') }}" class="btn-secondary">Bersihkan</a>
+        @endif
+    </form>
 
     <table class="data-table">
         <thead>
@@ -101,12 +156,27 @@
                     </td>
                 </tr>
             @empty
-                <tr><td colspan="6">Tidak ada pengajuan menunggu persetujuan.</td></tr>
+                {{-- Dibedakan dengan sengaja: "tidak ada yang cocok" dan "antrian
+                     memang kosong" adalah dua kabar yang sangat berbeda bagi staf
+                     yang sedang mencari satu pengajuan. --}}
+                <tr><td colspan="6">
+                    @if ($cari !== '' || $produk || $cabang)
+                        Tidak ada pengajuan menunggu persetujuan yang cocok dengan saringan ini.
+                    @else
+                        Tidak ada pengajuan menunggu persetujuan.
+                    @endif
+                </td></tr>
             @endforelse
         </tbody>
     </table>
 
-    <h3>Pinjaman Dicairkan Terbaru</h3>
+    <h3>{{ $cari !== '' || $produk || $cabang || $status !== '' ? 'Pinjaman Dicairkan — Hasil Pencarian' : 'Pinjaman Dicairkan Terbaru' }}</h3>
+    @if ($disbursedLoans->total() > 0)
+        <p class="hasil-saring">
+            Menampilkan {{ $disbursedLoans->firstItem() }}–{{ $disbursedLoans->lastItem() }}
+            dari {{ number_format($disbursedLoans->total(), 0, ',', '.') }} pinjaman.
+        </p>
+    @endif
     <table class="data-table">
         <thead><tr><th>No. Pinjaman</th><th>Anggota</th><th>Plafon</th><th>Tanggal Cair</th><th>Status</th><th>Aksi</th></tr></thead>
         <tbody>
@@ -142,10 +212,40 @@
                     </td>
                 </tr>
             @empty
-                <tr><td colspan="6">Belum ada pinjaman dicairkan.</td></tr>
+                <tr><td colspan="6">
+                    @if ($cari !== '' || $produk || $cabang || $status !== '')
+                        Tidak ada pinjaman cair yang cocok dengan saringan ini.
+                    @else
+                        Belum ada pinjaman dicairkan.
+                    @endif
+                </td></tr>
             @endforelse
         </tbody>
     </table>
+
+    {{-- Penavigasi ditulis tangan, bukan $paginator->links(): bawaan Laravel
+         adalah markup Tailwind, sedangkan aplikasi ini memakai CSS sendiri —
+         hasilnya gumpalan tanpa gaya. withQueryString() di controller yang
+         membuat saringan aktif ikut terbawa antar halaman. --}}
+    @if ($disbursedLoans->hasPages())
+        <div class="penavigasi">
+            @if ($disbursedLoans->previousPageUrl())
+                <a href="{{ $disbursedLoans->previousPageUrl() }}" class="btn-secondary">‹ Sebelumnya</a>
+            @else
+                <span class="btn-secondary nonaktif">‹ Sebelumnya</span>
+            @endif
+
+            <span class="hasil-saring" style="margin:0;">
+                Halaman {{ $disbursedLoans->currentPage() }} dari {{ $disbursedLoans->lastPage() }}
+            </span>
+
+            @if ($disbursedLoans->nextPageUrl())
+                <a href="{{ $disbursedLoans->nextPageUrl() }}" class="btn-secondary">Berikutnya ›</a>
+            @else
+                <span class="btn-secondary nonaktif">Berikutnya ›</span>
+            @endif
+        </div>
+    @endif
 
     <script>
         document.querySelectorAll('[data-toggle-cancel]').forEach(function (btn) {
