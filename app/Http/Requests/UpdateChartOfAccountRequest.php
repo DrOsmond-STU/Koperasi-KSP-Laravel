@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Models\ChartOfAccount;
 use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -22,6 +23,9 @@ class UpdateChartOfAccountRequest extends FormRequest
      * literal string in core services, not by FK) and `parent_code` is
      * checked for cycles by walking its ancestor chain, since the DB has
      * no self-referencing constraint on `parent_code` to catch either.
+     *
+     * `is_postable` is locked on for those same codes — see withValidator()
+     * below for why it is enforced there and not as a rule here.
      *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
@@ -58,6 +62,34 @@ class UpdateChartOfAccountRequest extends FormRequest
             'statement' => ['required', Rule::in(['NERACA', 'LABA_RUGI'])],
             'notes' => ['nullable', 'string'],
         ];
+    }
+
+    /**
+     * Akun inti dijurnal langsung oleh service, jadi menjadikannya akun
+     * header melumpuhkan pencairan pinjaman, setoran/penarikan simpanan,
+     * kas teller, POS, dan retribusi sekaligus — persis kejadian 15 Sep
+     * 2026, ketika akun kas '1101' dijadikan header dan setiap persetujuan
+     * pinjaman balas HTTP 500.
+     *
+     * Diperiksa di sini, bukan sebagai aturan pada `is_postable`, supaya
+     * ikut berjalan ketika kotak centangnya TIDAK ADA di payload sama
+     * sekali — checkbox yang tidak dicentang memang tidak mengirim apa pun,
+     * dan itulah yang disimpan controller lewat `$request->boolean()`.
+     * Aturan biasa akan terlewat begitu saja pada kasus itu.
+     */
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator) {
+            /** @var ChartOfAccount $account */
+            $account = $this->route('chartOfAccount');
+
+            if ($account->isProtected() && ! $this->boolean('is_postable')) {
+                $validator->errors()->add(
+                    'is_postable',
+                    "Akun \"{$account->code}\" dipakai inti sistem sebagai tujuan jurnal dan harus tetap bisa diposting — menjadikannya akun header akan menggagalkan pencairan pinjaman, setoran/penarikan simpanan, kas teller, POS, dan retribusi.",
+                );
+            }
+        });
     }
 
     private function isDescendant(ChartOfAccount $account, string $candidateParentCode): bool

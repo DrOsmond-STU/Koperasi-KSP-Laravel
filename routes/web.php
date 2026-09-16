@@ -62,6 +62,7 @@ use App\Http\Controllers\Anggota\SavingsController as MemberSavingsController;
 use App\Http\Controllers\Anggota\SavingsDepositController;
 use App\Http\Controllers\Anggota\WithdrawalRequestController;
 use App\Http\Controllers\InstallController;
+use App\Http\Controllers\MfaSetupController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Staf\LoanApplicationController;
 use App\Http\Controllers\Staf\LoanRepaymentController as StafLoanRepaymentController;
@@ -94,6 +95,24 @@ Route::get('/', function () {
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', fn () => view('auth.login'))->name('login');
+});
+
+// Wizard aktivasi MFA. SENGAJA di luar grup 'mfa.required' di bawah: user
+// yang belum mengaktifkan MFA justru harus bisa mencapai halaman ini untuk
+// mengaktifkannya — kalau ikut grup itu, ia terkunci dari satu-satunya
+// jalan keluarnya (lihat catatan MfaSetupController).
+//
+// Controller dan viewnya sudah ada sejak lama tapi rutenya tidak pernah
+// didaftarkan, sehingga profile/edit.blade.php memanggil route('mfa.setup')
+// yang tidak ada dan halaman Profil balas HTTP 500 untuk setiap user yang
+// MFA-nya belum aktif (9 kali pada 15 Sep 2026).
+Route::middleware(['auth', 'active.user'])->group(function () {
+    Route::get('/mfa/aktivasi', [MfaSetupController::class, 'show'])
+        ->name('mfa.setup');
+    Route::post('/mfa/aktivasi', [MfaSetupController::class, 'confirm'])
+        ->name('mfa.setup.confirm');
+    Route::post('/mfa/aktivasi/ulang', [MfaSetupController::class, 'regenerate'])
+        ->name('mfa.setup.regenerate');
 });
 
 Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
