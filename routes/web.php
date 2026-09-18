@@ -21,6 +21,7 @@ use App\Http\Controllers\Admin\JournalAdjustmentController;
 use App\Http\Controllers\Admin\JournalReportController;
 use App\Http\Controllers\Admin\LaporanController;
 use App\Http\Controllers\Admin\LoanApprovalController;
+use App\Http\Controllers\Admin\LoanBranchRepairController;
 use App\Http\Controllers\Admin\LoanProductController;
 use App\Http\Controllers\Admin\LoanScheduleRepairController;
 use App\Http\Controllers\Admin\LoanTenorRateImportController;
@@ -434,6 +435,16 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.pinjaman.batalkan-pengajuan');
     Route::post('/admin/pinjaman/{loan}/batalkan', [LoanApprovalController::class, 'cancel'])
         ->name('admin.pinjaman.cancel');
+
+    // Ditaruh SEBELUM rute ber-parameter {loan} di atas tidak perlu: segmennya
+    // literal dan tidak bentrok. Dikelompokkan di sini supaya seluruh layar
+    // pinjaman terbaca berurutan.
+    Route::get('/admin/pinjaman/perbaikan-cabang', [LoanBranchRepairController::class, 'form'])
+        ->name('admin.pinjaman.perbaikan-cabang.form');
+    Route::post('/admin/pinjaman/perbaikan-cabang', [LoanBranchRepairController::class, 'apply'])
+        ->name('admin.pinjaman.perbaikan-cabang.apply');
+    Route::post('/admin/pinjaman/perbaikan-cabang/{repair}/batalkan', [LoanBranchRepairController::class, 'undo'])
+        ->name('admin.pinjaman.perbaikan-cabang.undo');
 
     Route::get('/admin/pinjaman/impor-tenor-tarif', [LoanTenorRateImportController::class, 'create'])
         ->name('admin.pinjaman.import-tenor-tarif.create');

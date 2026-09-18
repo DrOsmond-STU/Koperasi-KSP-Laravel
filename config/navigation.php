@@ -104,6 +104,7 @@ return [
                 ['label' => 'Log Notifikasi', 'route' => 'admin.notifikasi.log.index', 'permission' => 'notifikasi_log.read', 'icon' => 'bell'],
                 ['label' => 'Keamanan & Audit', 'route' => 'admin.keamanan-audit.index', 'permission' => 'keamanan_audit.read', 'icon' => 'shield-check'],
                 ['label' => 'Kas & Cabang', 'route' => 'admin.pengaturan.kas-cabang.index', 'permission' => 'master_data.update', 'icon' => 'wallet'],
+                ['label' => 'Perbaikan Cabang Pinjaman', 'route' => 'admin.pinjaman.perbaikan-cabang.form', 'permission' => 'master_data.update', 'icon' => 'wallet'],
                 ['label' => 'Pengaturan Branding', 'route' => 'admin.branding.edit', 'permission' => 'branding.manage', 'icon' => 'image'],
                 ['label' => 'Pengaturan Cetakan', 'route' => 'admin.pengaturan.cetakan.edit', 'permission' => 'cetakan.manage', 'icon' => 'file-text'],
                 ['label' => 'Setup Tanda Tangan', 'route' => 'admin.pengaturan.tanda-tangan.index', 'permission' => 'cetakan.manage', 'icon' => 'sliders'],
