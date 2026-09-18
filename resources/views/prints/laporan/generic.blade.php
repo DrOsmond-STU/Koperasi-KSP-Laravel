@@ -20,6 +20,10 @@
              hitam-putih, dan bedanya harus tetap terlihat sebagai beda abu. --}}
         tr.baris-ringkasan td { background: #E3EDE6; font-weight: 700; }
         tr.baris-judul td { background: #11543B; color: #FFFFFF; font-weight: 700; }
+        {{-- Baris total dipisah garis atas tebal, bukan sekadar latar: pada
+             cetakan hitam-putih garis lebih jelas daripada beda abu, dan
+             pembaca laporan keuangan mencari angka penutup di kaki tabel. --}}
+        tfoot td { border-top: 2px solid #11543B; background: #F4F7F4; font-weight: 700; }
     </style>
 
     <h2 style="font-size:13pt; margin:0 0 2px;">{{ $title }}</h2>
@@ -73,5 +77,19 @@
                 <tr><td colspan="{{ count($columns) }}">Tidak ada data.</td></tr>
             @endforelse
         </tbody>
+        {{-- Total hanya muncul kalau laporannya memang punya kolom nominal;
+             daftar master seperti Data Anggota tidak perlu kaki tabel. Angkanya
+             dihitung PenjumlahLaporan dari baris yang SAMA dengan yang dicetak
+             di atas, jadi total di kertas selalu cocok dengan barisnya — juga
+             ketika cetakan ini dibuat dari layar yang sedang tersaring. --}}
+        @if (! empty($total ?? null) && $rows->isNotEmpty())
+            <tfoot>
+                <tr>
+                    @foreach (array_keys($columns) as $key)
+                        <td @class(['angka' => $kolomAngka[$key] ?? false])>{{ $total[$key] }}</td>
+                    @endforeach
+                </tr>
+            </tfoot>
+        @endif
     </table>
 @endsection

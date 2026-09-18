@@ -16,6 +16,16 @@
         .dt-table tr.baris-ringkasan td { background: var(--leaf); font-weight: 700; }
         .dt-table tr.baris-judul td { background: var(--pine); color: #fff; font-weight: 700; letter-spacing: .03em; }
 
+        /* Baris total menempel di dasar area gulir supaya tetap terbaca pada
+           laporan panjang — angka penutup tidak ada gunanya kalau harus
+           digulir dulu sampai habis untuk melihatnya. */
+        .dt-table tfoot td {
+            position: sticky; bottom: 0; z-index: 2;
+            background: var(--paper); border-top: 2px solid var(--pine);
+            font-weight: 700; white-space: nowrap;
+        }
+        .dt-table tfoot .label-total { color: var(--muted); letter-spacing: .04em; font-size: 12px; }
+
         /* Popover "Cetak Neraca (Skontro)". Native <details> supaya tidak
            butuh JS library, dan blok isi tetap terikat di posisi tombolnya
            lewat position:relative + absolute pada isi. Diberi z-index tinggi
@@ -116,10 +126,22 @@
             <strong>Export PDF dan Export Excel tetap memuat seluruh baris</strong> yang lolos saringan —
             pemotongan ini hanya berlaku di layar. Persempit dengan pencarian atau filter untuk melihat
             bagian yang Anda cari.
+            @if (! empty($kolomDijumlah))
+                <br>
+                Karena itu <strong>baris TOTAL di bawah hanya menjumlah baris yang tampil</strong>, bukan
+                seluruh laporan. Total seluruh baris ada di Export PDF/Excel.
+            @endif
         </div>
     @endif
 
-    <div class="dt-wrap" data-dt @if ($dateColumn) data-date-column="{{ $dateColumn }}" @endif>
+    {{-- `data-sum-columns` adalah daftar kolom yang boleh dijumlah, sudah
+         diputuskan di server oleh PenjumlahLaporan. Datatable menyaring di sisi
+         klien, jadi totalnya harus dihitung ulang di browser tiap kali
+         saringannya berubah — tapi KOLOM MANA yang dijumlah tetap keputusan
+         server, supaya layar, PDF, dan Excel tidak bisa berbeda pendapat. --}}
+    <div class="dt-wrap" data-dt
+         @if ($dateColumn) data-date-column="{{ $dateColumn }}" @endif
+         @if (! empty($kolomDijumlah)) data-sum-columns="{{ implode(',', $kolomDijumlah) }}" @endif>
         <div class="dt-toolbar">
             <input type="search" class="dt-search" placeholder="Cari di semua kolom...">
 
@@ -165,6 +187,29 @@
                         </tr>
                     @endforeach
                 </tbody>
+                @if (! empty($kolomDijumlah))
+                    @php
+                        // Kata "TOTAL" ditaruh di kolom pertama yang TIDAK
+                        // dijumlah, supaya barisnya punya label tanpa menimpa
+                        // angka. Aturan yang sama dipakai PenjumlahLaporan
+                        // untuk cetakan, jadi letaknya seragam.
+                        $kolomLabelTotal = collect(array_keys($columns))
+                            ->first(fn ($key) => ! in_array($key, $kolomDijumlah, true));
+                    @endphp
+                    <tfoot>
+                        <tr>
+                            @foreach ($columns as $key => $columnLabel)
+                                @if (in_array($key, $kolomDijumlah, true))
+                                    <td data-total-column="{{ $key }}"></td>
+                                @elseif ($key === $kolomLabelTotal)
+                                    <td class="label-total">TOTAL</td>
+                                @else
+                                    <td></td>
+                                @endif
+                            @endforeach
+                        </tr>
+                    </tfoot>
+                @endif
             </table>
         </div>
 

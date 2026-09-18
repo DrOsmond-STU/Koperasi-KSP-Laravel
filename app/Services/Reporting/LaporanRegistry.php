@@ -11,7 +11,9 @@ namespace App\Services\Reporting;
  * cardinality fields only; free-text columns rely on the search box), and
  * `date_column` (which column, if any, gets the "Periode ... s/d ..." date-
  * range filter — null for modules with no date-bearing column, e.g. pure
- * master data or a point-in-time snapshot like saldo_persediaan).
+ * master data or a point-in-time snapshot like saldo_persediaan), and
+ * `tidak_dijumlah` (numeric-looking columns that must NOT get a total — see
+ * PenjumlahLaporan, which does the summing).
  *
  * LaporanController::fetch() is the only place that reads actual rows; this
  * class stays a pure whitelist of column keys/labels, same division of
@@ -20,7 +22,7 @@ namespace App\Services\Reporting;
 class LaporanRegistry
 {
     /**
-     * @return array<string, array{group: string, label: string, columns: array<string, string>, filterable: array<int, string>, date_column: ?string}>
+     * @return array<string, array{group: string, label: string, columns: array<string, string>, filterable: array<int, string>, date_column: ?string, tidak_dijumlah?: array<int, string>}>
      */
     public static function definitions(): array
     {
@@ -96,6 +98,7 @@ class LaporanRegistry
                     'status' => 'Status',
                 ],
                 'filterable' => ['jenis', 'cabang', 'status'],
+                'tidak_dijumlah' => ['balance_after'],
                 'date_column' => 'tanggal',
             ],
             'pinjaman' => [
@@ -113,6 +116,7 @@ class LaporanRegistry
                     'disbursed_at' => 'Tgl Cair',
                 ],
                 'filterable' => ['produk', 'cabang', 'status', 'collectibility'],
+                'tidak_dijumlah' => ['tenor_months'],
                 'date_column' => 'disbursed_at',
             ],
             'angsuran' => [
@@ -128,6 +132,7 @@ class LaporanRegistry
                     'status' => 'Status',
                 ],
                 'filterable' => ['status'],
+                'tidak_dijumlah' => ['installment_number'],
                 'date_column' => 'due_date',
             ],
             'transaksi_pinjaman' => [
@@ -160,6 +165,7 @@ class LaporanRegistry
                     'status' => 'Status',
                 ],
                 'filterable' => ['cabang', 'status'],
+                'tidak_dijumlah' => ['saldo_akhir'],
                 'date_column' => 'tanggal',
             ],
             'pengajuan_persetujuan_pinjaman' => [
@@ -189,6 +195,7 @@ class LaporanRegistry
                     'status' => 'Status',
                 ],
                 'filterable' => ['category', 'status'],
+                'tidak_dijumlah' => ['purchase_price', 'selling_price'],
                 'date_column' => null,
             ],
             'supplier' => [
@@ -233,6 +240,7 @@ class LaporanRegistry
                     'cabang' => 'Cabang',
                 ],
                 'filterable' => ['cabang'],
+                'tidak_dijumlah' => ['qty'],
                 'date_column' => 'tanggal',
             ],
             'koreksi_persediaan' => [
@@ -249,6 +257,7 @@ class LaporanRegistry
                     'status' => 'Status',
                 ],
                 'filterable' => ['cabang', 'status'],
+                'tidak_dijumlah' => ['system_qty', 'physical_qty', 'variance_qty'],
                 'date_column' => 'tanggal',
             ],
             'persediaan_kartu' => [
@@ -265,6 +274,7 @@ class LaporanRegistry
                     'saldo' => 'Saldo',
                 ],
                 'filterable' => ['barang', 'cabang', 'jenis'],
+                'tidak_dijumlah' => ['debet', 'kredit', 'harga', 'saldo'],
                 'date_column' => 'tanggal',
             ],
             'saldo_persediaan' => [
@@ -277,6 +287,7 @@ class LaporanRegistry
                     'nilai' => 'Nilai Persediaan',
                 ],
                 'filterable' => [],
+                'tidak_dijumlah' => ['qty'],
                 'date_column' => null,
             ],
             'kategori_aktiva_tetap' => [
@@ -290,6 +301,7 @@ class LaporanRegistry
                     'status' => 'Status',
                 ],
                 'filterable' => ['default_depreciation_method', 'status'],
+                'tidak_dijumlah' => ['default_useful_life_months'],
                 'date_column' => null,
             ],
             'aktiva_tetap' => [
@@ -335,6 +347,7 @@ class LaporanRegistry
                     'status' => 'Status',
                 ],
                 'filterable' => ['status'],
+                'tidak_dijumlah' => ['percentage'],
                 'date_column' => null,
             ],
             'retribusi_upf' => [
@@ -510,6 +523,7 @@ class LaporanRegistry
                     'kolektibilitas' => 'Kolektibilitas',
                 ],
                 'filterable' => ['produk', 'kolektibilitas'],
+                'tidak_dijumlah' => ['tenor', 'sisa_tenor'],
                 'date_column' => 'tanggal_akad',
             ],
             'saldo_awal_simpanan' => [
@@ -540,6 +554,7 @@ class LaporanRegistry
                     'keterangan' => 'Keterangan',
                 ],
                 'filterable' => [],
+                'tidak_dijumlah' => ['sisa'],
                 'date_column' => 'tanggal',
             ],
             'migrasi_jadwal_pembayaran' => [
@@ -558,6 +573,7 @@ class LaporanRegistry
                     'status' => 'Status',
                 ],
                 'filterable' => ['status'],
+                'tidak_dijumlah' => ['angsuran_ke'],
                 'date_column' => 'jatuh_tempo',
             ],
         ];
@@ -592,6 +608,24 @@ class LaporanRegistry
     public static function dateColumnFor(string $module): ?string
     {
         return self::definitions()[$module]['date_column'] ?? null;
+    }
+
+    /**
+     * Kolom yang isinya berupa angka tapi TIDAK boleh dijumlah.
+     *
+     * PenjumlahLaporan sudah menolak sendiri nomor dokumen (no. rekening, kode
+     * akun) karena bisa dikenali dari nama kolomnya. Yang tersisa hanya yang
+     * tidak mungkin ditebak dari bentuknya: saldo berjalan, harga satuan,
+     * tenor, persentase, nomor urut angsuran, dan kuantitas barang yang
+     * satuannya bercampur dalam satu laporan. Menjumlahkan semuanya
+     * menghasilkan angka yang kelihatan resmi tapi tidak berarti apa-apa —
+     * justru itu yang berbahaya di laporan keuangan.
+     *
+     * @return array<int, string>
+     */
+    public static function tidakDijumlahFor(string $module): array
+    {
+        return self::definitions()[$module]['tidak_dijumlah'] ?? [];
     }
 
     /**

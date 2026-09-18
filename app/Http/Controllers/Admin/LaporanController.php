@@ -39,6 +39,7 @@ use App\Models\TellerCashTransaction;
 use App\Models\User;
 use App\Services\Inventory\InventoryReportService;
 use App\Services\Reporting\LaporanRegistry;
+use App\Services\Reporting\PenjumlahLaporan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -116,6 +117,7 @@ class LaporanController extends Controller
         $rows = $this->fetch($module);
         $maxRows = (int) config('koperasi.laporan_maks_baris_layar', 5000);
         $jumlahPenuh = $rows->count();
+        $barisLayar = $jumlahPenuh > $maxRows ? $rows->take($maxRows)->values() : $rows;
 
         return view('admin.laporan.show', [
             'module' => $module,
@@ -123,7 +125,16 @@ class LaporanController extends Controller
             'columns' => LaporanRegistry::columnsFor($module),
             'filterable' => LaporanRegistry::filterableFor($module),
             'dateColumn' => LaporanRegistry::dateColumnFor($module),
-            'rows' => $jumlahPenuh > $maxRows ? $rows->take($maxRows)->values() : $rows,
+            // Server yang memutuskan kolom mana punya total; layar hanya
+            // menjumlahkan baris yang sedang terlihat. Keputusannya dipakai
+            // bersama dengan PDF dan Excel, jadi ketiganya tidak mungkin
+            // berbeda pendapat soal kolom mana yang boleh dijumlah.
+            'kolomDijumlah' => PenjumlahLaporan::kolomDijumlah(
+                LaporanRegistry::columnsFor($module),
+                $barisLayar,
+                LaporanRegistry::tidakDijumlahFor($module),
+            ),
+            'rows' => $barisLayar,
             'jumlahPenuh' => $jumlahPenuh,
             'dipotong' => $jumlahPenuh > $maxRows,
             'maksBarisLayar' => $maxRows,
@@ -288,6 +299,7 @@ class LaporanController extends Controller
             'title' => LaporanRegistry::labelFor($module),
             'columns' => $columns,
             'rows' => $rows,
+            'total' => PenjumlahLaporan::baris($columns, $rows, LaporanRegistry::tidakDijumlahFor($module)),
             'generatedAt' => now(),
             'catatan' => trim(implode(' ', array_filter([
                 $this->catatanSaringan($request, $module),
@@ -328,9 +340,19 @@ class LaporanController extends Controller
         abort_unless(LaporanRegistry::exists($module), 404);
 
         $columns = LaporanRegistry::columnsFor($module);
-        $rows = $this->saringSepertiDiLayar($this->fetch($module), $request, $module)->map(
+        $baris = $this->saringSepertiDiLayar($this->fetch($module), $request, $module);
+
+        // Total dihitung dari baris yang masih berbentuk asosiatif, lalu ikut
+        // diratakan seperti baris lain supaya urutan kolomnya persis sama.
+        $total = PenjumlahLaporan::baris($columns, $baris, LaporanRegistry::tidakDijumlahFor($module));
+
+        $rows = $baris->map(
             fn (array $row) => array_map(fn (string $key) => $row[$key] ?? '-', array_keys($columns))
         );
+
+        if ($total !== null) {
+            $rows = $rows->push(array_map(fn (string $key) => $total[$key], array_keys($columns)));
+        }
 
         return Excel::download(
             new GenericListExport(array_values($columns), $rows),
