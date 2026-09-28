@@ -139,8 +139,9 @@ class SisaPinjamanTanpaDendaTest extends TestCase
         $sisa = $this->sisaDiLaporan();
 
         $this->assertSame('Rp 2.000.000', $sisa[$loan->loan_number.'|01-09-2026']);
-        // Dibatalkan: tidak mengurangi sisa pinjaman.
-        $this->assertSame('Rp 2.000.000', $sisa[$loan->loan_number.'|10-09-2026']);
+        // Dibatalkan: tidak mengubah sisa pinjaman, jadi barisnya tidak
+        // menampilkan sisa sama sekali, dan baris sesudahnya tidak ikut turun.
+        $this->assertSame('-', $sisa[$loan->loan_number.'|10-09-2026']);
         $this->assertSame('Rp 1.000.000', $sisa[$loan->loan_number.'|15-09-2026']);
 
         $this->assertSame([$loan->id => 1000000.0], app(SisaPinjamanCalculator::class)->saatIni([$loan->id]));

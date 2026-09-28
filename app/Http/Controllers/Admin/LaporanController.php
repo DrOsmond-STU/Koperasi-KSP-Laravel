@@ -1125,7 +1125,11 @@ class LaporanController extends Controller
                 'pokok' => $this->rupiah((float) $repayment->principal_portion),
                 'jasa' => $this->rupiah((float) $repayment->interest_portion),
                 'denda' => $this->rupiah((float) $repayment->penalty_portion),
-                'saldo_akhir' => $this->rupiah($sisa[$repayment->id] ?? (float) $repayment->balance_after),
+                // Angsuran yang dibatalkan tidak mengubah saldo — menampilkan
+                // "sisa" di barisnya hanya membingungkan (laporan 28 Sep 2026).
+                'saldo_akhir' => $repayment->isCancelled()
+                    ? '-'
+                    : $this->rupiah($sisa[$repayment->id] ?? (float) $repayment->balance_after),
                 'status' => $repayment->isCancelled() ? 'Dibatalkan' : 'Normal',
             ]);
     }

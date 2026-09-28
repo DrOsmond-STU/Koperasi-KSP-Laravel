@@ -61,7 +61,7 @@
                     <td>Rp {{ number_format($repayment->interest_portion, 0, ',', '.') }}</td>
                     <td>Rp {{ number_format($repayment->penalty_portion, 0, ',', '.') }}</td>
                     {{-- Sisa pokok dari SisaPinjamanCalculator, bukan balance_after: denda tidak ikut menghitung sisa pinjaman. --}}
-                    <td>Rp {{ number_format($sisaSetelah[$repayment->id] ?? $repayment->balance_after, 0, ',', '.') }}</td>
+                    <td>{{ $repayment->isCancelled() ? '– (dibatalkan)' : 'Rp '.number_format($sisaSetelah[$repayment->id] ?? $repayment->balance_after, 0, ',', '.') }}</td>
                 </tr>
             @empty
                 <tr><td colspan="6">Belum ada pembayaran angsuran.</td></tr>
