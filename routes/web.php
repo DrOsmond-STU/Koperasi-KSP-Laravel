@@ -23,6 +23,7 @@ use App\Http\Controllers\Admin\LaporanController;
 use App\Http\Controllers\Admin\LoanApprovalController;
 use App\Http\Controllers\Admin\LoanBranchRepairController;
 use App\Http\Controllers\Admin\LoanProductController;
+use App\Http\Controllers\Admin\LoanScheduleAlignmentController;
 use App\Http\Controllers\Admin\LoanScheduleRepairController;
 use App\Http\Controllers\Admin\LoanTenorRateImportController;
 use App\Http\Controllers\Admin\MemberCardController;
@@ -459,6 +460,16 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.pinjaman.perbaikan-jadwal.index');
     Route::post('/admin/pinjaman/perbaikan-jadwal', [LoanScheduleRepairController::class, 'store'])
         ->name('admin.pinjaman.perbaikan-jadwal.store');
+
+    // Penyelarasan Jadwal Angsuran — jadwal yang ada disamakan dengan buku
+    // besar (pemindaian 28 Sep 2026: 112 pinjaman menyimpang, lihat
+    // LoanScheduleAlignmentService). Hak akses sama dengan Perbaikan Jadwal.
+    Route::get('/admin/pinjaman/penyelarasan-jadwal', [LoanScheduleAlignmentController::class, 'index'])
+        ->name('admin.pinjaman.penyelarasan-jadwal.index');
+    Route::post('/admin/pinjaman/penyelarasan-jadwal', [LoanScheduleAlignmentController::class, 'store'])
+        ->name('admin.pinjaman.penyelarasan-jadwal.store');
+    Route::post('/admin/pinjaman/penyelarasan-jadwal/{alignment}/batalkan', [LoanScheduleAlignmentController::class, 'undo'])
+        ->name('admin.pinjaman.penyelarasan-jadwal.undo');
 
     Route::get('/admin/cetakan/simpanan', [PrintSavingsController::class, 'index'])
         ->name('admin.print.savings.index');

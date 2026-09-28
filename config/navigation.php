@@ -31,6 +31,7 @@ return [
                 ['label' => 'Catat Angsuran', 'route' => 'staf.angsuran.create', 'permission' => 'pinjaman.create', 'icon' => 'repeat'],
                 ['label' => 'Persetujuan Pinjaman', 'route' => 'admin.pinjaman.index', 'permission' => 'pinjaman.approve', 'icon' => 'check-circle'],
                 ['label' => 'Perbaikan Jadwal Angsuran', 'route' => 'admin.pinjaman.perbaikan-jadwal.index', 'permission' => 'saldo_awal.update', 'icon' => 'tool'],
+                ['label' => 'Penyelarasan Jadwal Angsuran', 'route' => 'admin.pinjaman.penyelarasan-jadwal.index', 'permission' => 'saldo_awal.update', 'icon' => 'sliders'],
                 ['label' => 'Kategori Simpanan', 'route' => 'admin.master.savings-product-categories.index', 'permission' => 'master_data.read', 'icon' => 'tag'],
                 ['label' => 'Produk Simpanan', 'route' => 'admin.master.savings-products.index', 'permission' => 'master_data.read', 'icon' => 'piggy-bank'],
                 ['label' => 'Produk Pinjaman', 'route' => 'admin.master.loan-products.index', 'permission' => 'master_data.read', 'icon' => 'credit-card'],

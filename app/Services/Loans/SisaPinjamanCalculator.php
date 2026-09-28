@@ -97,7 +97,7 @@ class SisaPinjamanCalculator
                 ->get(['id', 'member_id', 'loan_number', 'principal_amount']),
         );
 
-        $pokokAwal = $this->pokokAwal($loans);
+        $pokokAwal = array_map(fn (array $posisi) => $posisi['pokok'], $this->posisiAwal($loans));
 
         $angsuran = $loanIds->chunk(1000)->flatMap(
             fn (Collection $ids) => LoanRepayment::query()
@@ -138,6 +138,10 @@ class SisaPinjamanCalculator
     }
 
     /**
+     * Posisi awal tiap pinjaman menurut buku besar: pokok awal, dan — untuk
+     * pinjaman migrasi — sisa jasa per tanggal cutoff (null untuk pinjaman
+     * yang dicairkan di aplikasi: jasanya ditentukan jadwal pencairan).
+     *
      * Pinjaman migrasi dikenali dari cara OpeningBalanceLockService::
      * materializeLoans() menomorinya: nomor pinjaman lama
      * (external_loan_number) kalau diisi, kalau tidak "MIGRASI-{id baris}".
@@ -145,13 +149,13 @@ class SisaPinjamanCalculator
      * pinjaman itu diperlakukan seperti pinjaman biasa.
      *
      * @param  Collection<int, Loan>  $loans
-     * @return array<int, float> loan_id => pokok awal
+     * @return array<int, array{pokok: float, jasa: ?float, migrasi: bool}> per loan_id
      */
-    private function pokokAwal(Collection $loans): array
+    public function posisiAwal(Collection $loans): array
     {
         $saldoAwal = OpeningBalanceLoan::query()
             ->whereHas('batch', fn ($q) => $q->where('status', 'locked'))
-            ->get(['id', 'member_id', 'external_loan_number', 'outstanding_principal']);
+            ->get(['id', 'member_id', 'external_loan_number', 'outstanding_principal', 'outstanding_interest']);
 
         $perId = $saldoAwal->keyBy('id');
         $perNomorLama = $saldoAwal
@@ -170,7 +174,11 @@ class SisaPinjamanCalculator
                 $baris = $kandidat !== null && $kandidat->count() === 1 ? $kandidat->first() : null;
             }
 
-            $hasil[$loan->id] = round((float) ($baris?->outstanding_principal ?? $loan->principal_amount), 2);
+            $hasil[$loan->id] = [
+                'pokok' => round((float) ($baris?->outstanding_principal ?? $loan->principal_amount), 2),
+                'jasa' => $baris === null ? null : round((float) $baris->outstanding_interest, 2),
+                'migrasi' => $baris !== null,
+            ];
         }
 
         return $hasil;
