@@ -470,6 +470,10 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.pinjaman.penyelarasan-jadwal.store');
     Route::post('/admin/pinjaman/penyelarasan-jadwal/{alignment}/batalkan', [LoanScheduleAlignmentController::class, 'undo'])
         ->name('admin.pinjaman.penyelarasan-jadwal.undo');
+    Route::get('/admin/pinjaman/penyelarasan-jadwal/pinjaman/{loan}', [LoanScheduleAlignmentController::class, 'show'])
+        ->name('admin.pinjaman.penyelarasan-jadwal.show');
+    Route::get('/admin/pinjaman/penyelarasan-jadwal/riwayat/{alignment}', [LoanScheduleAlignmentController::class, 'riwayat'])
+        ->name('admin.pinjaman.penyelarasan-jadwal.riwayat');
 
     Route::get('/admin/cetakan/simpanan', [PrintSavingsController::class, 'index'])
         ->name('admin.print.savings.index');

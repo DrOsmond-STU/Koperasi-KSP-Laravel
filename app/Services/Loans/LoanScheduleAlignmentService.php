@@ -158,6 +158,7 @@ class LoanScheduleAlignmentService
         $sisaBayarPokok = round($totalPokok - min($targetSisaPokok, $totalPokok), 2);
         $sisaBayarJasa = round($totalJasa - min($targetSisaJasa, $totalJasa), 2);
         $baris = [];
+        $rincian = [];
 
         foreach ($jadwal as $s) {
             $paidP = round(min((float) $s->principal_amount, $sisaBayarPokok), 2);
@@ -171,19 +172,40 @@ class LoanScheduleAlignmentService
                 default => 'belum_bayar',
             };
 
-            $berubah = abs($paidP - (float) $s->paid_principal_amount) > 0.005
-                || abs($paidI - (float) $s->paid_interest_amount) > 0.005
-                || abs($paid - (float) $s->paid_amount) > 0.005
-                || $status !== $s->status;
+            $lama = [
+                'paid_principal_amount' => round((float) $s->paid_principal_amount, 2),
+                'paid_interest_amount' => round((float) $s->paid_interest_amount, 2),
+                'paid_amount' => round((float) $s->paid_amount, 2),
+                'status' => $s->status,
+            ];
+            $baru = [
+                'paid_principal_amount' => $paidP,
+                'paid_interest_amount' => $paidI,
+                'paid_amount' => $paid,
+                'status' => $status,
+            ];
+
+            $berubah = abs($paidP - $lama['paid_principal_amount']) > 0.005
+                || abs($paidI - $lama['paid_interest_amount']) > 0.005
+                || abs($paid - $lama['paid_amount']) > 0.005
+                || $status !== $lama['status'];
 
             if ($berubah) {
-                $baris[$s->id] = [
-                    'paid_principal_amount' => $paidP,
-                    'paid_interest_amount' => $paidI,
-                    'paid_amount' => $paid,
-                    'status' => $status,
-                ];
+                $baris[$s->id] = $baru;
             }
+
+            // Rincian sebelum → sesudah untuk SEMUA baris, supaya pengurus bisa
+            // melihat jadwal utuh, bukan hanya baris yang berubah.
+            $rincian[] = [
+                'schedule_id' => $s->id,
+                'no' => (int) $s->installment_number,
+                'jatuh_tempo' => $s->due_date,
+                'pokok' => round((float) $s->principal_amount, 2),
+                'jasa' => round((float) $s->interest_amount, 2),
+                'lama' => $lama,
+                'baru' => $baru,
+                'berubah' => $berubah,
+            ];
         }
 
         $statusBaru = ($targetSisaPokok <= self::TOLERANSI && $targetSisaJasa <= self::TOLERANSI) ? 'lunas' : 'dicairkan';
@@ -219,10 +241,121 @@ class LoanScheduleAlignmentService
             'bisa' => $bisa,
             'baris' => $baris,
             'baris_berubah' => count($baris),
+            'rincian' => $rincian,
             'status_lama' => $loan->status,
             'status_baru' => $statusBaru,
             'peringatan' => $peringatan,
         ];
+    }
+
+    /**
+     * Rencana lengkap (termasuk rincian tiap baris jadwal sebelum → sesudah)
+     * untuk satu pinjaman — dipakai layar rincian sebelum penyelarasan.
+     *
+     * @return array<string, mixed>|null null bila pinjaman tidak punya jadwal
+     */
+    public function rencanaUntuk(Loan $loan): ?array
+    {
+        $loan->load(['member', 'schedules']);
+
+        return $this->rencanaBanyak(collect([$loan]))->first();
+    }
+
+    /**
+     * Rincian sebelum → sesudah dari penyelarasan yang SUDAH dijalankan,
+     * dibaca dari payload (bukan dihitung ulang, supaya yang ditampilkan
+     * persis yang waktu itu diubah). Baris jadwal yang tidak berubah tidak
+     * disimpan di payload, jadi hanya baris yang diubah yang tampil.
+     *
+     * @return Collection<int, array<string, mixed>> satu unsur per pinjaman
+     */
+    public function rincianRiwayat(LoanScheduleAlignment $alignment): Collection
+    {
+        $payload = $alignment->payload ?? [];
+        $loanIds = array_map('intval', array_keys($payload));
+
+        $loans = Loan::query()->withoutGlobalScopes()
+            ->whereIn('id', $loanIds)
+            ->with('member')
+            ->get()
+            ->keyBy('id');
+
+        $scheduleIds = [];
+        foreach ($payload as $p) {
+            $scheduleIds = array_merge($scheduleIds, array_map('intval', array_keys($p['baris'] ?? [])));
+        }
+        $jadwal = LoanSchedule::query()->whereIn('id', $scheduleIds)->get()->keyBy('id');
+
+        return collect($payload)->map(function (array $p, $loanId) use ($loans, $jadwal, $alignment) {
+            $loan = $loans[(int) $loanId] ?? null;
+            $rincian = [];
+
+            foreach ($p['baris'] ?? [] as $scheduleId => $lama) {
+                /** @var LoanSchedule|null $s */
+                $s = $jadwal[(int) $scheduleId] ?? null;
+                if ($s === null) {
+                    continue;
+                }
+
+                $lama = [
+                    'paid_principal_amount' => round((float) $lama['paid_principal_amount'], 2),
+                    'paid_interest_amount' => round((float) $lama['paid_interest_amount'], 2),
+                    'paid_amount' => round((float) $lama['paid_amount'], 2),
+                    'status' => $lama['status'],
+                ];
+
+                // Payload lama (sebelum kolom baris_baru ada) tidak menyimpan
+                // nilai sesudah: selama belum dibatalkan, nilai di DB sekarang
+                // adalah nilai sesudahnya.
+                $baru = $p['baris_baru'][$scheduleId] ?? null;
+                if ($baru === null && ! $alignment->isReverted()) {
+                    $baru = [
+                        'paid_principal_amount' => (float) $s->paid_principal_amount,
+                        'paid_interest_amount' => (float) $s->paid_interest_amount,
+                        'paid_amount' => (float) $s->paid_amount,
+                        'status' => $s->status,
+                    ];
+                }
+                if ($baru !== null) {
+                    $baru = [
+                        'paid_principal_amount' => round((float) $baru['paid_principal_amount'], 2),
+                        'paid_interest_amount' => round((float) $baru['paid_interest_amount'], 2),
+                        'paid_amount' => round((float) $baru['paid_amount'], 2),
+                        'status' => $baru['status'],
+                    ];
+                }
+
+                $rincian[] = [
+                    'schedule_id' => $s->id,
+                    'no' => (int) $s->installment_number,
+                    'jatuh_tempo' => $s->due_date,
+                    'pokok' => round((float) $s->principal_amount, 2),
+                    'jasa' => round((float) $s->interest_amount, 2),
+                    'lama' => $lama,
+                    'baru' => $baru,
+                    'berubah' => true,
+                ];
+            }
+
+            usort($rincian, fn (array $a, array $b) => $a['no'] <=> $b['no']);
+
+            return [
+                'loan_id' => (int) $loanId,
+                'loan' => $loan,
+                'loan_number' => $p['loan_number'] ?? ($loan?->loan_number ?? '-'),
+                'anggota' => $loan?->member?->name ?? '-',
+                'status_lama' => $p['status_lama'] ?? null,
+                'status_baru' => $p['status_baru'] ?? null,
+                'selisih_pokok' => (float) ($p['selisih_pokok'] ?? 0),
+                'selisih_jasa' => (float) ($p['selisih_jasa'] ?? 0),
+                'sisa_pokok_jadwal_lama' => isset($p['sisa_pokok_jadwal_lama']) ? (float) $p['sisa_pokok_jadwal_lama'] : null,
+                'sisa_pokok_jadwal_baru' => isset($p['sisa_pokok_jadwal_baru']) ? (float) $p['sisa_pokok_jadwal_baru'] : null,
+                'sisa_jasa_jadwal_lama' => isset($p['sisa_jasa_jadwal_lama']) ? (float) $p['sisa_jasa_jadwal_lama'] : null,
+                'sisa_jasa_jadwal_baru' => isset($p['sisa_jasa_jadwal_baru']) ? (float) $p['sisa_jasa_jadwal_baru'] : null,
+                'rincian' => $rincian,
+                'baris_berubah' => count($rincian),
+            ];
+        })->values();
     }
 
     /**
@@ -281,7 +414,12 @@ class LoanScheduleAlignmentService
                     'status_baru' => $r['status_baru'],
                     'selisih_pokok' => $r['selisih_pokok'],
                     'selisih_jasa' => $r['selisih_jasa'],
+                    'sisa_pokok_jadwal_lama' => $r['sisa_pokok_jadwal'],
+                    'sisa_pokok_jadwal_baru' => $r['target_sisa_pokok'],
+                    'sisa_jasa_jadwal_lama' => $r['sisa_jasa_jadwal'],
+                    'sisa_jasa_jadwal_baru' => $r['target_sisa_jasa'],
                     'baris' => $lama,
+                    'baris_baru' => $r['baris'],
                 ];
                 $jumlahBaris += count($r['baris']);
             }

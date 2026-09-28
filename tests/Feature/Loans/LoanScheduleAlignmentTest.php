@@ -317,15 +317,122 @@ class LoanScheduleAlignmentTest extends TestCase
         $this->actingAs($user)->post(route('admin.pinjaman.penyelarasan-jadwal.store'), [
             'loan_ids' => [$loan->id],
             'konfirmasi' => '1',
-        ])->assertRedirect(route('admin.pinjaman.penyelarasan-jadwal.index'));
+        ])->assertRedirect();
 
         $this->assertDatabaseCount('loan_schedule_alignments', 1);
         $this->assertSame(['pokok' => 295000.0, 'jasa' => 7500.0], $this->sisaJadwal($loan));
 
         $alignment = LoanScheduleAlignment::query()->first();
+        // Sesudah dijalankan, pengurus diarahkan ke rincian penyelarasan itu.
+        $this->actingAs($user)->post(route('admin.pinjaman.penyelarasan-jadwal.store'), [
+            'loan_ids' => [$loan->id], 'konfirmasi' => '1',
+        ])->assertRedirect(route('admin.pinjaman.penyelarasan-jadwal.index')); // sudah selaras → error, kembali ke daftar
         $this->actingAs($user)->post(route('admin.pinjaman.penyelarasan-jadwal.undo', $alignment))
             ->assertRedirect(route('admin.pinjaman.penyelarasan-jadwal.index'));
         $this->assertSame(['pokok' => 50000.0, 'jasa' => 0.0], $this->sisaJadwal($loan));
+    }
+
+    /**
+     * Rincian per baris: SUCIPTO punya 200 baris; sesudah diselaraskan
+     * terbayar disebar dari angsuran tertua sehingga angsuran ke-200 yang
+     * tadinya "sebagian" (25.000 + 7.500) menjadi belum bayar, sedangkan
+     * angsuran ke-1 tidak berubah.
+     */
+    public function test_rencana_memuat_rincian_sebelum_sesudah_tiap_baris(): void
+    {
+        $loan = $this->sucipto();
+
+        $r = app(LoanScheduleAlignmentService::class)->rencanaUntuk($loan);
+
+        $this->assertCount(200, $r['rincian']);
+        $this->assertSame($r['baris_berubah'], collect($r['rincian'])->where('berubah', true)->count());
+
+        $pertama = $r['rincian'][0];
+        $this->assertSame(1, $pertama['no']);
+        $this->assertFalse($pertama['berubah']);
+        $this->assertEquals($pertama['lama'], $pertama['baru']);
+
+        $terakhir = $r['rincian'][199];
+        $this->assertSame(200, $terakhir['no']);
+        $this->assertTrue($terakhir['berubah']);
+        $this->assertEquals(['paid_principal_amount' => 25000.0, 'paid_interest_amount' => 7500.0, 'paid_amount' => 32500.0, 'status' => 'sebagian'], $terakhir['lama']);
+        $this->assertEquals(['paid_principal_amount' => 0.0, 'paid_interest_amount' => 0.0, 'paid_amount' => 0.0, 'status' => 'belum_bayar'], $terakhir['baru']);
+
+        // Sisa sesudah (menurut rincian) = sisa buku besar.
+        $sisaPokokSesudah = collect($r['rincian'])->sum(fn (array $b) => $b['pokok'] - $b['baru']['paid_principal_amount']);
+        $sisaJasaSesudah = collect($r['rincian'])->sum(fn (array $b) => $b['jasa'] - $b['baru']['paid_interest_amount']);
+        $this->assertEquals(295000, $sisaPokokSesudah);
+        $this->assertEquals(7500, $sisaJasaSesudah);
+    }
+
+    public function test_layar_rincian_pinjaman_menampilkan_sebelum_dan_sesudah(): void
+    {
+        $loan = $this->sucipto();
+
+        $response = $this->actingAs($this->pengurus())->get(route('admin.pinjaman.penyelarasan-jadwal.show', $loan));
+
+        $response->assertOk();
+        $response->assertSee($loan->loan_number);
+        $response->assertSee('Sisa pokok menurut jadwal');
+        $response->assertSee('50.000');   // sebelum
+        $response->assertSee('295.000');  // sesudah
+        $response->assertSee('Selaraskan Pinjaman Ini');
+    }
+
+    public function test_riwayat_menyimpan_dan_menampilkan_nilai_sebelum_dan_sesudah(): void
+    {
+        $loan = $this->sucipto();
+        $user = $this->pengurus();
+        $service = app(LoanScheduleAlignmentService::class);
+
+        $alignment = $service->jalankan([$loan->id], $user->id);
+
+        $p = $alignment->payload[$loan->id];
+        $this->assertEquals(50000, $p['sisa_pokok_jadwal_lama']);
+        $this->assertEquals(295000, $p['sisa_pokok_jadwal_baru']);
+        $this->assertEquals(0, $p['sisa_jasa_jadwal_lama']);
+        $this->assertEquals(7500, $p['sisa_jasa_jadwal_baru']);
+        $this->assertSame(array_keys($p['baris']), array_keys($p['baris_baru']));
+
+        $rincian = $service->rincianRiwayat($alignment);
+        $this->assertCount(1, $rincian);
+        $this->assertSame($loan->loan_number, $rincian[0]['loan_number']);
+        $this->assertSame($alignment->rows_changed, $rincian[0]['baris_berubah']);
+        $baris200 = collect($rincian[0]['rincian'])->firstWhere('no', 200);
+        $this->assertEquals(25000, $baris200['lama']['paid_principal_amount']);
+        $this->assertEquals(0, $baris200['baru']['paid_principal_amount']);
+        $this->assertSame('sebagian', $baris200['lama']['status']);
+        $this->assertSame('belum_bayar', $baris200['baru']['status']);
+
+        $response = $this->actingAs($user)->get(route('admin.pinjaman.penyelarasan-jadwal.riwayat', $alignment));
+        $response->assertOk();
+        $response->assertSee($loan->loan_number);
+        $response->assertSee('Berlaku');
+        $response->assertSee('295.000');
+
+        // Setelah dibatalkan, rincian tetap bisa dibaca dari payload (tidak menghitung ulang).
+        $service->batalkan($alignment, $user->id);
+        $rincian = $service->rincianRiwayat($alignment->fresh());
+        $this->assertEquals(0, collect($rincian[0]['rincian'])->firstWhere('no', 200)['baru']['paid_principal_amount']);
+        $this->actingAs($user)->get(route('admin.pinjaman.penyelarasan-jadwal.riwayat', $alignment))
+            ->assertOk()->assertSee('DIBATALKAN');
+    }
+
+    /** Payload dari versi sebelum kolom baris_baru ada: nilai sesudah diambil dari DB selama belum dibatalkan. */
+    public function test_riwayat_lama_tanpa_baris_baru_tetap_menampilkan_nilai_sesudah(): void
+    {
+        $loan = $this->sucipto();
+        $service = app(LoanScheduleAlignmentService::class);
+        $alignment = $service->jalankan([$loan->id], $this->pengurus()->id);
+
+        $payload = $alignment->payload;
+        unset($payload[$loan->id]['baris_baru'], $payload[$loan->id]['sisa_pokok_jadwal_lama']);
+        $alignment->update(['payload' => $payload]);
+
+        $rincian = $service->rincianRiwayat($alignment->fresh());
+        $baris200 = collect($rincian[0]['rincian'])->firstWhere('no', 200);
+        $this->assertSame('belum_bayar', $baris200['baru']['status']);
+        $this->assertNull($rincian[0]['sisa_pokok_jadwal_lama']);
     }
 
     public function test_tanpa_persetujuan_tidak_dijalankan_dan_peran_lain_ditolak(): void
@@ -339,6 +446,9 @@ class LoanScheduleAlignmentTest extends TestCase
 
         $this->actingAs($this->pengurus('petugas_kredit'))
             ->get(route('admin.pinjaman.penyelarasan-jadwal.index'))
+            ->assertForbidden();
+        $this->actingAs($this->pengurus('petugas_kredit'))
+            ->get(route('admin.pinjaman.penyelarasan-jadwal.show', $loan))
             ->assertForbidden();
     }
 }

@@ -3,28 +3,7 @@
 @section('title', 'Penyelarasan Jadwal Angsuran')
 
 @section('content')
-    <style>
-        .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 20px; }
-        .status-msg { color: var(--ok); font-size: 13px; margin-bottom: 14px; }
-        .error-msg { color: var(--brick); font-size: 13px; margin-bottom: 14px; }
-        .data-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
-        .data-table th, .data-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 12.5px; vertical-align: top; }
-        .data-table th { background: var(--paper); font-weight: 700; color: var(--muted); }
-        .data-table td.num, .data-table th.num { text-align: right; white-space: nowrap; }
-        .selisih-plus { color: var(--brick); font-weight: 700; }
-        .selisih-minus { color: var(--pine-ink); font-weight: 700; }
-        .warn-note { color: var(--brick); font-size: 11px; margin: 4px 0 0; }
-        .info-note { color: var(--muted); font-size: 11px; margin: 4px 0 0; }
-        .ok-note { color: var(--ok); font-size: 14px; font-weight: 600; }
-        .btn-save { padding: 9px 16px; background: var(--pine); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; }
-        .btn-danger { padding: 6px 12px; background: transparent; color: var(--brick); border: 1px solid var(--brick); border-radius: 7px; font-weight: 700; cursor: pointer; font-size: 12px; }
-        .select-all-row { margin-bottom: 10px; font-size: 13px; }
-        .konfirmasi { display: flex; gap: 8px; align-items: flex-start; margin: 14px 0; font-size: 13px; max-width: 720px; }
-        .tenang { color: var(--muted); font-size: 12.5px; }
-        .badge { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 700; }
-        .badge-lunas { background: #e6f4ea; color: #1e6b3a; }
-        .badge-aktif { background: var(--paper); color: var(--muted); }
-    </style>
+    @include('admin.pinjaman.partials.penyelarasan-gaya')
 
     <h2>Penyelarasan Jadwal Angsuran</h2>
     <p style="color: var(--muted); font-size: 13px; margin-top: -8px; max-width: 760px;">
@@ -103,7 +82,8 @@
                                     / Rp {{ number_format($r['sisa_jasa_jadwal'], 0, ',', '.') }}
                                 </td>
                                 <td>
-                                    <span class="info-note">{{ $r['baris_berubah'] }} baris jadwal berubah</span>
+                                    <a class="tautan-kecil" href="{{ route('admin.pinjaman.penyelarasan-jadwal.show', $loan) }}">Lihat rincian sebelum → sesudah</a>
+                                    <br><span class="info-note">{{ $r['baris_berubah'] }} baris jadwal berubah</span>
                                     @foreach ($r['peringatan'] as $p)
                                         <p class="warn-note">⚠ {{ $p }}</p>
                                     @endforeach
@@ -153,8 +133,9 @@
                         @endif
                     </td>
                     <td>
+                        <a class="tautan-kecil" href="{{ route('admin.pinjaman.penyelarasan-jadwal.riwayat', $a) }}">Rincian</a>
                         @unless ($a->isReverted())
-                            <form method="POST" action="{{ route('admin.pinjaman.penyelarasan-jadwal.undo', $a) }}"
+                            <form method="POST" action="{{ route('admin.pinjaman.penyelarasan-jadwal.undo', $a) }}" style="display:inline; margin-left:8px;"
                                   onsubmit="return confirm('Kembalikan jadwal {{ $a->loans_aligned }} pinjaman ini persis ke sebelum penyelarasan?');">
                                 @csrf
                                 <button type="submit" class="btn-danger">Batalkan</button>
