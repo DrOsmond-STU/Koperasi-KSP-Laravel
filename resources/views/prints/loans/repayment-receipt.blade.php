@@ -15,7 +15,8 @@
         @if ($repayment->penalty_portion > 0)
             <tr><td style="padding:3px 0;">Porsi Denda</td><td style="padding:3px 0;">: Rp {{ number_format($repayment->penalty_portion, 0, ',', '.') }}</td></tr>
         @endif
-        <tr><td style="padding:3px 0;">Sisa Tunggakan</td><td style="padding:3px 0;">: Rp {{ number_format($repayment->balance_after, 0, ',', '.') }}</td></tr>
+        {{-- Sisa pokok dari SisaPinjamanCalculator, bukan balance_after: denda tidak ikut menghitung sisa pinjaman. --}}
+        <tr><td style="padding:3px 0;">Sisa Pinjaman</td><td style="padding:3px 0;">: Rp {{ number_format($sisaPinjaman ?? $repayment->balance_after, 0, ',', '.') }}</td></tr>
         <tr><td style="padding:3px 0;">Tanggal</td><td style="padding:3px 0;">: {{ $repayment->paidOn()->translatedFormat('d M Y') }}</td></tr>
         @if ($repayment->description)
             <tr><td style="padding:3px 0;">Keterangan</td><td style="padding:3px 0;">: {{ $repayment->description }}</td></tr>

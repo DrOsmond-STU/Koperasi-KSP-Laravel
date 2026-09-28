@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Loan;
 use App\Models\Member;
+use App\Services\Loans\SisaPinjamanCalculator;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -27,6 +28,8 @@ class PrintLoanController extends Controller
         'aktif' => 'dicairkan',
         'lunas' => 'lunas',
     ];
+
+    public function __construct(private readonly SisaPinjamanCalculator $sisaPinjaman) {}
 
     public function index(Request $request): Response
     {
@@ -71,6 +74,7 @@ class PrintLoanController extends Controller
 
         $pdf = $this->renderPrintPdf('prints.loans.list', [
             'members' => $members,
+            'sisaPokok' => $this->sisaPinjaman->saatIni($members->flatMap->loans->pluck('id')),
             'filterDescription' => $filterDescription,
             'generatedAt' => now(),
         ]);
@@ -88,6 +92,7 @@ class PrintLoanController extends Controller
         $pdf = $this->renderPrintPdf('prints.loans.schedule', [
             'loan' => $loan->load('loanProduct', 'member', 'schedules'),
             'repayments' => $loan->repayments()->latest()->get(),
+            'sisaSetelah' => $this->sisaPinjaman->setelahTiapAngsuran([$loan->id]),
             'generatedAt' => now(),
         ]);
 

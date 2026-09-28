@@ -38,6 +38,7 @@ use App\Models\Supplier;
 use App\Models\TellerCashTransaction;
 use App\Models\User;
 use App\Services\Inventory\InventoryReportService;
+use App\Services\Loans\SisaPinjamanCalculator;
 use App\Services\Reporting\LaporanRegistry;
 use App\Services\Reporting\PenjumlahLaporan;
 use Illuminate\Http\Request;
@@ -82,7 +83,10 @@ class LaporanController extends Controller
         'pinjaman' => 'Hanya pinjaman yang belum lunas. Pinjaman berstatus Lunas tidak dicetak — lihat Export Excel untuk daftar lengkap.',
     ];
 
-    public function __construct(private readonly InventoryReportService $inventoryReportService) {}
+    public function __construct(
+        private readonly InventoryReportService $inventoryReportService,
+        private readonly SisaPinjamanCalculator $sisaPinjaman,
+    ) {}
 
     public function index(): View
     {
@@ -1097,12 +1101,21 @@ class LaporanController extends Controller
             ]);
     }
 
+    /**
+     * Sisa Pinjaman dihitung ulang lewat SisaPinjamanCalculator (sisa pokok:
+     * pokok awal dikurangi porsi pokok), bukan dibaca dari balance_after —
+     * kolom itu ikut terpengaruh denda (lihat penjelasan di kalkulatornya).
+     */
     private function pembayaranAngsuran(): Collection
     {
-        return LoanRepayment::query()
+        $repayments = LoanRepayment::query()
             ->with(['loan.member', 'branch'])
             ->latest('id')
-            ->get()
+            ->get();
+
+        $sisa = $this->sisaPinjaman->setelahTiapAngsuran($repayments->pluck('loan_id'));
+
+        return $repayments
             ->map(fn (LoanRepayment $repayment) => [
                 'tanggal' => $repayment->paidOn()->format('d-m-Y'),
                 'loan_number' => $repayment->loan->loan_number ?? '-',
@@ -1112,7 +1125,7 @@ class LaporanController extends Controller
                 'pokok' => $this->rupiah((float) $repayment->principal_portion),
                 'jasa' => $this->rupiah((float) $repayment->interest_portion),
                 'denda' => $this->rupiah((float) $repayment->penalty_portion),
-                'saldo_akhir' => $this->rupiah((float) $repayment->balance_after),
+                'saldo_akhir' => $this->rupiah($sisa[$repayment->id] ?? (float) $repayment->balance_after),
                 'status' => $repayment->isCancelled() ? 'Dibatalkan' : 'Normal',
             ]);
     }

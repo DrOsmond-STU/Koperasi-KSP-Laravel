@@ -48,7 +48,8 @@
                 <th>Nominal Bayar</th>
                 <th>Porsi Pokok</th>
                 <th>Porsi Jasa</th>
-                <th>Sisa Tunggakan</th>
+                <th>Porsi Denda</th>
+                <th>Sisa Pinjaman</th>
             </tr>
         </thead>
         <tbody>
@@ -58,10 +59,12 @@
                     <td>Rp {{ number_format($repayment->amount, 0, ',', '.') }}</td>
                     <td>Rp {{ number_format($repayment->principal_portion, 0, ',', '.') }}</td>
                     <td>Rp {{ number_format($repayment->interest_portion, 0, ',', '.') }}</td>
-                    <td>Rp {{ number_format($repayment->balance_after, 0, ',', '.') }}</td>
+                    <td>Rp {{ number_format($repayment->penalty_portion, 0, ',', '.') }}</td>
+                    {{-- Sisa pokok dari SisaPinjamanCalculator, bukan balance_after: denda tidak ikut menghitung sisa pinjaman. --}}
+                    <td>Rp {{ number_format($sisaSetelah[$repayment->id] ?? $repayment->balance_after, 0, ',', '.') }}</td>
                 </tr>
             @empty
-                <tr><td colspan="5">Belum ada pembayaran angsuran.</td></tr>
+                <tr><td colspan="6">Belum ada pembayaran angsuran.</td></tr>
             @endforelse
         </tbody>
     </table>

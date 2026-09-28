@@ -5,11 +5,12 @@
 {{--
     Laporan Pinjaman per Anggota — informasi pinjaman + saldo outstanding,
     dengan historis pembayaran (LoanRepayment) sebagai lampiran di bawah
-    tiap pinjaman. Outstanding dihitung dari schedules (bukan dari
-    balance_after pembayaran terakhir) supaya tetap benar walau ada
-    pembayaran yang dibatalkan atau pinjaman belum pernah dibayar sama
-    sekali — sum(principal_amount)-sum(paid_principal_amount) selalu
-    mencerminakan sisa riil di jadwal, terlepas dari riwayat repayment-nya.
+    tiap pinjaman. Sisa Pokok = $sisaPokok dari SisaPinjamanCalculator
+    (pokok awal dikurangi porsi pokok angsuran yang tidak dibatalkan) —
+    BUKAN dari jadwal. Jadwal ikut "tertinggal" sebesar denda kalau staf
+    memecah total tagihan menjadi Pokok/Jasa/Denda, sehingga denda tampil
+    seolah sisa pinjaman (laporan 28 Sep 2026, MIGRASI-1433). Denda tidak
+    pernah ikut menghitung sisa pinjaman.
 --}}
 @section('print-content')
     <h2 style="font-size:13pt; margin:0 0 2px;">Laporan Pinjaman Anggota</h2>
@@ -23,7 +24,7 @@
 
         @forelse ($member->loans as $loan)
             @php
-                $sisaPokok = (float) $loan->schedules->sum('principal_amount') - (float) $loan->schedules->sum('paid_principal_amount');
+                $sisaPokokPinjaman = $sisaPokok[$loan->id] ?? ((float) $loan->schedules->sum('principal_amount') - (float) $loan->schedules->sum('paid_principal_amount'));
                 $sisaJasa = (float) $loan->schedules->sum('interest_amount') - (float) $loan->schedules->sum('paid_interest_amount');
                 $repaymentsBerlaku = $loan->repayments->reject(fn ($repayment) => $repayment->isCancelled());
                 $totalDibayar = $repaymentsBerlaku->sum('amount');
@@ -51,7 +52,7 @@
                         <td>{{ ucfirst($loan->status) }}</td>
                         <td>{{ optional($loan->disbursed_at)->format('d/m/Y') ?? '-' }}</td>
                         <td>Rp {{ number_format($totalDibayar, 0, ',', '.') }}</td>
-                        <td>Rp {{ number_format($sisaPokok, 0, ',', '.') }}</td>
+                        <td>Rp {{ number_format($sisaPokokPinjaman, 0, ',', '.') }}</td>
                         <td>Rp {{ number_format($sisaJasa, 0, ',', '.') }}</td>
                     </tr>
                 </tbody>
@@ -60,12 +61,13 @@
             {{-- Lampiran: historis pembayaran pinjaman ini, lengkap dari awal. --}}
             <table class="data-table" style="margin-bottom: 16px; font-size: 0.92em;">
                 <thead>
-                    <tr><th colspan="5" style="font-weight:400; font-style:italic;">Historis Pembayaran — {{ $loan->loan_number }}</th></tr>
+                    <tr><th colspan="6" style="font-weight:400; font-style:italic;">Historis Pembayaran — {{ $loan->loan_number }}</th></tr>
                     <tr>
                         <th>Tanggal</th>
                         <th>Nominal Bayar</th>
                         <th>Porsi Pokok</th>
                         <th>Porsi Jasa</th>
+                        <th>Porsi Denda</th>
                         <th>Status</th>
                     </tr>
                 </thead>
@@ -76,10 +78,11 @@
                             <td>Rp {{ number_format($repayment->amount, 0, ',', '.') }}</td>
                             <td>Rp {{ number_format($repayment->principal_portion, 0, ',', '.') }}</td>
                             <td>Rp {{ number_format($repayment->interest_portion, 0, ',', '.') }}</td>
+                            <td>Rp {{ number_format($repayment->penalty_portion, 0, ',', '.') }}</td>
                             <td>{{ $repayment->isCancelled() ? 'Dibatalkan' : 'Normal' }}</td>
                         </tr>
                     @empty
-                        <tr><td colspan="5">Belum ada pembayaran angsuran.</td></tr>
+                        <tr><td colspan="6">Belum ada pembayaran angsuran.</td></tr>
                     @endforelse
                 </tbody>
                 @if ($repaymentsBerlaku->isNotEmpty())
@@ -89,6 +92,7 @@
                             <td style="font-weight:600;">Rp {{ number_format($totalDibayar, 0, ',', '.') }}</td>
                             <td style="font-weight:600;">Rp {{ number_format($repaymentsBerlaku->sum('principal_portion'), 0, ',', '.') }}</td>
                             <td style="font-weight:600;">Rp {{ number_format($repaymentsBerlaku->sum('interest_portion'), 0, ',', '.') }}</td>
+                            <td style="font-weight:600;">Rp {{ number_format($repaymentsBerlaku->sum('penalty_portion'), 0, ',', '.') }}</td>
                             <td></td>
                         </tr>
                     </tfoot>
