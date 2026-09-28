@@ -16,6 +16,16 @@ class LoanRepaymentException extends RuntimeException
         return new self("Nominal bayar Rp {$requested} melebihi total tunggakan saat ini Rp {$outstanding}.");
     }
 
+    public static function principalOverpayment(string $requested, string $outstanding): self
+    {
+        return new self("Angsuran Pokok Rp {$requested} melebihi sisa pokok di jadwal Rp {$outstanding}.");
+    }
+
+    public static function interestOverpayment(string $requested, string $outstanding): self
+    {
+        return new self("Jasa Rp {$requested} melebihi sisa jasa di jadwal Rp {$outstanding}. Kelebihannya bukan jasa — jangan dicatat sebagai jasa.");
+    }
+
     public static function zeroPayment(): self
     {
         return new self('Angsuran Pokok, Jasa, dan Denda tidak boleh ketiganya nol.');

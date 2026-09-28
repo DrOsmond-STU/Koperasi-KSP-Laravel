@@ -52,6 +52,9 @@
 
         <div class="summary-row total"><span>Total Dibayar</span><span>Rp {{ number_format($totalAmount, 0, ',', '.') }}</span></div>
         <div class="summary-row" style="margin-top:8px;"><span>Tunggakan Pokok+Jasa Sebelum Bayar</span><span>Rp {{ number_format($outstandingBefore, 0, ',', '.') }}</span></div>
+        {{-- Denda tidak ikut: denda tidak menambah maupun mengurangi sisa pinjaman. --}}
+        <div class="summary-row"><span>Sisa Pokok Setelah Bayar</span><span>Rp {{ number_format(max(0, $principalBefore - $principalPortion), 0, ',', '.') }}</span></div>
+        <div class="summary-row"><span>Sisa Jasa Setelah Bayar</span><span>Rp {{ number_format(max(0, $interestBefore - $interestPortion), 0, ',', '.') }}</span></div>
 
         <form method="POST" action="{{ route('staf.angsuran.store') }}" style="margin-top:16px;">
             @csrf

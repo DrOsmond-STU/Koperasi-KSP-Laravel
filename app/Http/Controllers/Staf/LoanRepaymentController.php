@@ -86,11 +86,19 @@ class LoanRepaymentController extends Controller
         $interestPortion = (float) $request->validated('interest_portion');
         $penaltyPortion = (float) $request->validated('penalty_portion');
 
-        $plan = $this->repayments->previewAllocation($loan, $principalPortion + $interestPortion);
+        // Aturan yang sama persis dengan recordManualPayment(): Pokok ke pokok
+        // jadwal, Jasa ke jasa jadwal, Denda tidak menyentuh jadwal.
+        $plan = $this->repayments->previewManualAllocation($loan, $principalPortion, $interestPortion);
 
-        if ($plan['remaining_unallocated'] > 0) {
+        if ($plan['principal_unallocated'] > 0) {
             return back()->withErrors([
-                'principal_portion' => 'Angsuran Pokok + Jasa melebihi total tunggakan saat ini (Rp '.number_format($plan['outstanding_before'], 0, ',', '.').').',
+                'principal_portion' => 'Angsuran Pokok melebihi sisa pokok di jadwal (Rp '.number_format($plan['principal_before'], 0, ',', '.').').',
+            ])->withInput();
+        }
+
+        if ($plan['interest_unallocated'] > 0) {
+            return back()->withErrors([
+                'interest_portion' => 'Jasa melebihi sisa jasa di jadwal (Rp '.number_format($plan['interest_before'], 0, ',', '.').').',
             ])->withInput();
         }
 
@@ -105,6 +113,8 @@ class LoanRepaymentController extends Controller
             'description' => $request->validated('description'),
             'paidAt' => $request->validated('paid_at') ?: now()->toDateString(),
             'outstandingBefore' => $plan['outstanding_before'],
+            'principalBefore' => $plan['principal_before'],
+            'interestBefore' => $plan['interest_before'],
             'cashAccountId' => $request->validated('cash_account_id'),
             'cashAccount' => $cashAccount,
             // Akun COA yang akan didebit/dikredit kalau dikonfirmasi — lihat

@@ -289,6 +289,71 @@ class LoanRepaymentService
     }
 
     /**
+     * Alokasi Catat Angsuran ke loan_schedules memakai pembagian STAF apa
+     * adanya — pasangan recordManualPayment(), dipakai juga layar pratinjau.
+     *
+     *  - Pokok hanya mengurangi pokok jadwal (baris tertua dulu).
+     *  - Jasa hanya mengurangi jasa jadwal (baris tertua dulu). Jasa wajib
+     *    dibayar: tidak pernah dihapuskan, dan tidak pernah mengurangi pokok.
+     *  - Denda sama sekali tidak menyentuh jadwal — denda bukan bagian dari
+     *    pinjaman, jadi tidak boleh menambah maupun mengurangi sisanya.
+     *  - Pokok/Jasa yang melebihi sisa di jadwal = kelebihan bayar
+     *    (principal_unallocated / interest_unallocated), ditolak pemanggil.
+     *
+     * @return array{
+     *     allocations: array<int, array{schedule_id: int, installment_number: int, allocated: float, principal_share: float, interest_share: float}>,
+     *     principal_before: float,
+     *     interest_before: float,
+     *     outstanding_before: float,
+     *     principal_unallocated: float,
+     *     interest_unallocated: float,
+     * }
+     */
+    public function previewManualAllocation(Loan $loan, float $principalPortion, float $interestPortion): array
+    {
+        $schedules = $loan->schedules()->where('status', '!=', 'lunas')->orderBy('installment_number')->get();
+
+        $sisaPokok = fn (LoanSchedule $s) => max(0.0, round((float) $s->principal_amount - (float) $s->paid_principal_amount, 2));
+        $sisaJasa = fn (LoanSchedule $s) => max(0.0, round((float) $s->interest_amount - (float) $s->paid_interest_amount, 2));
+
+        $principalBefore = round((float) $schedules->sum($sisaPokok), 2);
+        $interestBefore = round((float) $schedules->sum($sisaJasa), 2);
+
+        $pokok = round(max(0.0, $principalPortion), 2);
+        $jasa = round(max(0.0, $interestPortion), 2);
+        $allocations = [];
+
+        foreach ($schedules as $schedule) {
+            $principalShare = round(min($pokok, $sisaPokok($schedule)), 2);
+            $interestShare = round(min($jasa, $sisaJasa($schedule)), 2);
+
+            if ($principalShare <= 0 && $interestShare <= 0) {
+                continue;
+            }
+
+            $pokok = round($pokok - $principalShare, 2);
+            $jasa = round($jasa - $interestShare, 2);
+
+            $allocations[] = [
+                'schedule_id' => $schedule->id,
+                'installment_number' => $schedule->installment_number,
+                'allocated' => round($principalShare + $interestShare, 2),
+                'principal_share' => $principalShare,
+                'interest_share' => $interestShare,
+            ];
+        }
+
+        return [
+            'allocations' => $allocations,
+            'principal_before' => $principalBefore,
+            'interest_before' => $interestBefore,
+            'outstanding_before' => round($principalBefore + $interestBefore, 2),
+            'principal_unallocated' => $pokok,
+            'interest_unallocated' => $jasa,
+        ];
+    }
+
+    /**
      * Catat Angsuran (staf/teller) — BEDA dari recordPayment(): staf
      * menentukan sendiri pembagian Pokok/Jasa/Denda (lihat
      * normalInstallment() untuk saran default di form), BUKAN dihitung
@@ -299,14 +364,14 @@ class LoanRepaymentService
      * (pokok = pinjaman ÷ lama pinjaman, jasa = tarif normal) — jangan
      * mengejar tunggakan atau baris jadwal yang sudah menggumpal.
      *
-     * loan_schedules TETAP diperbarui — Pokok+Jasa yang diinput staf
-     * dikonsumsi dari baris belum lunas (tertua dulu, interest-first per
-     * baris, sama seperti recordPayment()) supaya status jadwal & cetakan
-     * tetap berjalan. Tapi jurnal & loan_repayments.principal_portion/
-     * interest_portion/penalty_portion memakai ANGKA STAF, bukan hasil
-     * hitung baris jadwal — dua hal ini sengaja dipisah: baris jadwal cuma
-     * penanda "berapa lagi yang harus dibayar", bukan penentu pembagian
-     * akuntansi pembayaran ini.
+     * loan_schedules TETAP diperbarui, mengikuti ANGKA STAF apa adanya
+     * (lihat previewManualAllocation()): Pokok hanya mengurangi pokok
+     * jadwal, Jasa hanya mengurangi jasa jadwal, Denda TIDAK PERNAH
+     * menyentuh jadwal. Dulu Pokok+Jasa digabung lalu dikonsumsi "jasa
+     * dulu" seperti recordPayment(), sehingga pembagian staf tidak
+     * tercermin di jadwal (laporan 28 Sep 2026, MIGRASI-1433 a.n. WATI:
+     * setelah bayar Pokok+Jasa+Denda, jadwal masih menyisakan Rp 100.000
+     * sebesar dendanya dan pinjamannya tidak pernah lunas).
      */
     public function recordManualPayment(
         Loan $loan,
@@ -339,12 +404,19 @@ class LoanRepaymentService
         }
 
         $scheduleConsumption = round($principalPortion + $interestPortion, 2);
-        $plan = $this->previewAllocation($loan, $scheduleConsumption);
+        $plan = $this->previewManualAllocation($loan, $principalPortion, $interestPortion);
 
-        if ($plan['remaining_unallocated'] > 0) {
-            throw LoanRepaymentException::overpayment(
-                number_format($scheduleConsumption, 2, '.', ''),
-                number_format($plan['outstanding_before'], 2, '.', ''),
+        if ($plan['principal_unallocated'] > 0) {
+            throw LoanRepaymentException::principalOverpayment(
+                number_format($principalPortion, 2, '.', ''),
+                number_format($plan['principal_before'], 2, '.', ''),
+            );
+        }
+
+        if ($plan['interest_unallocated'] > 0) {
+            throw LoanRepaymentException::interestOverpayment(
+                number_format($interestPortion, 2, '.', ''),
+                number_format($plan['interest_before'], 2, '.', ''),
             );
         }
 
