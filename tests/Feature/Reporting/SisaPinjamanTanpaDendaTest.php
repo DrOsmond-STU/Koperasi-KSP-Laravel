@@ -5,10 +5,12 @@ namespace Tests\Feature\Reporting;
 use App\Models\Branch;
 use App\Models\Loan;
 use App\Models\LoanRepayment;
+use App\Models\LoanSchedule;
 use App\Models\OpeningBalanceBatch;
 use App\Models\OpeningBalanceLoan;
 use App\Models\User;
 use App\Models\UserBranchScope;
+use App\Services\Dashboard\MainDashboardService;
 use App\Services\Loans\SisaPinjamanCalculator;
 use Database\Seeders\ChartOfAccountsSeeder;
 use Database\Seeders\RolePermissionSeeder;
@@ -25,9 +27,10 @@ use Tests\TestCase;
  *
  * Seluruh pokok sudah dibayar, tapi Sisa Pinjaman tampil Rp 100.000 — persis
  * sebesar dendanya. "Nilai denda tidak boleh ikut dalam perhitungan sisa
- * pinjaman." Perbaikannya murni di sisi laporan: baris-baris di sini ditulis
- * persis seperti yang tersimpan di database produksi (balance_after yang
- * keliru ikut disimpan) dan laporannya harus tetap benar tanpa mengubahnya.
+ * pinjaman." Baris-baris di sini ditulis persis seperti yang tersimpan di
+ * database produksi (balance_after yang keliru ikut disimpan): laporan,
+ * cetakan, form Catat Angsuran, dan dashboard harus tetap benar tanpa
+ * mengubahnya.
  */
 class SisaPinjamanTanpaDendaTest extends TestCase
 {
@@ -223,5 +226,50 @@ class SisaPinjamanTanpaDendaTest extends TestCase
         $kwitansi = view('prints.loans.repayment-receipt', $html['prints.loans.repayment-receipt'])->render();
         $this->assertStringContainsString('Sisa Pinjaman</td><td style="padding:3px 0;">: Rp 0<', $kwitansi);
         $this->assertStringNotContainsString('Sisa Tunggakan', $kwitansi);
+    }
+
+    /**
+     * "Saldo Outstanding" di form Catat Angsuran harus sama dengan Sisa
+     * Pinjaman di laporan — dulu dihitung dari jadwal, sehingga WATI tetap
+     * tampil Rp 100.000.
+     */
+    public function test_saldo_outstanding_form_catat_angsuran_tanpa_denda(): void
+    {
+        $loan = $this->pinjamanMigrasi(plafon: 50000000, sisaPokokCutoff: 31150000);
+        LoanSchedule::query()->create([
+            'loan_id' => $loan->id,
+            'installment_number' => 1,
+            'due_date' => '2026-09-01',
+            'principal_amount' => 31150000,
+            'interest_amount' => 3396100,
+            'total_amount' => 34546100,
+            'paid_principal_amount' => 31050000,
+            'paid_interest_amount' => 3396100,
+            'paid_amount' => 34446100,
+            'status' => 'sebagian',
+        ]);
+        $this->angsuran($loan, '2026-09-20', 31150000, 3296100, 100000, balanceAfter: 100000);
+
+        $this->seed(RolePermissionSeeder::class);
+        $user = User::factory()->create(['two_factor_confirmed_at' => now()]);
+        $user->assignRole('petugas_kredit');
+        UserBranchScope::query()->create(['user_id' => $user->id, 'scope_type' => 'all']);
+
+        $response = $this->actingAs($user)->get(route('staf.angsuran.create'));
+        $response->assertOk();
+
+        $this->assertSame(0.0, $response->viewData('outstandingBalances')[$loan->id]);
+    }
+
+    /** Dashboard: Pinjaman Outstanding = sisa pokok, bukan plafon. */
+    public function test_dashboard_pinjaman_outstanding_memakai_sisa_pokok(): void
+    {
+        $loan = Loan::factory()->create(['status' => 'dicairkan', 'principal_amount' => 3000000, 'collectibility' => 'lancar']);
+        $this->angsuran($loan, '2026-09-01', 1000000, 100000, 50000, balanceAfter: 2150000);
+
+        $summary = app(MainDashboardService::class)->summary();
+
+        $this->assertEquals(2000000, $summary['total_loan_outstanding']);
+        $this->assertEquals(2000000, $summary['loan_outstanding_by_collectibility']->firstWhere('collectibility', 'lancar')->total);
     }
 }

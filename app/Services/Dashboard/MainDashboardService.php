@@ -10,6 +10,7 @@ use App\Models\OpeningBalanceBatch;
 use App\Models\OpeningBalanceCoa;
 use App\Models\SavingsAccount;
 use App\Models\SavingsTransaction;
+use App\Services\Loans\SisaPinjamanCalculator;
 use Illuminate\Support\Carbon;
 
 /**
@@ -21,6 +22,8 @@ use Illuminate\Support\Carbon;
  */
 class MainDashboardService
 {
+    public function __construct(private readonly SisaPinjamanCalculator $sisaPinjaman) {}
+
     public function summary(?int $branchId = null): array
     {
         $membersByType = Member::query()
@@ -42,14 +45,28 @@ class MainDashboardService
             ->where('status', 'dicairkan')
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
 
-        $totalLoanOutstanding = (float) (clone $loanBase)->sum('principal_amount');
-        $nplOutstanding = (float) (clone $loanBase)->whereIn('collectibility', ['kurang_lancar', 'diragukan', 'macet'])->sum('principal_amount');
+        // Outstanding = SISA POKOK tiap pinjaman (SisaPinjamanCalculator:
+        // pokok awal dikurangi porsi pokok angsuran), bukan plafon
+        // principal_amount — plafon tidak pernah turun walau anggota sudah
+        // membayar, dan denda/jasa tidak boleh ikut menghitung sisa pinjaman.
+        $activeLoans = (clone $loanBase)->get(['id', 'collectibility']);
+        $sisaPokok = $this->sisaPinjaman->saatIni($activeLoans->pluck('id'));
+        $sisa = fn (Loan $loan): float => max(0.0, $sisaPokok[$loan->id] ?? 0.0);
+
+        $totalLoanOutstanding = round((float) $activeLoans->sum($sisa), 2);
+        $nplOutstanding = round((float) $activeLoans
+            ->whereIn('collectibility', ['kurang_lancar', 'diragukan', 'macet'])
+            ->sum($sisa), 2);
         $nplRatio = $totalLoanOutstanding > 0 ? round($nplOutstanding / $totalLoanOutstanding * 100, 2) : 0.0;
 
-        $loanByCollectibility = (clone $loanBase)
-            ->selectRaw('collectibility, count(*) as count, sum(principal_amount) as total')
+        $loanByCollectibility = $activeLoans
             ->groupBy('collectibility')
-            ->get();
+            ->map(fn ($group, string $collectibility) => (object) [
+                'collectibility' => $collectibility,
+                'count' => $group->count(),
+                'total' => round((float) $group->sum($sisa), 2),
+            ])
+            ->values();
 
         $shuBreakdown = $this->shuBreakdown($branchId);
 

@@ -151,7 +151,7 @@
             // nominalnya, dan Pokok-lah yang menyesuaikan.
             var normalInstallments = @json($normalInstallments);
             // Saldo outstanding (sisa pokok) per pinjaman — lihat
-            // LoanRepaymentService::outstandingPrincipal(). Murni tampilan,
+            // SisaPinjamanCalculator (denda & jasa tidak ikut). Murni tampilan,
             // tidak pernah dikirim ke server (input-nya readonly, tanpa name).
             var outstandingBalances = @json($outstandingBalances);
 

@@ -10,6 +10,7 @@ use App\Models\ChartOfAccount;
 use App\Models\Loan;
 use App\Models\LoanRepayment;
 use App\Services\Loans\LoanRepaymentService;
+use App\Services\Loans\SisaPinjamanCalculator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -28,7 +29,10 @@ use Illuminate\View\View;
  */
 class LoanRepaymentController extends Controller
 {
-    public function __construct(private readonly LoanRepaymentService $repayments) {}
+    public function __construct(
+        private readonly LoanRepaymentService $repayments,
+        private readonly SisaPinjamanCalculator $sisaPinjaman,
+    ) {}
 
     public function create(): View
     {
@@ -68,11 +72,10 @@ class LoanRepaymentController extends Controller
                 fn (Loan $loan) => [$loan->id => $this->repayments->normalInstallment($loan)],
             ),
             // Saldo outstanding (sisa pokok) per pinjaman, ditampilkan
-            // read-only di form begitu staf memilih Pinjaman — lihat
-            // LoanRepaymentService::outstandingPrincipal().
-            'outstandingBalances' => $loans->mapWithKeys(
-                fn (Loan $loan) => [$loan->id => $this->repayments->outstandingPrincipal($loan)],
-            ),
+            // read-only di form begitu staf memilih Pinjaman — angka yang
+            // sama dengan Sisa Pinjaman di laporan (SisaPinjamanCalculator:
+            // pokok awal dikurangi porsi pokok; denda & jasa tidak ikut).
+            'outstandingBalances' => $this->sisaPinjaman->saatIni($loans->pluck('id')),
         ]);
     }
 
