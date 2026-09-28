@@ -155,6 +155,54 @@ class CatatAngsuranDendaTest extends TestCase
         $this->assertEquals(50000, $lines->firstWhere('chart_of_account_id', $product->coa_penalty_receivable_account_id)->credit);
     }
 
+    /**
+     * Keadaan WATI di produksi per 28 Sep 2026: 200 angsuran harian @ 300.000
+     * + 30.000, terbayar s/d baris 95 dan baris 96 sebagian (pokok 73.900,
+     * jasa 30.000). Koreksinya: samakan baris 96 dengan buku besar (pokok
+     * 100.000, jasa 3.900), lalu catat pelunasan tanpa denda.
+     */
+    public function test_koreksi_wati_pelunasan_tanpa_denda_melunasi_pinjaman(): void
+    {
+        $product = LoanProduct::factory()->create();
+        $loan = Loan::factory()->create(['loan_product_id' => $product->id, 'status' => 'dicairkan', 'principal_amount' => 60000000]);
+
+        for ($i = 1; $i <= 200; $i++) {
+            [$pokok, $jasa] = match (true) {
+                $i <= 95 => [300000, 30000],
+                $i === 96 => [73900, 30000],
+                default => [0, 0],
+            };
+            LoanSchedule::query()->create([
+                'loan_id' => $loan->id,
+                'installment_number' => $i,
+                'due_date' => now()->addDays($i),
+                'principal_amount' => 300000,
+                'interest_amount' => 30000,
+                'total_amount' => 330000,
+                'paid_principal_amount' => $pokok,
+                'paid_interest_amount' => $jasa,
+                'paid_amount' => $pokok + $jasa,
+                'status' => $i <= 95 ? 'lunas' : ($i === 96 ? 'sebagian' : 'belum_bayar'),
+            ]);
+        }
+
+        // Tanpa koreksi baris 96, jasa buku besar 3.146.100 melebihi sisa
+        // jasa jadwal (3.120.000) dan ditolak.
+        $this->assertSame(['pokok' => 31426100.0, 'jasa' => 3120000.0], $this->sisaJadwal($loan));
+
+        LoanSchedule::query()->where('loan_id', $loan->id)->where('installment_number', 96)->update([
+            'paid_principal_amount' => 100000,
+            'paid_interest_amount' => 3900,
+        ]);
+
+        $repayment = $this->bayar($loan->fresh(), 31400000, 3146100, 0);
+
+        $this->assertEquals(34546100, $repayment->amount);
+        $this->assertEquals(0, $repayment->balance_after);
+        $this->assertSame(['pokok' => 0.0, 'jasa' => 0.0], $this->sisaJadwal($loan));
+        $this->assertSame('lunas', $loan->fresh()->status);
+    }
+
     public function test_pembatalan_mengembalikan_jadwal_persis(): void
     {
         $loan = $this->pinjaman();
