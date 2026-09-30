@@ -273,4 +273,78 @@ class SisaPinjamanTanpaDendaTest extends TestCase
         $this->assertEquals(2000000, $summary['total_loan_outstanding']);
         $this->assertEquals(2000000, $summary['loan_outstanding_by_collectibility']->firstWhere('collectibility', 'lancar')->total);
     }
+
+    private function barisSaldoAwal(Loan $loan, ?string $nomorLama, float $pokok, float $jasa): OpeningBalanceLoan
+    {
+        return OpeningBalanceLoan::query()->create([
+            'opening_balance_batch_id' => OpeningBalanceBatch::query()->create([
+                'branch_id' => $loan->branch_id,
+                'cutoff_date' => '2026-07-31',
+                'status' => 'locked',
+            ])->id,
+            'member_id' => $loan->member_id,
+            'loan_product_id' => $loan->loan_product_id,
+            'external_loan_number' => $nomorLama,
+            'disbursement_date' => '2024-05-16',
+            'original_principal' => $loan->principal_amount,
+            'outstanding_principal' => $pokok,
+            'outstanding_interest' => $jasa,
+            'tenor_days' => 24,
+            'remaining_tenor_days' => 12,
+            'next_installment_number' => 13,
+            'next_due_date' => '2026-08-31',
+            'collectibility' => 'lancar',
+        ]);
+    }
+
+    /**
+     * Produksi 30 Sep 2026: saldo awal diimpor ulang (baris 1291–1436) dan
+     * nomor pinjaman yang sudah ada disimpan sebagai nomor lama, mis. baris
+     * 1291 bernomor lama "MIGRASI-1238" (YULIAH TINDAS, sisa pokok
+     * 1.558.400). Baris 1238 sudah tidak ada, jadi pinjaman MIGRASI-1238
+     * terbaca bersisa plafon 3.681.600.
+     */
+    public function test_saldo_awal_impor_ulang_dicocokkan_lewat_nomor_lama(): void
+    {
+        $loan = Loan::factory()->create(['status' => 'dicairkan', 'principal_amount' => 3681600, 'loan_number' => 'MIGRASI-999238']);
+        $this->barisSaldoAwal($loan, 'MIGRASI-999238', 1558400, 0);
+
+        $posisi = app(SisaPinjamanCalculator::class)->posisiAwal(collect([$loan]));
+
+        $this->assertSame(['pokok' => 1558400.0, 'jasa' => 0.0, 'migrasi' => true], $posisi[$loan->id]);
+    }
+
+    /**
+     * Id baris hasil impor ulang bisa sama dengan angka di nomor MIGRASI-…
+     * pinjaman anggota lain: baris 1318 kini milik ACHMAD BAEHAQI (nomor
+     * lama "MIGRASI-1795", pokok 2.000.000), sementara pinjaman MIGRASI-1318
+     * milik anggota lain punya barisnya sendiri. Masing-masing harus membaca
+     * barisnya sendiri.
+     */
+    public function test_id_baris_yang_bentrok_tidak_dipakai_anggota_lain(): void
+    {
+        $achmad = Loan::factory()->create(['status' => 'dicairkan', 'principal_amount' => 80000000, 'loan_number' => 'MIGRASI-991795']);
+        $barisAchmad = $this->barisSaldoAwal($achmad, 'MIGRASI-991795', 2000000, 2000000);
+
+        $lain = Loan::factory()->create(['status' => 'dicairkan', 'principal_amount' => 50000000, 'loan_number' => 'MIGRASI-'.$barisAchmad->id]);
+        $this->barisSaldoAwal($lain, 'MIGRASI-'.$barisAchmad->id, 42469600, 3100000);
+
+        $posisi = app(SisaPinjamanCalculator::class)->posisiAwal(collect([$achmad, $lain]));
+
+        $this->assertSame(['pokok' => 2000000.0, 'jasa' => 2000000.0, 'migrasi' => true], $posisi[$achmad->id]);
+        $this->assertSame(['pokok' => 42469600.0, 'jasa' => 3100000.0, 'migrasi' => true], $posisi[$lain->id]);
+    }
+
+    /** Baris milik anggota lain tidak pernah dipakai, walau id-nya cocok. */
+    public function test_migrasi_id_milik_anggota_lain_diabaikan(): void
+    {
+        $pemilik = Loan::factory()->create(['status' => 'lunas', 'principal_amount' => 9000000]);
+        $baris = $this->barisSaldoAwal($pemilik, null, 6000000, 0);
+
+        $asing = Loan::factory()->create(['status' => 'dicairkan', 'principal_amount' => 4000000, 'loan_number' => 'MIGRASI-'.$baris->id]);
+
+        $posisi = app(SisaPinjamanCalculator::class)->posisiAwal(collect([$asing]));
+
+        $this->assertSame(['pokok' => 4000000.0, 'jasa' => null, 'migrasi' => false], $posisi[$asing->id]);
+    }
 }

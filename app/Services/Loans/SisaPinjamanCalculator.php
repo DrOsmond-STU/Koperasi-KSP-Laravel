@@ -145,8 +145,10 @@ class SisaPinjamanCalculator
      * Pinjaman migrasi dikenali dari cara OpeningBalanceLockService::
      * materializeLoans() menomorinya: nomor pinjaman lama
      * (external_loan_number) kalau diisi, kalau tidak "MIGRASI-{id baris}".
-     * Nomor lama dicocokkan bersama anggotanya; kalau tetap tidak tunggal,
-     * pinjaman itu diperlakukan seperti pinjaman biasa.
+     * Nomor pinjaman dicocokkan dulu ke nomor lama bersama anggotanya
+     * (termasuk nomor "MIGRASI-…" yang disimpan ulang sebagai nomor lama);
+     * baru kalau tidak ada, "MIGRASI-{id}" ke baris id itu. Kalau tetap tidak
+     * tunggal, pinjaman itu diperlakukan seperti pinjaman biasa.
      *
      * @param  Collection<int, Loan>  $loans
      * @return array<int, array{pokok: float, jasa: ?float, migrasi: bool}> per loan_id
@@ -165,13 +167,22 @@ class SisaPinjamanCalculator
         $hasil = [];
 
         foreach ($loans as $loan) {
-            $baris = null;
+            $kandidat = $perNomorLama->get($loan->member_id.'|'.$loan->loan_number);
+            $baris = $kandidat !== null && $kandidat->count() === 1 ? $kandidat->first() : null;
 
-            if (preg_match('/^MIGRASI-(\d+)$/', (string) $loan->loan_number, $cocok) === 1) {
+            // "MIGRASI-{id}" hanya menunjuk baris yang MEMBUAT pinjaman ini:
+            // baris tanpa nomor lama, milik anggota yang sama. Saldo awal yang
+            // diimpor ulang mendapat id baru (produksi: baris 1291–1436) dan
+            // menyimpan nomor pinjamannya di external_loan_number — id lamanya
+            // bisa sudah dipakai baris anggota lain (baris 1318 kini milik
+            // ACHMAD BAEHAQI, bernomor lama "MIGRASI-1795").
+            if ($baris === null && preg_match('/^MIGRASI-(\d+)$/', (string) $loan->loan_number, $cocok) === 1) {
                 $baris = $perId->get((int) $cocok[1]);
-            } else {
-                $kandidat = $perNomorLama->get($loan->member_id.'|'.$loan->loan_number);
-                $baris = $kandidat !== null && $kandidat->count() === 1 ? $kandidat->first() : null;
+
+                if ($baris !== null && ((int) $baris->member_id !== (int) $loan->member_id
+                    || ($baris->external_loan_number !== null && $baris->external_loan_number !== ''))) {
+                    $baris = null;
+                }
             }
 
             $hasil[$loan->id] = [
