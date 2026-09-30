@@ -52,18 +52,29 @@ class CalendarService
             })
             ->with('loan.member')
             ->get()
-            ->map(fn (LoanSchedule $schedule) => [
-                'type' => 'jatuh_tempo_angsuran',
-                'date' => $schedule->due_date->toDateString(),
-                'title' => $schedule->loan->member->name.' — Rp '.number_format((float) $schedule->total_amount, 0, ',', '.'),
-                'detail' => "Angsuran ke-{$schedule->installment_number} — pinjaman {$schedule->loan->loan_number}",
-                'member_name' => $schedule->loan->member->name,
-                'loan_number' => $schedule->loan->loan_number,
-                'installment_number' => $schedule->installment_number,
-                'amount' => (float) $schedule->total_amount,
-                'color' => 'merah',
-                'ref_id' => $schedule->id,
-            ]);
+            // Yang ditagih adalah SISA cicilan (total − yang sudah dibayar),
+            // bukan nilai cicilan penuh: cicilan berstatus "sebagian" dulu
+            // tampil seolah belum dibayar sama sekali.
+            ->map(function (LoanSchedule $schedule) {
+                $sisa = max(0.0, round((float) $schedule->total_amount - (float) $schedule->paid_amount, 2));
+                $detail = "Angsuran ke-{$schedule->installment_number} — pinjaman {$schedule->loan->loan_number}";
+                if ((float) $schedule->paid_amount > 0) {
+                    $detail .= ' (sisa dari cicilan Rp '.number_format((float) $schedule->total_amount, 0, ',', '.').')';
+                }
+
+                return [
+                    'type' => 'jatuh_tempo_angsuran',
+                    'date' => $schedule->due_date->toDateString(),
+                    'title' => $schedule->loan->member->name.' — Rp '.number_format($sisa, 0, ',', '.'),
+                    'detail' => $detail,
+                    'member_name' => $schedule->loan->member->name,
+                    'loan_number' => $schedule->loan->loan_number,
+                    'installment_number' => $schedule->installment_number,
+                    'amount' => $sisa,
+                    'color' => 'merah',
+                    'ref_id' => $schedule->id,
+                ];
+            });
     }
 
     /**

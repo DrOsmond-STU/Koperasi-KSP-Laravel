@@ -48,6 +48,31 @@ class CalendarServiceTest extends TestCase
         $this->assertEquals('jatuh_tempo_angsuran', $view['2026-08-15'][0]['type']);
     }
 
+    public function test_cicilan_sebagian_ditampilkan_sebesar_sisanya(): void
+    {
+        $branch = Branch::factory()->create();
+        $loan = Loan::factory()->create(['branch_id' => $branch->id, 'status' => 'dicairkan']);
+
+        LoanSchedule::query()->create([
+            'loan_id' => $loan->id,
+            'installment_number' => 200,
+            'due_date' => Carbon::create(2026, 8, 15),
+            'principal_amount' => 75000,
+            'interest_amount' => 7500,
+            'total_amount' => 82500,
+            'paid_principal_amount' => 25000,
+            'paid_interest_amount' => 7500,
+            'paid_amount' => 32500,
+            'status' => 'sebagian',
+        ]);
+
+        $item = app(CalendarService::class)->monthView(2026, 8, $branch->id)['2026-08-15'][0];
+
+        $this->assertEquals(50000, $item['amount']);
+        $this->assertStringContainsString('Rp 50.000', $item['title']);
+        $this->assertStringContainsString('sisa dari cicilan Rp 82.500', $item['detail']);
+    }
+
     public function test_month_view_includes_cooperative_events_filtered_by_branch(): void
     {
         $branchA = Branch::factory()->create();

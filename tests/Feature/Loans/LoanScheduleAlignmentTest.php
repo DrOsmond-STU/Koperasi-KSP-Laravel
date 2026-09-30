@@ -179,13 +179,20 @@ class LoanScheduleAlignmentTest extends TestCase
         $this->assertCount(0, app(LoanScheduleAlignmentService::class)->temukan());
     }
 
-    /** DORMAN (117-0151-01050): ditandai lunas, padahal buku besar masih bersisa Rp 2.025.000. */
+    /**
+     * DORMAN (117-0151-01050), angka produksi 30 Sep 2026: saldo awal per
+     * 31 Jul = pokok 13.350.000 + jasa 750.000 (sama dengan saldo terakhir
+     * riwayat SMIK); angsuran di aplikasi sesudahnya pokok 11.325.000 + jasa
+     * 525.000. Jadwal 100 × (500.000 + 25.000) terlanjur lunas semua karena
+     * disebar dari TOTAL uang riwayat lama, jadi pinjaman ditandai lunas
+     * padahal menurut saldo awal masih bersisa 2.025.000 + 225.000.
+     */
     public function test_pinjaman_lunas_yang_masih_bersisa_dibuka_kembali(): void
     {
-        $loan = Loan::factory()->create(['status' => 'lunas', 'principal_amount' => 20000000]);
-        $this->saldoAwal($loan, 13350000, 1335000);
-        $this->jadwal($loan, 100, 133500, 13350, fn () => [133500, 13350]);
-        $this->angsuran($loan, 11325000, 1335000);
+        $loan = Loan::factory()->create(['status' => 'lunas', 'principal_amount' => 50000000]);
+        $this->saldoAwal($loan, 13350000, 750000);
+        $this->jadwal($loan, 100, 500000, 25000, fn () => [500000, 25000]);
+        $this->angsuran($loan, 11325000, 525000);
 
         $service = app(LoanScheduleAlignmentService::class);
         $r = $service->temukan()->first();
@@ -196,7 +203,7 @@ class LoanScheduleAlignmentTest extends TestCase
         $service->jalankan([$loan->id], $this->pengurus()->id);
 
         $this->assertSame('dicairkan', $loan->fresh()->status);
-        $this->assertSame(['pokok' => 2025000.0, 'jasa' => 0.0], $this->sisaJadwal($loan));
+        $this->assertSame(['pokok' => 2025000.0, 'jasa' => 225000.0], $this->sisaJadwal($loan));
     }
 
     public function test_pinjaman_yang_lunas_menurut_buku_besar_ditandai_lunas(): void
