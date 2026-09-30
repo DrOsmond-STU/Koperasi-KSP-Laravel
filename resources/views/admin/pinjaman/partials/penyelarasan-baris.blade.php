@@ -16,6 +16,9 @@
         if ($baru === null) {
             return '<span class="tenang">—</span>';
         }
+        if ($lama === null) {
+            return '<span class="tenang">baris baru</span><br><strong>'.$rp($baru[$k]).'</strong>';
+        }
         $l = (float) $lama[$k]; $b = (float) $baru[$k];
         if (abs($l - $b) <= 0.005) {
             return '<span class="tenang">'.$rp($b).'</span>';
@@ -40,7 +43,7 @@
     <tbody>
         @forelse ($rincian as $b)
             <tr class="{{ $b['berubah'] ? 'baris-berubah' : 'baris-tetap' }}">
-                <td class="num">{{ $b['no'] }}</td>
+                <td class="num">{{ $b['no'] }}@if (! empty($b['baris_baru']))<br><span class="tenang">penyesuaian</span>@endif</td>
                 <td>{{ $b['jatuh_tempo'] ? \Illuminate\Support\Carbon::parse($b['jatuh_tempo'])->translatedFormat('d M Y') : '-' }}</td>
                 <td class="num">{{ $rp($b['pokok']) }}</td>
                 <td class="num">{{ $rp($b['jasa']) }}</td>
@@ -50,6 +53,8 @@
                 <td>
                     @if ($b['baru'] === null)
                         <span class="tenang">{{ $labelStatus($b['lama']['status']) }}</span>
+                    @elseif ($b['lama'] === null)
+                        <span class="tenang">baris baru</span><br><strong>{{ $labelStatus($b['baru']['status']) }}</strong>
                     @elseif ($b['lama']['status'] === $b['baru']['status'])
                         <span class="tenang">{{ $labelStatus($b['baru']['status']) }}</span>
                     @else

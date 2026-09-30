@@ -218,21 +218,57 @@ class LoanScheduleAlignmentTest extends TestCase
         $this->assertSame(['pokok' => 0.0, 'jasa' => 0.0], $this->sisaJadwal($loan));
     }
 
-    /** MULYA WATI (MIGRASI-1229): jadwalnya cuma memuat sebagian kecil pokok — tidak bisa diselaraskan. */
-    public function test_jadwal_yang_lebih_kecil_dari_sisa_buku_tidak_disentuh(): void
+    /**
+     * PARMIN (117-0151-01072), angka produksi 30 Sep 2026: sisa buku besar
+     * pokok 5.355.000 tapi total pokok di jadwal hanya 4.960.000. Jadwal
+     * dilengkapi satu cicilan penyesuaian sebesar kekurangannya, dan
+     * cicilan itu dihapus lagi bila penyelarasan dibatalkan.
+     */
+    public function test_jadwal_yang_lebih_kecil_dari_sisa_buku_dilengkapi_cicilan_penyesuaian(): void
     {
         $loan = Loan::factory()->create(['status' => 'dicairkan', 'principal_amount' => 10000000]);
-        $this->saldoAwal($loan, 8876615, 960000);
-        $this->jadwal($loan, 10, 100000, 10000, fn () => [100000, 10000]);
+        $this->saldoAwal($loan, 9400000, 500000);
+        $this->jadwal($loan, 2, 2480000, 100000, fn () => [0, 0]);
+        $this->angsuran($loan, 4045000, 385000);
 
         $service = app(LoanScheduleAlignmentService::class);
         $r = $service->temukan()->first();
 
-        $this->assertFalse($r['bisa']);
-        $this->assertStringContainsString('perlu dibangun ulang', implode(' ', $r['peringatan']));
+        $this->assertTrue($r['bisa']);
+        $this->assertSame(395000.0, $r['tambahan']['principal_amount']);
+        $this->assertSame(0.0, $r['tambahan']['interest_amount']);
+        $this->assertSame(3, $r['tambahan']['installment_number']);
+        $this->assertStringContainsString('cicilan penyesuaian', implode(' ', $r['peringatan']));
+        $baruRow = collect($r['rincian'])->firstWhere('baris_baru', true);
+        $this->assertNull($baruRow['lama']);
 
-        $this->expectException(RuntimeException::class);
-        $service->jalankan([$loan->id], $this->pengurus()->id);
+        $alignment = $service->jalankan([$loan->id], $this->pengurus()->id);
+
+        $this->assertSame(3, LoanSchedule::query()->where('loan_id', $loan->id)->count());
+        // Sisa jadwal = sisa buku besar: pokok 9.400.000 − 4.045.000, jasa 500.000 − 385.000.
+        $this->assertSame(['pokok' => 5355000.0, 'jasa' => 115000.0], $this->sisaJadwal($loan));
+        $this->assertCount(0, $service->temukan());
+
+        $riwayat = $service->rincianRiwayat($alignment->fresh());
+        $this->assertNotNull(collect($riwayat[0]['rincian'])->firstWhere('baris_baru', true));
+        $this->actingAs($this->pengurus())->get(route('admin.pinjaman.penyelarasan-jadwal.riwayat', $alignment))
+            ->assertOk()->assertSee('penyesuaian');
+
+        $service->batalkan($alignment->fresh(), $this->pengurus()->id);
+        $this->assertSame(2, LoanSchedule::query()->where('loan_id', $loan->id)->count());
+    }
+
+    /** JAYA BUDIMAN (117-0152-00149): baris jadwal tunggal berpokok 0, sisa buku 4.000.000. */
+    public function test_jadwal_tanpa_pokok_dilengkapi_seluruh_sisa_pokok(): void
+    {
+        $loan = Loan::factory()->create(['status' => 'dicairkan', 'principal_amount' => 4000000]);
+        $this->saldoAwal($loan, 4000000, 400000);
+        $this->jadwal($loan, 1, 0, 400000, fn () => [0, 0]);
+
+        app(LoanScheduleAlignmentService::class)->jalankan([$loan->id], $this->pengurus()->id);
+
+        $this->assertSame(['pokok' => 4000000.0, 'jasa' => 400000.0], $this->sisaJadwal($loan));
+        $this->assertSame('dicairkan', $loan->fresh()->status);
     }
 
     public function test_jasa_tidak_disentuh_bila_saldo_awal_tidak_mencatat_sisa_jasa(): void

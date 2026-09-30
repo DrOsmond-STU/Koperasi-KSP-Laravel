@@ -17,7 +17,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *   sisa_jasa_jadwal_lama, sisa_jasa_jadwal_baru,
  *   baris: { schedule_id: { paid_principal_amount, paid_interest_amount,
  *   paid_amount, status } (nilai LAMA — dipakai untuk membatalkan) },
- *   baris_baru: { schedule_id: { … } (nilai SESUDAH — hanya untuk rincian) } } }.
+ *   baris_baru: { schedule_id: { … } (nilai SESUDAH — hanya untuk rincian) },
+ *   baris_tambahan: { schedule_id: { … } } (cicilan penyesuaian yang DIBUAT —
+ *   dihapus bila dibatalkan) } }.
  */
 class LoanScheduleAlignment extends Model
 {

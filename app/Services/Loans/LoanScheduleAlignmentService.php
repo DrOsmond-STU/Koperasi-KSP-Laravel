@@ -7,6 +7,7 @@ use App\Models\LoanRepayment;
 use App\Models\LoanSchedule;
 use App\Models\LoanScheduleAlignment;
 use App\Models\Scopes\BranchScope;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -128,10 +129,11 @@ class LoanScheduleAlignmentService
             $peringatan[] = 'Porsi pokok yang dibayar (Rp '.number_format($pokokBayar, 0, ',', '.').') melebihi pokok awal (Rp '.number_format($pokokAwal, 0, ',', '.').') — sisa dianggap nol, tinjau riwayat angsurannya.';
         }
         $targetSisaPokok = max(0.0, $sisaPokokBuku);
-        if ($targetSisaPokok > $totalPokok + self::TOLERANSI) {
-            $bisa = false;
-            $peringatan[] = 'Total pokok di jadwal (Rp '.number_format($totalPokok, 0, ',', '.').') lebih kecil dari sisa buku besar (Rp '.number_format($targetSisaPokok, 0, ',', '.').') — jadwal perlu dibangun ulang, tidak bisa diselaraskan.';
-        }
+        // Jadwal yang total pokoknya lebih kecil dari sisa buku besar (mis.
+        // jadwal migrasi yang hanya memuat sebagian cicilan) dilengkapi satu
+        // baris "cicilan penyesuaian" sebesar kekurangannya — bukan ditolak.
+        $tambahPokok = round($targetSisaPokok - $totalPokok, 2) > self::TOLERANSI
+            ? round($targetSisaPokok - $totalPokok, 2) : 0.0;
 
         // --- jasa ---
         $jasaAwal = $posisi['migrasi'] ? $posisi['jasa'] : $totalJasa;
@@ -142,16 +144,40 @@ class LoanScheduleAlignmentService
                 $peringatan[] = 'Porsi jasa yang dibayar (Rp '.number_format($jasaBayar, 0, ',', '.').') melebihi jasa awal (Rp '.number_format($jasaAwal, 0, ',', '.').') — sisa jasa dianggap nol.';
             }
             $targetSisaJasa = max(0.0, $sisaJasaBuku);
-            if ($targetSisaJasa > $totalJasa + self::TOLERANSI) {
-                $bisa = false;
-                $peringatan[] = 'Total jasa di jadwal (Rp '.number_format($totalJasa, 0, ',', '.').') lebih kecil dari sisa jasa buku besar (Rp '.number_format($targetSisaJasa, 0, ',', '.').') — jadwal perlu dibangun ulang.';
-            }
+            $tambahJasa = round($targetSisaJasa - $totalJasa, 2) > self::TOLERANSI
+                ? round($targetSisaJasa - $totalJasa, 2) : 0.0;
         } else {
+            $tambahJasa = 0.0;
             $sisaJasaBuku = null;
             $targetSisaJasa = $sisaJasaJadwal;
             if ($posisi['migrasi']) {
                 $peringatan[] = 'Saldo awal tidak mencatat sisa jasa — jasa jadwal dibiarkan apa adanya.';
             }
+        }
+
+        // --- cicilan penyesuaian bila jadwal kurang dari sisa buku besar ---
+        $tambahan = null;
+        if ($tambahPokok > 0 || $tambahJasa > 0) {
+            $terakhir = $jadwal->last();
+            $jatuhTempo = $terakhir?->due_date
+                ? Carbon::parse($terakhir->due_date)->addDay()
+                : now()->startOfDay();
+            $tambahan = [
+                'installment_number' => ((int) ($terakhir?->installment_number ?? 0)) + 1,
+                'due_date' => $jatuhTempo->toDateString(),
+                'principal_amount' => $tambahPokok,
+                'interest_amount' => $tambahJasa,
+                'total_amount' => round($tambahPokok + $tambahJasa, 2),
+                'paid_principal_amount' => 0.0,
+                'paid_interest_amount' => 0.0,
+                'paid_amount' => 0.0,
+                'status' => 'belum_bayar',
+            ];
+            $peringatan[] = 'Jadwal lebih kecil dari sisa buku besar — ditambahkan 1 cicilan penyesuaian (ke-'
+                .$tambahan['installment_number'].', jatuh tempo '.$jatuhTempo->translatedFormat('d M Y')
+                .'): pokok Rp '.number_format($tambahPokok, 0, ',', '.').', jasa Rp '.number_format($tambahJasa, 0, ',', '.').'.';
+            $totalPokok = round($totalPokok + $tambahPokok, 2);
+            $totalJasa = round($totalJasa + $tambahJasa, 2);
         }
 
         // --- sebar nilai terbayar ke baris jadwal, tertua dulu ---
@@ -208,6 +234,25 @@ class LoanScheduleAlignmentService
             ];
         }
 
+        if ($tambahan !== null) {
+            $rincian[] = [
+                'schedule_id' => null,
+                'no' => $tambahan['installment_number'],
+                'jatuh_tempo' => $tambahan['due_date'],
+                'pokok' => $tambahan['principal_amount'],
+                'jasa' => $tambahan['interest_amount'],
+                'lama' => null,
+                'baru' => [
+                    'paid_principal_amount' => 0.0,
+                    'paid_interest_amount' => 0.0,
+                    'paid_amount' => 0.0,
+                    'status' => 'belum_bayar',
+                ],
+                'berubah' => true,
+                'baris_baru' => true,
+            ];
+        }
+
         $statusBaru = ($targetSisaPokok <= self::TOLERANSI && $targetSisaJasa <= self::TOLERANSI) ? 'lunas' : 'dicairkan';
         if ($loan->status === 'lunas' && $statusBaru === 'dicairkan') {
             $peringatan[] = 'Pinjaman berstatus LUNAS akan DIBUKA KEMBALI — menurut buku besar masih bersisa.';
@@ -219,7 +264,8 @@ class LoanScheduleAlignmentService
         $selisihJasa = round($targetSisaJasa - $sisaJasaJadwal, 2);
         $perlu = abs($selisihPokok) > self::TOLERANSI
             || abs($selisihJasa) > self::TOLERANSI
-            || $statusBaru !== $loan->status;
+            || $statusBaru !== $loan->status
+            || $tambahan !== null;
 
         return [
             'loan' => $loan,
@@ -240,7 +286,8 @@ class LoanScheduleAlignmentService
             'perlu' => $perlu,
             'bisa' => $bisa,
             'baris' => $baris,
-            'baris_berubah' => count($baris),
+            'baris_berubah' => count($baris) + ($tambahan !== null ? 1 : 0),
+            'tambahan' => $tambahan,
             'rincian' => $rincian,
             'status_lama' => $loan->status,
             'status_baru' => $statusBaru,
@@ -337,6 +384,25 @@ class LoanScheduleAlignmentService
                 ];
             }
 
+            foreach ($p['baris_tambahan'] ?? [] as $scheduleId => $t) {
+                $rincian[] = [
+                    'schedule_id' => (int) $scheduleId,
+                    'no' => (int) $t['installment_number'],
+                    'jatuh_tempo' => $t['due_date'],
+                    'pokok' => round((float) $t['principal_amount'], 2),
+                    'jasa' => round((float) $t['interest_amount'], 2),
+                    'lama' => null,
+                    'baru' => [
+                        'paid_principal_amount' => 0.0,
+                        'paid_interest_amount' => 0.0,
+                        'paid_amount' => 0.0,
+                        'status' => 'belum_bayar',
+                    ],
+                    'berubah' => true,
+                    'baris_baru' => true,
+                ];
+            }
+
             usort($rincian, fn (array $a, array $b) => $a['no'] <=> $b['no']);
 
             return [
@@ -404,6 +470,11 @@ class LoanScheduleAlignmentService
                     LoanSchedule::query()->where('id', $scheduleId)->where('loan_id', $loan->id)->update($nilai);
                 }
 
+                $tambahanId = null;
+                if ($r['tambahan'] !== null) {
+                    $tambahanId = LoanSchedule::query()->create(['loan_id' => $loan->id] + $r['tambahan'])->id;
+                }
+
                 if ($r['status_baru'] !== $loan->status) {
                     $loan->update(['status' => $r['status_baru']]);
                 }
@@ -420,8 +491,11 @@ class LoanScheduleAlignmentService
                     'sisa_jasa_jadwal_baru' => $r['target_sisa_jasa'],
                     'baris' => $lama,
                     'baris_baru' => $r['baris'],
+                    // Baris cicilan penyesuaian yang DIBUAT penyelarasan ini —
+                    // dihapus lagi bila penyelarasan dibatalkan.
+                    'baris_tambahan' => $tambahanId === null ? [] : [$tambahanId => $r['tambahan']],
                 ];
-                $jumlahBaris += count($r['baris']);
+                $jumlahBaris += count($r['baris']) + ($tambahanId === null ? 0 : 1);
             }
 
             $this->pastikanPembukuanUtuh($sebelum);
@@ -451,6 +525,10 @@ class LoanScheduleAlignmentService
             foreach ($alignment->payload as $loanId => $p) {
                 foreach ($p['baris'] as $scheduleId => $lama) {
                     LoanSchedule::query()->where('id', $scheduleId)->where('loan_id', $loanId)->update($lama);
+                }
+
+                foreach (array_keys($p['baris_tambahan'] ?? []) as $scheduleId) {
+                    LoanSchedule::query()->where('id', $scheduleId)->where('loan_id', $loanId)->delete();
                 }
 
                 if (($p['status_lama'] ?? null) !== ($p['status_baru'] ?? null)) {
