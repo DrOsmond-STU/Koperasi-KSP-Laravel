@@ -14,7 +14,8 @@
         <tr><td style="padding:3px 0;">Jenis Transaksi</td><td style="padding:3px 0;">: {{ $transaction->type === 'tarik' ? 'Penarikan Simpanan' : 'Setoran Simpanan' }}</td></tr>
         <tr><td style="padding:3px 0;">Nominal</td><td style="padding:3px 0;">: Rp {{ number_format($transaction->amount, 0, ',', '.') }}</td></tr>
         <tr><td style="padding:3px 0;">Saldo Setelah Transaksi</td><td style="padding:3px 0;">: Rp {{ number_format($transaction->balance_after, 0, ',', '.') }}</td></tr>
-        <tr><td style="padding:3px 0;">Tanggal</td><td style="padding:3px 0;">: {{ $transaction->created_at->translatedFormat('d M Y H:i') }}</td></tr>
+        <tr><td style="padding:3px 0;">Tanggal Transaksi</td><td style="padding:3px 0;">: {{ ($transaction->journalEntry?->entry_date ?? $transaction->created_at)->translatedFormat('d M Y') }}</td></tr>
+        <tr><td style="padding:3px 0;">Tanggal Input</td><td style="padding:3px 0;">: {{ $transaction->created_at->translatedFormat('d M Y H:i') }}</td></tr>
         <tr><td style="padding:3px 0;">Diproses oleh</td><td style="padding:3px 0;">: {{ $transaction->createdBy->name }}</td></tr>
         @if ($transaction->description)
             <tr><td style="padding:3px 0;">Keterangan</td><td style="padding:3px 0;">: {{ $transaction->description }}</td></tr>

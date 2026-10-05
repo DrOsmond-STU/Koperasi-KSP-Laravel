@@ -2,12 +2,17 @@
 
 namespace Tests\Feature\Savings;
 
+use App\Exceptions\Savings\TransactionAlreadyCancelledException;
 use App\Models\SavingsAccount;
+use App\Models\SavingsTransaction;
 use App\Models\User;
 use App\Models\UserBranchScope;
+use App\Services\Savings\SavingsService;
+use App\Services\Savings\SavingsWithdrawalRequestService;
 use Database\Seeders\ChartOfAccountsSeeder;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
 /**
@@ -65,6 +70,49 @@ class TellerControllerTest extends TestCase
         ]);
     }
 
+    public function test_backdated_transaction_date_is_posted_as_journal_date_and_printed_with_input_date(): void
+    {
+        $teller = $this->teller();
+        $account = SavingsAccount::factory()->create(['balance' => 0]);
+        $transactionDate = now()->subDays(3)->toDateString();
+
+        $this->actingAs($teller)->post(route('staf.teller.store'), [
+            'savings_account_id' => $account->id,
+            'type' => 'setor',
+            'amount' => 50000,
+            'transaction_date' => $transactionDate,
+        ])->assertRedirect(route('staf.teller.create'));
+
+        $transaction = SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
+        $this->assertSame($transactionDate, $transaction->journalEntry->entry_date->toDateString());
+        $this->assertTrue($transaction->created_at->isToday());
+
+        $html = view('prints.savings.receipt', [
+            'transaction' => $transaction->load('savingsAccount.member', 'createdBy', 'journalEntry'),
+            'documentGroup' => 'kas_masuk',
+        ])->render();
+
+        $this->assertStringContainsString('Tanggal Transaksi', $html);
+        $this->assertStringContainsString(Carbon::parse($transactionDate)->translatedFormat('d M Y'), $html);
+        $this->assertStringContainsString('Tanggal Input', $html);
+        $this->assertStringContainsString($transaction->created_at->translatedFormat('d M Y H:i'), $html);
+    }
+
+    public function test_future_transaction_date_is_rejected(): void
+    {
+        $teller = $this->teller();
+        $account = SavingsAccount::factory()->create(['balance' => 0]);
+
+        $this->actingAs($teller)->post(route('staf.teller.store'), [
+            'savings_account_id' => $account->id,
+            'type' => 'setor',
+            'amount' => 50000,
+            'transaction_date' => now()->addDay()->toDateString(),
+        ])->assertSessionHasErrors('transaction_date');
+
+        $this->assertEquals(0, $account->fresh()->balance);
+    }
+
     public function test_teller_feed_shows_todays_transaction(): void
     {
         $teller = $this->teller();
@@ -102,7 +150,7 @@ class TellerControllerTest extends TestCase
             'type' => 'setor',
             'amount' => 150000,
         ]);
-        $tx = \App\Models\SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
+        $tx = SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
 
         $response = $this->actingAs($teller)->post(route('staf.teller.cancel', $tx), [
             'reason' => 'Salah input nominal',
@@ -132,7 +180,7 @@ class TellerControllerTest extends TestCase
             'type' => 'setor',
             'amount' => 100000,
         ]);
-        $tx = \App\Models\SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
+        $tx = SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
 
         $this->actingAs($otherTeller)->post(route('staf.teller.cancel', $tx), [
             'reason' => 'Coba batalkan punya orang lain',
@@ -155,7 +203,7 @@ class TellerControllerTest extends TestCase
             'type' => 'setor',
             'amount' => 50000,
         ]);
-        $tx = \App\Models\SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
+        $tx = SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
 
         $this->actingAs($manajer)->post(route('staf.teller.cancel', $tx), [
             'reason' => 'Koreksi oleh manajer',
@@ -173,12 +221,12 @@ class TellerControllerTest extends TestCase
             'type' => 'setor',
             'amount' => 60000,
         ]);
-        $tx = \App\Models\SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
+        $tx = SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
 
         $this->actingAs($teller)->post(route('staf.teller.cancel', $tx), ['reason' => 'Pertama']);
 
-        $this->expectException(\App\Exceptions\Savings\TransactionAlreadyCancelledException::class);
-        app(\App\Services\Savings\SavingsService::class)->reverseTransaction($tx->fresh(), 'Kedua', $teller->id);
+        $this->expectException(TransactionAlreadyCancelledException::class);
+        app(SavingsService::class)->reverseTransaction($tx->fresh(), 'Kedua', $teller->id);
     }
 
     public function test_teller_can_approve_a_members_withdrawal_request(): void
@@ -186,7 +234,7 @@ class TellerControllerTest extends TestCase
         $teller = $this->teller();
         $account = SavingsAccount::factory()->create(['balance' => 500000]);
         $requester = User::factory()->create();
-        $withdrawalRequest = app(\App\Services\Savings\SavingsWithdrawalRequestService::class)
+        $withdrawalRequest = app(SavingsWithdrawalRequestService::class)
             ->request($account, 100000, $requester->id);
 
         $response = $this->actingAs($teller)->post(route('staf.teller.decide-withdrawal', $withdrawalRequest), [
@@ -203,7 +251,7 @@ class TellerControllerTest extends TestCase
         $teller = $this->teller();
         $account = SavingsAccount::factory()->create(['balance' => 500000]);
         $requester = User::factory()->create();
-        $withdrawalRequest = app(\App\Services\Savings\SavingsWithdrawalRequestService::class)
+        $withdrawalRequest = app(SavingsWithdrawalRequestService::class)
             ->request($account, 100000, $requester->id);
 
         $response = $this->actingAs($teller)->post(route('staf.teller.decide-withdrawal', $withdrawalRequest), [
@@ -224,7 +272,7 @@ class TellerControllerTest extends TestCase
 
         $account = SavingsAccount::factory()->create(['balance' => 500000]);
         $requester = User::factory()->create();
-        $withdrawalRequest = app(\App\Services\Savings\SavingsWithdrawalRequestService::class)
+        $withdrawalRequest = app(SavingsWithdrawalRequestService::class)
             ->request($account, 100000, $requester->id);
 
         $this->actingAs($petugasKredit)->post(route('staf.teller.decide-withdrawal', $withdrawalRequest), [

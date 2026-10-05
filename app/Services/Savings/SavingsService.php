@@ -57,14 +57,15 @@ class SavingsService
         int $createdBy,
         ?string $description = null,
         ?string $idempotencyKey = null,
+        ?string $transactionDate = null,
     ): SavingsTransaction {
-        return DB::transaction(function () use ($account, $amount, $createdBy, $description, $idempotencyKey) {
+        return DB::transaction(function () use ($account, $amount, $createdBy, $description, $idempotencyKey, $transactionDate) {
             $product = $account->savingsProduct;
             $newBalance = bcadd((string) $account->balance, (string) $amount, 2);
 
             $entry = $this->journalEngine->post([
                 'branch_id' => $account->branch_id,
-                'entry_date' => now()->toDateString(),
+                'entry_date' => $transactionDate ?? now()->toDateString(),
                 'description' => $description ?? "Setoran simpanan {$account->account_number}",
                 'created_by' => $createdBy,
                 'source' => $account,
@@ -96,18 +97,19 @@ class SavingsService
         int $createdBy,
         ?string $description = null,
         ?string $idempotencyKey = null,
+        ?string $transactionDate = null,
     ): SavingsTransaction {
         if (bccomp((string) $account->balance, (string) $amount, 2) < 0) {
             throw new InsufficientBalanceException($account->account_number, (string) $account->balance, (string) $amount);
         }
 
-        return DB::transaction(function () use ($account, $amount, $createdBy, $description, $idempotencyKey) {
+        return DB::transaction(function () use ($account, $amount, $createdBy, $description, $idempotencyKey, $transactionDate) {
             $product = $account->savingsProduct;
             $newBalance = bcsub((string) $account->balance, (string) $amount, 2);
 
             $entry = $this->journalEngine->post([
                 'branch_id' => $account->branch_id,
-                'entry_date' => now()->toDateString(),
+                'entry_date' => $transactionDate ?? now()->toDateString(),
                 'description' => $description ?? "Penarikan simpanan {$account->account_number}",
                 'created_by' => $createdBy,
                 'source' => $account,

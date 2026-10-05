@@ -59,6 +59,7 @@ class TellerController extends Controller
             'type' => $request->validated('type'),
             'amount' => (float) $request->validated('amount'),
             'description' => $request->validated('description'),
+            'transactionDate' => $request->validated('transaction_date') ?? now()->toDateString(),
             'lines' => $this->savings->previewLines($account, $request->validated('type'), (float) $request->validated('amount')),
         ]);
     }
@@ -67,10 +68,11 @@ class TellerController extends Controller
     {
         $account = SavingsAccount::query()->findOrFail($request->validated('savings_account_id'));
         $idempotencyKey = $request->input('idempotency_key') ?: (string) Str::uuid();
+        $transactionDate = $request->validated('transaction_date');
 
         $transaction = $request->validated('type') === 'setor'
-            ? $this->savings->deposit($account, (float) $request->validated('amount'), $request->user()->id, $request->validated('description'), $idempotencyKey)
-            : $this->savings->withdraw($account, (float) $request->validated('amount'), $request->user()->id, $request->validated('description'), $idempotencyKey);
+            ? $this->savings->deposit($account, (float) $request->validated('amount'), $request->user()->id, $request->validated('description'), $idempotencyKey, $transactionDate)
+            : $this->savings->withdraw($account, (float) $request->validated('amount'), $request->user()->id, $request->validated('description'), $idempotencyKey, $transactionDate);
 
         return redirect()
             ->route('staf.teller.create')
@@ -97,7 +99,7 @@ class TellerController extends Controller
         $this->authorize('simpanan.print');
 
         $pdf = $this->renderPrintPdf('prints.savings.receipt', [
-            'transaction' => $transaction->load('savingsAccount.member', 'createdBy'),
+            'transaction' => $transaction->load('savingsAccount.member', 'createdBy', 'journalEntry'),
             'documentGroup' => $transaction->type === 'tarik' ? 'kas_keluar' : 'kas_masuk',
         ]);
 

@@ -28,6 +28,9 @@ class TellerSavingsTransactionRequest extends FormRequest
             'type' => ['required', Rule::in(['setor', 'tarik'])],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'description' => ['nullable', 'string', 'max:255'],
+            // Tanggal transaksi (tanggal jurnal) — boleh mundur untuk
+            // transaksi yang baru diinput belakangan, tidak boleh ke depan.
+            'transaction_date' => ['nullable', 'date', 'before_or_equal:today'],
         ];
     }
 }

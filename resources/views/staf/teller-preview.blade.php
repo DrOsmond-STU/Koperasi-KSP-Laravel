@@ -16,6 +16,7 @@
 
     <div class="panel">
         <p>Rekening: <strong>{{ $account->account_number }}</strong> — {{ $account->member->name }}</p>
+        <p>Tanggal Transaksi: <strong>{{ \Illuminate\Support\Carbon::parse($transactionDate)->translatedFormat('d M Y') }}</strong></p>
 
         <table class="journal-table">
             <thead><tr><th>Akun</th><th>Debit</th><th>Kredit</th></tr></thead>
@@ -36,6 +37,7 @@
             <input type="hidden" name="type" value="{{ $type }}">
             <input type="hidden" name="amount" value="{{ $amount }}">
             <input type="hidden" name="description" value="{{ $description }}">
+            <input type="hidden" name="transaction_date" value="{{ $transactionDate }}">
             <button type="submit" class="btn-primary">Konfirmasi &amp; Simpan</button>
             <a href="{{ route('staf.teller.create') }}" class="btn-ghost">Batal</a>
         </form>

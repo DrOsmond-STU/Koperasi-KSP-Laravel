@@ -58,6 +58,10 @@
                     </select>
                 </div>
                 <div class="field">
+                    <label>Tanggal Transaksi</label>
+                    <input type="date" name="transaction_date" value="{{ now()->toDateString() }}" max="{{ now()->toDateString() }}" required>
+                </div>
+                <div class="field">
                     <label>Nominal (Rp)</label>
                     <input type="number" step="0.01" name="amount" required>
                 </div>
