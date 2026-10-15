@@ -38,6 +38,45 @@ class MemberControllerTest extends TestCase
         $this->actingAs($user)->post(route('admin.members.store'), [])->assertForbidden();
     }
 
+    public function test_index_is_paginated_on_the_server_and_keeps_search_across_pages(): void
+    {
+        $user = $this->manajer();
+        $branch = Branch::factory()->create();
+        $memberType = MemberType::factory()->create();
+        // Satu created_at untuk semua, seperti hasil impor massal: urutan
+        // antarhalaman harus tetap stabil (pengikat id).
+        $this->travelTo(now()->startOfMinute());
+        foreach (range(1, 30) as $i) {
+            Member::factory()->create([
+                'branch_id' => $branch->id,
+                'member_type_id' => $memberType->id,
+                'member_number' => sprintf('PG-%03d', $i),
+                'name' => sprintf('Anggota Halaman %03d', $i),
+            ]);
+        }
+        Member::factory()->create(['branch_id' => $branch->id, 'member_type_id' => $memberType->id, 'member_number' => 'LAIN-1', 'name' => 'Bukan Cocok']);
+
+        $halaman1 = $this->actingAs($user)->get(route('admin.members.index'));
+        $halaman1->assertOk()->assertSee('dari 31 anggota');
+        $this->assertCount(25, $halaman1->viewData('members')->items());
+
+        $halaman2 = $this->actingAs($user)->get(route('admin.members.index', ['page' => 2]));
+        $this->assertCount(6, $halaman2->viewData('members')->items());
+        $idTerlihat = collect($halaman1->viewData('members')->items())->pluck('id')
+            ->merge(collect($halaman2->viewData('members')->items())->pluck('id'));
+        $this->assertCount(31, $idTerlihat->unique());
+
+        $cari = $this->actingAs($user)->get(route('admin.members.index', ['q' => 'Halaman', 'per_page' => 10]));
+        $cari->assertOk()->assertSee('dari 30 anggota')->assertDontSee('Bukan Cocok');
+        $this->assertCount(10, $cari->viewData('members')->items());
+        // Tautan halaman berikutnya membawa pencarian & ukuran halaman.
+        $this->assertStringContainsString('q=Halaman', $cari->viewData('members')->nextPageUrl());
+        $this->assertStringContainsString('per_page=10', $cari->viewData('members')->nextPageUrl());
+
+        // Ukuran halaman di luar pilihan kembali ke 25.
+        $this->assertSame(25, $this->actingAs($user)->get(route('admin.members.index', ['per_page' => 5000]))->viewData('members')->perPage());
+    }
+
     public function test_creating_member_with_valid_data_succeeds(): void
     {
         $user = $this->manajer();

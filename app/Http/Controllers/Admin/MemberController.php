@@ -21,11 +21,22 @@ class MemberController extends Controller
 
     private const PHOTO_DIRECTORY = 'members';
 
+    /** Pilihan "baris per halaman" Data Anggota; elemen pertama yang dipakai bila tidak valid. */
+    private const PILIHAN_PER_HALAMAN = [25, 10, 50, 100];
+
     public function index(Request $request): View
     {
         $this->authorize('master_data.read');
 
         $search = $request->string('q')->trim()->value();
+
+        // Pagination di server (permintaan Okt 2026): sebelumnya seluruh
+        // anggota dimuat & dirender sekaligus. Urutan diberi pengikat id
+        // karena anggota hasil impor berbagi created_at yang sama — tanpa itu
+        // urutan antarhalaman tidak stabil (ada yang muncul dua kali/hilang).
+        $perHalaman = in_array($request->integer('per_page'), self::PILIHAN_PER_HALAMAN, true)
+            ? $request->integer('per_page')
+            : self::PILIHAN_PER_HALAMAN[0];
 
         return view('admin.anggota.index', [
             'members' => Member::query()
@@ -35,8 +46,12 @@ class MemberController extends Controller
                         ->orWhere('member_number', 'like', "%{$search}%");
                 }))
                 ->latest()
-                ->get(),
+                ->latest('id')
+                ->paginate($perHalaman)
+                ->withQueryString(),
             'search' => $search,
+            'perHalaman' => $perHalaman,
+            'pilihanPerHalaman' => collect(self::PILIHAN_PER_HALAMAN)->sort()->values()->all(),
             'memberTypes' => MemberType::query()->orderBy('name')->get(),
             'branches' => $this->availableBranches(),
         ]);
