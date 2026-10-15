@@ -155,11 +155,22 @@ return [
         // Features::emailVerification(),
         Features::updateProfileInformation(),
         Features::updatePasswords(),
-        Features::twoFactorAuthentication([
-            'confirm' => true,
-            'confirmPassword' => true,
-            // 'window' => 0,
-        ]),
+        // Dua faktor dimatikan sampai halaman tantangannya ada.
+        //
+        // 'views' => false di berkas ini membuat Fortify hanya mendaftarkan
+        // endpoint POST, bukan halaman GET -- termasuk route two-factor.login,
+        // halaman tempat pengguna memasukkan kode. Endpoint two-factor.enable
+        // tetap terdaftar, jadi 2FA bisa dinyalakan tapi tidak bisa dilewati:
+        // begitu dinyalakan, login berikutnya diarahkan ke halaman yang tidak
+        // terdaftar dan berakhir 500 (RouteNotFoundException). Tiga akun
+        // produksi terkunci begitu pada 20-08-2026.
+        //
+        // Jangan hidupkan lagi sebelum route two-factor.login beserta
+        // halamannya tersedia -- menyalakannya sama dengan mengunci pemakai.
+        // Features::twoFactorAuthentication([
+        //     'confirm' => true,
+        //     'confirmPassword' => true,
+        // ]),
     ],
 
 ];

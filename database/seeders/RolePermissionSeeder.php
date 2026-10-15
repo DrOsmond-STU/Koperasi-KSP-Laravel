@@ -35,6 +35,14 @@ class RolePermissionSeeder extends Seeder
     private const MODULE_ACTIONS = [
         'simpanan' => ['create', 'read', 'update', 'delete', 'approve', 'print'],
         'pinjaman' => ['create', 'read', 'update', 'delete', 'approve', 'print'],
+        // Beda dari 'pinjaman.delete' (membatalkan PENCAIRAN pinjaman —
+        // manajer saja, lihat LoanApprovalService::cancelDisbursement()):
+        // 'angsuran.delete' membatalkan SATU pembayaran angsuran yang salah
+        // catat — jauh lebih sering terjadi & lebih ringan, jadi diberikan
+        // ke role yang juga mencatat angsuran (Teller, Petugas Kredit),
+        // sama pola dengan 'simpanan.delete'/'retribusi_upf.delete' di
+        // bawah (laporan staf 26 Agu 2026).
+        'angsuran' => ['delete'],
         'retribusi_upf' => ['create', 'read', 'delete'],
         'kas_teller' => ['create', 'read', 'update'],
         'pos' => ['create', 'read'],
@@ -80,12 +88,12 @@ class RolePermissionSeeder extends Seeder
             'simpanan.create', 'simpanan.read', 'simpanan.update', 'simpanan.delete', 'simpanan.approve', 'simpanan.print',
             'kas_teller.create', 'kas_teller.read', 'kas_teller.update',
             'pos.create', 'pos.read',
-            'pinjaman.create', 'pinjaman.read', 'pinjaman.print',
+            'pinjaman.create', 'pinjaman.read', 'pinjaman.print', 'angsuran.delete',
             'jurnal.read',
             'member_card.print',
         ],
         'petugas_kredit' => [
-            'pinjaman.create', 'pinjaman.read', 'pinjaman.update',
+            'pinjaman.create', 'pinjaman.read', 'pinjaman.update', 'angsuran.delete',
         ],
         'petugas_upf' => [
             'retribusi_upf.create', 'retribusi_upf.read', 'retribusi_upf.delete',
@@ -95,7 +103,7 @@ class RolePermissionSeeder extends Seeder
             'simpanan.create', 'simpanan.read', 'simpanan.update', 'simpanan.delete', 'simpanan.approve', 'simpanan.print',
             'kas_teller.create', 'kas_teller.read', 'kas_teller.update',
             'pos.create', 'pos.read',
-            'pinjaman.create', 'pinjaman.read', 'pinjaman.update', 'pinjaman.approve', 'pinjaman.delete', 'pinjaman.print',
+            'pinjaman.create', 'pinjaman.read', 'pinjaman.update', 'pinjaman.approve', 'pinjaman.delete', 'pinjaman.print', 'angsuran.delete',
             'retribusi_upf.create', 'retribusi_upf.read', 'retribusi_upf.delete',
             'jurnal.read',
             'master_data.create', 'master_data.read', 'master_data.update',

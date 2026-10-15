@@ -232,8 +232,8 @@ class OpeningBalanceController extends Controller
                 ['AGT-0001', 'SIM-SUKARELA', '', '1500000.00', '2026-01-01', 'Migrasi dari sistem lama'],
             ],
             'loans' => [
-                ['kode_anggota', 'kode_produk_pinjaman', 'no_pinjaman_lama', 'tanggal_akad', 'plafon_awal', 'sisa_pokok', 'sisa_jasa_berjalan', 'tenor_bulan', 'sisa_tenor', 'angsuran_ke', 'tanggal_jatuh_tempo_berikutnya', 'kolektibilitas'],
-                ['AGT-0001', 'PINJ-MODAL-USAHA', 'OLD-00234', '2025-06-01', '10000000.00', '6500000.00', '50000.00', '12', '7', '6', '2026-02-01', 'Lancar'],
+                ['kode_anggota', 'kode_produk_pinjaman', 'no_pinjaman_lama', 'tanggal_akad', 'plafon_awal', 'sisa_pokok', 'sisa_jasa_berjalan', 'tenor_hari', 'sisa_tenor_hari', 'angsuran_ke', 'tanggal_jatuh_tempo_berikutnya', 'kolektibilitas'],
+                ['AGT-0001', 'PINJ-MODAL-USAHA', 'OLD-00234', '2025-06-01', '10000000.00', '6500000.00', '50000.00', '90', '45', '46', '2026-02-01', 'Lancar'],
             ],
             'installments' => [
                 ['no_pinjaman_lama', 'angsuran_ke', 'tanggal_jatuh_tempo', 'nominal_pokok', 'nominal_jasa', 'nominal_denda', 'status'],

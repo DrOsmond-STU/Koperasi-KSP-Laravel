@@ -26,11 +26,13 @@ class TellerSavingsTransactionRequest extends FormRequest
         return [
             'savings_account_id' => ['required', 'integer', Rule::exists('savings_accounts', 'id')],
             'type' => ['required', Rule::in(['setor', 'tarik'])],
+            'transaction_date' => ['required', 'date', 'before_or_equal:today'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'description' => ['nullable', 'string', 'max:255'],
-            // Tanggal transaksi (tanggal jurnal) — boleh mundur untuk
-            // transaksi yang baru diinput belakangan, tidak boleh ke depan.
-            'transaction_date' => ['nullable', 'date', 'before_or_equal:today'],
+            // Field "Rekening Kas" di form Teller kini bisa diedit (default
+            // tetap SavingsService::cashAccount(), lihat TellerController::
+            // resolveCashAccount()) — nullable karena kosong = pakai default.
+            'cash_account_id' => ['nullable', 'integer', Rule::exists('chart_of_accounts', 'id')],
         ];
     }
 }

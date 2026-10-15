@@ -22,7 +22,12 @@ class JournalAdjustmentController extends Controller
         $selectedId = $request->integer('entry_id') ?: null;
 
         return view('admin.jurnal-penyesuaian', [
-            'entries' => JournalEntry::query()->whereNull('reversal_of_entry_id')->latest()->limit(50)->get(),
+            'entries' => JournalEntry::query()
+                ->whereNull('reversal_of_entry_id')
+                ->whereDoesntHave('reversals')
+                ->latest()
+                ->limit(50)
+                ->get(),
             'selectedEntry' => $selectedId !== null
                 ? JournalEntry::query()->with('lines.account')->find($selectedId)
                 : null,

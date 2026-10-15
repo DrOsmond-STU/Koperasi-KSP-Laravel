@@ -34,9 +34,9 @@
                     <td>{{ $row['asset']->code }}</td>
                     <td>{{ $row['asset']->name }}</td>
                     <td>{{ $row['asset']->category->name }}</td>
-                    <td>Rp {{ number_format((float) $row['asset']->acquisition_cost, 0, ',', '.') }}</td>
-                    <td>Rp {{ number_format((float) $row['accumulated_depreciation'], 0, ',', '.') }}</td>
-                    <td>Rp {{ number_format((float) $row['book_value'], 0, ',', '.') }}</td>
+                    <td>Rp {{ number_format((float) $row['asset']->acquisition_cost, 2, ',', '.') }}</td>
+                    <td>Rp {{ number_format((float) $row['accumulated_depreciation'], 2, ',', '.') }}</td>
+                    <td>Rp {{ number_format((float) $row['book_value'], 2, ',', '.') }}</td>
                     <td>{{ ucfirst(str_replace('_', ' ', $row['asset']->status)) }}</td>
                 </tr>
             @empty

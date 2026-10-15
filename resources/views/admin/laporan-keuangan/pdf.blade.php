@@ -36,19 +36,19 @@
                 @foreach ($aktivaRows as $row)
                     <tr>
                         <td>{{ $row['account']->code }} — {{ $row['account']->name }}{{ $row['eliminated'] ? ' (dieliminasi - RAK)' : '' }}</td>
-                        <td class="amount">Rp {{ number_format((float) $row['balance'], 0, ',', '.') }}</td>
+                        <td class="amount">Rp {{ number_format((float) $row['balance'], 2, ',', '.') }}</td>
                     </tr>
                 @endforeach
-                <tr class="total-row"><td>Total Aktiva</td><td class="amount">Rp {{ number_format((float) $data['total_aset'], 0, ',', '.') }}</td></tr>
+                <tr class="total-row"><td>Total Aktiva</td><td class="amount">Rp {{ number_format((float) $data['total_aset'], 2, ',', '.') }}</td></tr>
 
                 <tr class="section-row"><td colspan="2">Pasiva</td></tr>
                 @foreach ($pasivaRows as $row)
                     <tr>
                         <td>{{ $row['account']->code }} — {{ $row['account']->name }}{{ $row['eliminated'] ? ' (dieliminasi - RAK)' : '' }}</td>
-                        <td class="amount">Rp {{ number_format((float) $row['balance'], 0, ',', '.') }}</td>
+                        <td class="amount">Rp {{ number_format((float) $row['balance'], 2, ',', '.') }}</td>
                     </tr>
                 @endforeach
-                <tr class="total-row"><td>Total Pasiva (Liabilitas + Ekuitas)</td><td class="amount">Rp {{ number_format((float) bcadd($data['total_liabilitas'], $data['total_ekuitas'], 2), 0, ',', '.') }}</td></tr>
+                <tr class="total-row"><td>Total Pasiva (Liabilitas + Ekuitas)</td><td class="amount">Rp {{ number_format((float) bcadd($data['total_liabilitas'], $data['total_ekuitas'], 2), 2, ',', '.') }}</td></tr>
             </tbody>
         </table>
     @elseif ($reportKind === 'laba_rugi')
@@ -63,30 +63,30 @@
                 @foreach ($pendapatanRows as $row)
                     <tr>
                         <td>{{ $row['account']->code }} — {{ $row['account']->name }}</td>
-                        <td class="amount">Rp {{ number_format((float) $row['amount'], 0, ',', '.') }}</td>
+                        <td class="amount">Rp {{ number_format((float) $row['amount'], 2, ',', '.') }}</td>
                     </tr>
                 @endforeach
-                <tr class="total-row"><td>Total Pendapatan</td><td class="amount">Rp {{ number_format((float) $data['total_pendapatan'], 0, ',', '.') }}</td></tr>
+                <tr class="total-row"><td>Total Pendapatan</td><td class="amount">Rp {{ number_format((float) $data['total_pendapatan'], 2, ',', '.') }}</td></tr>
 
                 <tr class="section-row"><td colspan="2">Beban</td></tr>
                 @foreach ($bebanRows as $row)
                     <tr>
                         <td>{{ $row['account']->code }} — {{ $row['account']->name }}</td>
-                        <td class="amount">Rp {{ number_format((float) $row['amount'], 0, ',', '.') }}</td>
+                        <td class="amount">Rp {{ number_format((float) $row['amount'], 2, ',', '.') }}</td>
                     </tr>
                 @endforeach
-                <tr class="total-row"><td>Total Beban</td><td class="amount">Rp {{ number_format((float) $data['total_beban'], 0, ',', '.') }}</td></tr>
+                <tr class="total-row"><td>Total Beban</td><td class="amount">Rp {{ number_format((float) $data['total_beban'], 2, ',', '.') }}</td></tr>
 
-                <tr class="total-row"><td>Sisa Hasil Usaha (SHU)</td><td class="amount">Rp {{ number_format((float) $data['shu'], 0, ',', '.') }}</td></tr>
+                <tr class="total-row"><td>Sisa Hasil Usaha (SHU)</td><td class="amount">Rp {{ number_format((float) $data['shu'], 2, ',', '.') }}</td></tr>
             </tbody>
         </table>
     @elseif ($reportKind === 'arus_kas')
         <table>
             <tbody>
-                <tr><td>Saldo Awal Kas/Bank</td><td class="amount">Rp {{ number_format((float) $data['opening_balance'], 0, ',', '.') }}</td></tr>
-                <tr><td>Total Kas Masuk</td><td class="amount">Rp {{ number_format((float) $data['total_masuk'], 0, ',', '.') }}</td></tr>
-                <tr><td>Total Kas Keluar</td><td class="amount">Rp {{ number_format((float) $data['total_keluar'], 0, ',', '.') }}</td></tr>
-                <tr class="total-row"><td>Saldo Akhir Kas/Bank</td><td class="amount">Rp {{ number_format((float) $data['closing_balance'], 0, ',', '.') }}</td></tr>
+                <tr><td>Saldo Awal Kas/Bank</td><td class="amount">Rp {{ number_format((float) $data['opening_balance'], 2, ',', '.') }}</td></tr>
+                <tr><td>Total Kas Masuk</td><td class="amount">Rp {{ number_format((float) $data['total_masuk'], 2, ',', '.') }}</td></tr>
+                <tr><td>Total Kas Keluar</td><td class="amount">Rp {{ number_format((float) $data['total_keluar'], 2, ',', '.') }}</td></tr>
+                <tr class="total-row"><td>Saldo Akhir Kas/Bank</td><td class="amount">Rp {{ number_format((float) $data['closing_balance'], 2, ',', '.') }}</td></tr>
             </tbody>
         </table>
     @elseif ($reportKind === 'calk')
@@ -104,7 +104,7 @@
                     @foreach ($rows as $row)
                         <tr>
                             <td>{{ $row['account']->code }} — {{ $row['account']->name }}</td>
-                            <td class="amount">Rp {{ number_format((float) $row['balance'], 0, ',', '.') }}</td>
+                            <td class="amount">Rp {{ number_format((float) $row['balance'], 2, ',', '.') }}</td>
                         </tr>
                     @endforeach
                 </tbody>

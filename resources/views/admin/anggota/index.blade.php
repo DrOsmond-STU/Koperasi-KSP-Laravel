@@ -67,6 +67,29 @@
         </form>
     @endcan
 
+    {{--
+        Laporan Pinjaman per Anggota (massal) — kombinasi cabang + status,
+        lengkap dengan outstanding & historis pembayaran per pinjaman.
+        Tombol "Cetak Pinjaman" per baris di tabel bawah tetap ada untuk
+        cetak satu anggota saja (semua status, tanpa perlu buka form ini).
+    --}}
+    @can('pinjaman.print')
+        <form method="GET" action="{{ route('admin.print.loans.index') }}" class="print-form" style="margin-bottom: 14px;" target="_blank">
+            <select name="status">
+                <option value="semua">Semua Status Pinjaman</option>
+                <option value="aktif">Aktif (belum lunas)</option>
+                <option value="lunas">Lunas</option>
+            </select>
+            <select name="branch_id">
+                <option value="">Semua Cabang</option>
+                @foreach ($branches as $branch)
+                    <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                @endforeach
+            </select>
+            <button type="submit" class="btn-secondary">🖨 Cetak Pinjaman (Massal)</button>
+        </form>
+    @endcan
+
     <table class="data-table">
         <thead>
             <tr>

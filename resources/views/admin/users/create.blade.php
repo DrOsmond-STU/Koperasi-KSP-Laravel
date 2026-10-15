@@ -67,6 +67,17 @@
                 <div class="permission-preview" id="permission-preview">Pilih role untuk melihat daftar akses.</div>
             </div>
 
+            <div class="field">
+                <label>Autentikasi Dua Faktor (MFA)</label>
+                <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:500;">
+                    <input type="checkbox" name="enable_mfa" value="1" id="enable-mfa" @checked(old('enable_mfa', true))>
+                    <span>Wajibkan aktivasi MFA saat login pertama</span>
+                </label>
+                <p class="hint" id="mfa-hint" style="font-size:11px; color:var(--muted); margin-top:4px;">
+                    Untuk role internal (teller, petugas kredit, bendahara, manajer, pengawas, admin sistem) MFA wajib dan tidak bisa dinonaktifkan.
+                </p>
+            </div>
+
             <div class="field" id="member-link-field" style="display:none;">
                 <label>Data Anggota Terkait</label>
                 <select name="member_id" class="js-searchable">
@@ -132,9 +143,35 @@
                 memberField.style.display = anggotaChecked ? 'block' : 'none';
             }
 
-            roleChecks.forEach(function (cb) { cb.addEventListener('change', updatePreview); cb.addEventListener('change', updateMemberField); });
+            // Role internal wajib MFA — kunci checkbox `enable_mfa` bila salah satu dipilih.
+            // Checkbox TIDAK di-`disabled` (form tidak akan mengirim field yang disabled);
+            // sebagai gantinya, klik yang mencoba mematikan langsung dibalik. Server
+            // tetap memvalidasi ulang (StoreUserRequest::withValidator) sebagai pertahanan kedua.
+            var mfaRequiredRoles = ['teller', 'petugas_kredit', 'petugas_upf', 'bendahara', 'manajer', 'pengawas', 'admin_sistem'];
+            var enableMfa = document.getElementById('enable-mfa');
+            var mfaHint = document.getElementById('mfa-hint');
+            var mfaForced = false;
+
+            function updateMfaLock() {
+                mfaForced = Array.from(roleChecks).some(function (cb) { return cb.checked && mfaRequiredRoles.indexOf(cb.value) !== -1; });
+                if (mfaForced) {
+                    enableMfa.checked = true;
+                    mfaHint.textContent = 'Role internal terpilih — MFA wajib aktif, tidak bisa dinonaktifkan.';
+                } else {
+                    mfaHint.textContent = 'Opsional untuk role anggota — centang jika Anda ingin memaksa aktivasi MFA untuk akun ini.';
+                }
+            }
+            enableMfa.addEventListener('click', function (event) {
+                if (mfaForced && ! enableMfa.checked) {
+                    event.preventDefault();
+                    enableMfa.checked = true;
+                }
+            });
+
+            roleChecks.forEach(function (cb) { cb.addEventListener('change', updatePreview); cb.addEventListener('change', updateMemberField); cb.addEventListener('change', updateMfaLock); });
             updatePreview();
             updateMemberField();
+            updateMfaLock();
 
             var scopeRadios = document.querySelectorAll('input[name="scope_type"]');
             var scopeSingle = document.getElementById('scope-single');

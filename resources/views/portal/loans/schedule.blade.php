@@ -19,7 +19,7 @@
     <p><a href="{{ route('portal.loans.index') }}" class="link-back">&larr; Kembali ke Pinjaman Saya</a></p>
     <h2>Jadwal Angsuran — {{ $loan->loan_number }}</h2>
     <p style="color:var(--muted); font-size:13px; margin-top:-8px;">
-        {{ $loan->loanProduct->name }} — Plafon Rp {{ number_format($loan->principal_amount, 0, ',', '.') }}, tenor {{ $loan->tenor_months }} bulan
+        {{ $loan->loanProduct->name }} — Plafon Rp {{ number_format($loan->principal_amount, 0, ',', '.') }}, tenor {{ $loan->tenorLabel() }}
     </p>
     @if ($loan->status === 'dicairkan')
         <p style="margin-top:10px;"><a href="{{ route('portal.loans.repayment.create', $loan) }}" class="link-back" style="font-weight:700;">Bayar Angsuran Mandiri &rarr;</a></p>

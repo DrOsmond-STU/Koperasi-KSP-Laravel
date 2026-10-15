@@ -65,9 +65,9 @@
     {{-- Reconciliation Banner --}}
     <div class="banner {{ $report->isFullyBalanced() ? 'banner-ok' : 'banner-bad' }}">
         @if ($report->isFullyBalanced())
-            ✓ Saldo awal balance — Debit Rp {{ number_format($report->coaDebitTotal, 0, ',', '.') }} = Kredit Rp {{ number_format($report->coaCreditTotal, 0, ',', '.') }}. Siap dikunci.
+            ✓ Saldo awal balance — Debit Rp {{ number_format($report->coaDebitTotal, 2, ',', '.') }} = Kredit Rp {{ number_format($report->coaCreditTotal, 2, ',', '.') }}. Siap dikunci.
         @else
-            ✗ Belum balance — Debit Rp {{ number_format($report->coaDebitTotal, 0, ',', '.') }} vs Kredit Rp {{ number_format($report->coaCreditTotal, 0, ',', '.') }}.
+            ✗ Belum balance — Debit Rp {{ number_format($report->coaDebitTotal, 2, ',', '.') }} vs Kredit Rp {{ number_format($report->coaCreditTotal, 2, ',', '.') }}.
             @if (count($report->savingsDiscrepancies) > 0) Ada {{ count($report->savingsDiscrepancies) }} selisih Simpanan vs COA. @endif
             @if (count($report->loansDiscrepancies) > 0) Ada {{ count($report->loansDiscrepancies) }} selisih Pinjaman vs COA. @endif
             @if (count($report->upfDiscrepancies) > 0) Ada {{ count($report->upfDiscrepancies) }} selisih UPF vs COA. @endif
@@ -108,7 +108,7 @@
                         <td>{{ $row->member?->name }} ({{ $row->member?->member_number }})</td>
                         <td>{{ $row->savingsProduct?->name }}</td>
                         <td>{{ $row->account_number }}</td>
-                        <td>Rp {{ number_format($row->balance, 0, ',', '.') }}</td>
+                        <td>Rp {{ number_format($row->balance, 2, ',', '.') }}</td>
                         <td>{{ $row->notes }}</td>
                         @if ($isDraft)
                         <td>
@@ -194,7 +194,7 @@
                         <td>{{ $row->member?->name }} ({{ $row->member?->member_number }})</td>
                         <td>{{ $row->loanProduct?->name }}</td>
                         <td>{{ $row->external_loan_number }}</td>
-                        <td>Rp {{ number_format($row->outstanding_principal, 0, ',', '.') }}</td>
+                        <td>Rp {{ number_format($row->outstanding_principal, 2, ',', '.') }}</td>
                         <td>{{ ucfirst(str_replace('_', ' ', $row->collectibility)) }}</td>
                         @if ($isDraft)
                         <td>
@@ -254,11 +254,11 @@
                     </div>
                     <div>
                         <label>Tenor (bulan)</label>
-                        <input type="number" min="1" name="tenor_months" required>
+                        <input type="number" min="1" name="tenor_days" required>
                     </div>
                     <div>
                         <label>Sisa Tenor (bulan)</label>
-                        <input type="number" min="0" name="remaining_tenor_months" required>
+                        <input type="number" min="0" name="remaining_tenor_days" required>
                     </div>
                     <div>
                         <label>Angsuran ke-</label>
@@ -315,9 +315,9 @@
                         <td>{{ $loan->external_loan_number }}</td>
                         <td>{{ $row->installment_number }}</td>
                         <td>{{ $row->due_date->format('d-m-Y') }}</td>
-                        <td>Rp {{ number_format($row->principal_amount, 0, ',', '.') }}</td>
-                        <td>Rp {{ number_format($row->interest_amount, 0, ',', '.') }}</td>
-                        <td>Rp {{ number_format($row->penalty_amount, 0, ',', '.') }}</td>
+                        <td>Rp {{ number_format($row->principal_amount, 2, ',', '.') }}</td>
+                        <td>Rp {{ number_format($row->interest_amount, 2, ',', '.') }}</td>
+                        <td>Rp {{ number_format($row->penalty_amount, 2, ',', '.') }}</td>
                         <td>{{ $row->status === 'belum_bayar' ? 'Belum Bayar' : 'Sebagian' }}</td>
                         @if ($isDraft)
                         <td>
@@ -413,7 +413,7 @@
                     <tr>
                         <td>{{ $row->account?->code }} — {{ $row->account?->name }}</td>
                         <td>{{ ucfirst($row->position) }}</td>
-                        <td>Rp {{ number_format($row->amount, 0, ',', '.') }}</td>
+                        <td>Rp {{ number_format($row->amount, 2, ',', '.') }}</td>
                         @if ($isDraft)
                         <td>
                             <form method="POST" action="{{ route('admin.saldo-awal.row.destroy', [$batch, 'coa', $row->id]) }}" onsubmit="return confirm('Hapus baris ini?');" style="display:inline">
@@ -487,7 +487,7 @@
                 @foreach ($batch->upf as $row)
                     <tr>
                         <td>{{ $row->retributionType?->code }} — {{ $row->retributionType?->name }}</td>
-                        <td>Rp {{ number_format($row->amount, 0, ',', '.') }}</td>
+                        <td>Rp {{ number_format($row->amount, 2, ',', '.') }}</td>
                         <td>{{ $row->notes }}</td>
                         @if ($isDraft)
                         <td>
@@ -559,8 +559,8 @@
                     <tr>
                         <td>{{ $row->product?->code }} — {{ $row->product?->name }}</td>
                         <td>{{ number_format($row->qty, 4, ',', '.') }}</td>
-                        <td>Rp {{ number_format($row->unit_cost, 0, ',', '.') }}</td>
-                        <td>Rp {{ number_format($row->qty * $row->unit_cost, 0, ',', '.') }}</td>
+                        <td>Rp {{ number_format($row->unit_cost, 2, ',', '.') }}</td>
+                        <td>Rp {{ number_format($row->qty * $row->unit_cost, 2, ',', '.') }}</td>
                         <td>{{ $row->notes }}</td>
                         @if ($isDraft)
                         <td>

@@ -57,8 +57,8 @@
                     @foreach ($selectedEntry->lines as $line)
                         <tr>
                             <td>{{ $line->account->code }} — {{ $line->account->name }}</td>
-                            <td>Rp {{ number_format((float) $line->debit, 0, ',', '.') }}</td>
-                            <td>Rp {{ number_format((float) $line->credit, 0, ',', '.') }}</td>
+                            <td>Rp {{ number_format((float) $line->debit, 2, ',', '.') }}</td>
+                            <td>Rp {{ number_format((float) $line->credit, 2, ',', '.') }}</td>
                         </tr>
                     @endforeach
                 </tbody>

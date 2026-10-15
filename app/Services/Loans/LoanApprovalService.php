@@ -2,12 +2,16 @@
 
 namespace App\Services\Loans;
 
+use App\Exceptions\Accounting\CashAccountException;
+use App\Exceptions\Accounting\JournalPostingException;
 use App\Exceptions\Loans\LoanApprovalException;
 use App\Models\ChartOfAccount;
 use App\Models\Loan;
 use App\Models\LoanApproval;
 use App\Models\User;
+use App\Services\Accounting\CashAccountResolver;
 use App\Services\Accounting\JournalEngine;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -17,31 +21,46 @@ use Illuminate\Support\Facades\DB;
  */
 class LoanApprovalService
 {
-    private const DEFAULT_CASH_ACCOUNT_CODE = '1101';
-
     public function __construct(
         private readonly JournalEngine $journalEngine,
         private readonly LoanScheduleCalculator $scheduleCalculator,
+        private readonly CashAccountResolver $cashAccounts,
+        private readonly LoanBranchResolver $loanBranches,
     ) {}
 
-    public function approve(Loan $loan, User $approver, ?string $notes = null): Loan
+    /**
+     * $disbursedOn = tanggal persetujuan, yang sekaligus tanggal uang
+     * benar-benar keluar. Diisi staf di layar persetujuan, bukan diambil
+     * dari hari ini: koperasi mencatat pinjaman lama secara susulan (akad
+     * Agustus baru masuk sistem sekarang), jadi menyamakan hari pencatatan
+     * dengan hari pencairan membuat kas keluar dan seluruh jadwal
+     * angsurannya meleset berbulan-bulan.
+     *
+     * Null hanya untuk pemanggil non-formulir; perilakunya jatuh ke
+     * tanggalBerlaku().
+     */
+    public function approve(Loan $loan, User $approver, ?string $notes = null, ?string $disbursedOn = null): Loan
     {
         $this->guardCanDecide($loan, $approver);
 
-        return DB::transaction(function () use ($loan, $approver, $notes) {
+        $tanggal = $disbursedOn === null ? null : Carbon::parse($disbursedOn)->startOfDay();
+
+        return DB::transaction(function () use ($loan, $approver, $notes, $tanggal) {
             LoanApproval::query()->create([
                 'loan_id' => $loan->id,
                 'approved_by' => $approver->id,
                 'decision' => 'setuju',
                 'notes' => $notes,
-                'decided_at' => now(),
+                // Keputusan yang dicatat susulan tetap tercatat pada tanggal
+                // keputusan yang sebenarnya, bukan tanggal penginputan.
+                'decided_at' => $tanggal ?? now(),
             ]);
 
             $loan->refresh();
 
             if ($loan->isFullyApproved()) {
                 $loan->update(['status' => 'disetujui']);
-                $this->disburse($loan);
+                $this->disburse($loan, $tanggal);
             }
 
             return $loan->fresh();
@@ -83,42 +102,130 @@ class LoanApprovalService
     }
 
     /**
-     * Jurnal pencairan (Dr Piutang Pinjaman, Cr Kas bersih + Cr Pendapatan
-     * Provisi) dan pembentukan jadwal angsuran — dipanggil otomatis begitu
-     * approval terakhir yang dibutuhkan masuk.
+     * Tanggal berlakunya pinjaman: tanggal pengajuan bila staf memundurkannya
+     * (pencatatan pinjaman lama), selain itu hari ini.
+     *
+     * Pengajuan biasa di loket diajukan dan disetujui pada hari yang sama,
+     * sehingga keduanya bernilai sama dan perilakunya tidak berubah sedikit
+     * pun. Yang berubah hanya pinjaman yang tanggal pengajuannya sengaja
+     * dimundurkan: jadwal angsurannya dihitung mulai tanggal akad yang
+     * sebenarnya, bukan mulai hari pencatatan — tanpa itu pinjaman lama akan
+     * masuk sistem dengan jadwal yang seluruhnya belum jatuh tempo.
      */
-    private function disburse(Loan $loan): void
+    private function tanggalBerlaku(Loan $loan): Carbon
+    {
+        $diajukan = $loan->submitted_at;
+
+        if ($diajukan === null || $diajukan->isToday() || $diajukan->isFuture()) {
+            return Carbon::now();
+        }
+
+        return $diajukan->copy()->startOfDay();
+    }
+
+    /**
+     * Jurnal pencairan (Dr Piutang Pinjaman, Cr Kas — tepat dua baris) dan
+     * pembentukan jadwal angsuran, dipanggil otomatis begitu approval
+     * terakhir yang dibutuhkan masuk.
+     *
+     * BIAYA PROVISI/ADMIN SENGAJA TIDAK IKUT DI SINI. Dulu jurnal ini punya
+     * baris ketiga, Cr Pendapatan Provisi sebesar persentase produk, dan kas
+     * hanya dikredit sebesar pokok dikurangi provisi. Instruksi pengurus 16
+     * Sep 2026: biaya admin dijurnal manual, tidak otomatis saat pencairan.
+     *
+     * Keputusan itu bukan sekadar selera pencatatan. Memotong provisi di muka
+     * berarti anggota menerima uang lebih kecil dari plafonnya (pinjaman 30
+     * juta cair 29,7 juta) sementara utangnya tetap 30 juta — dan kapan
+     * potongan itu boleh diakui sebagai pendapatan bergantung pada akad yang
+     * dipakai koperasi, bukan pada kode. Menjadikannya jurnal manual
+     * mengembalikan keputusan itu ke pengurus.
+     *
+     * `loans.provision_fee_amount` karena itu tidak lagi diisi di sini dan
+     * tetap 0 sejak pengajuan (LoanService). Kolom
+     * `coa_provision_income_account_id` pada produk sengaja dibiarkan — akun
+     * itulah yang dipakai jurnal manualnya nanti.
+     *
+     * CATATAN PENTING soal tanggal jurnal. Seluruh tanggal — entry_date
+     * jurnal, disbursed_at, dan awal jadwal angsuran — mengikuti tanggal
+     * pencairan yang diisi penyetuju di layar persetujuan.
+     *
+     * Sebelumnya entry_date dipatok ke hari ini dengan alasan memundurkan
+     * jurnal bisa menyuntik kas keluar ke periode yang sudah ditutup.
+     * Kekhawatirannya benar, tapi penyelesaiannya salah sasaran: memaksa
+     * tanggal hari ini tidak mencegah apa pun, ia hanya memindahkan
+     * kesalahan ke tempat yang lebih sulit dilihat — kas keluar tercatat di
+     * bulan yang salah, dan neraca kedua bulan itu ikut salah. Yang benar
+     * menjaga periode adalah AccountingPeriod: JournalEngine menolak posting
+     * ke periode yang sudah ditutup, dan penolakan itu kini muncul sebagai
+     * pesan yang bisa ditindaklanjuti (lihat blok try di bawah). Jadi
+     * pencairan susulan masuk pada tanggal yang sebenarnya selama periodenya
+     * masih terbuka, dan ditolak dengan jelas kalau sudah ditutup.
+     */
+    private function disburse(Loan $loan, ?Carbon $disbursedOn = null): void
     {
         $product = $loan->loanProduct;
         $principal = (float) $loan->principal_amount;
-        $provisionFee = round($principal * (float) $product->provision_fee_percentage / 100, 2);
-        $netCash = round($principal - $provisionFee, 2);
+        $berlaku = $disbursedOn ?? $this->tanggalBerlaku($loan);
 
-        $lines = [
-            ['chart_of_account_id' => $product->coa_receivable_account_id, 'debit' => $principal, 'credit' => 0],
-            ['chart_of_account_id' => $this->cashAccount()->id, 'debit' => 0, 'credit' => $netCash],
-        ];
+        $keterangan = "Pencairan pinjaman {$loan->loan_number}";
 
-        if ($provisionFee > 0) {
-            $lines[] = ['chart_of_account_id' => $product->coa_provision_income_account_id, 'debit' => 0, 'credit' => $provisionFee];
+        // Jurnalnya sendiri sudah bertanggal pencairan yang sebenarnya, jadi
+        // yang perlu dicatat di keterangan justru KAPAN ia diinput — supaya
+        // pemeriksa tahu baris ini masuk susulan, bukan hari itu juga.
+        if (! $berlaku->isToday()) {
+            $keterangan .= ' (dicatat susulan pada '.now()->translatedFormat('d M Y').')';
         }
 
-        $this->journalEngine->post([
-            'branch_id' => $loan->branch_id,
-            'entry_date' => now()->toDateString(),
-            'description' => "Pencairan pinjaman {$loan->loan_number}",
-            'created_by' => $loan->created_by,
-            'source' => $loan,
-            'lines' => $lines,
-        ]);
+        // Salah konfigurasi bagan akun adalah kesalahan data yang bisa
+        // diperbaiki admin — bukan bug yang pantas menjatuhkan halaman
+        // persetujuan ke 500. Penentuan akun kasnya ikut masuk ke dalam
+        // try: cabang yang belum diatur akun kasnya gagal di situ, sebelum
+        // JournalEngine sempat dipanggil. Transaksi tetap dibatalkan
+        // seutuhnya, jadi suara approval terakhir ikut mundur dan
+        // persetujuan bisa diulang persis dari keadaan semula setelah
+        // akunnya dibetulkan.
+        try {
+            // Tepat dua baris, keduanya sebesar pokok penuh: anggota menerima
+            // seluruh plafonnya dan berutang sebesar itu juga. Lihat catatan
+            // method ini soal biaya provisi/admin.
+            $lines = [
+                ['chart_of_account_id' => $product->coa_receivable_account_id, 'debit' => $principal, 'credit' => 0],
+                ['chart_of_account_id' => $this->cashAccount($loan)->id, 'debit' => 0, 'credit' => $principal],
+            ];
 
-        $schedule = $this->scheduleCalculator->calculate(
-            $principal,
-            $loan->tenor_months,
-            (float) $loan->interest_rate_percentage,
-            $product->calculation_method,
-            now(),
-        );
+            $this->journalEngine->post([
+                // Cabang unit yang menjalankan pinjaman, bukan cabang yang
+                // kebetulan tersimpan di barisnya — lihat LoanBranchResolver.
+                'branch_id' => $this->loanBranches->resolveOrFail($loan->branch_id),
+                'entry_date' => $berlaku->toDateString(),
+                'description' => $keterangan,
+                'created_by' => $loan->created_by,
+                'source' => $loan,
+                'lines' => $lines,
+            ]);
+        } catch (CashAccountException|JournalPostingException $exception) {
+            throw LoanApprovalException::disbursementPostingFailed($exception->getMessage());
+        }
+
+        // Satuan tenor (hari/bulan) di-snapshot ke pinjaman saat pengajuan
+        // — lihat Loan::usesDailyTenor() / LoanService. Pinjaman anggota
+        // (harian) dan piutang karyawan (bulanan, potong gaji) hidup
+        // berdampingan selamanya, bukan "lama vs baru".
+        $schedule = $loan->usesDailyTenor()
+            ? $this->scheduleCalculator->calculateDaily(
+                $principal,
+                $loan->tenor_days,
+                (float) $loan->interest_rate_percentage,
+                $product->calculation_method,
+                $berlaku,
+            )
+            : $this->scheduleCalculator->calculate(
+                $principal,
+                $loan->tenor_days,
+                (float) $loan->interest_rate_percentage,
+                $product->calculation_method,
+                $berlaku,
+            );
 
         foreach ($schedule as $row) {
             $loan->schedules()->create([
@@ -131,16 +238,76 @@ class LoanApprovalService
         }
 
         $loan->update([
-            'provision_fee_amount' => $provisionFee,
             'status' => 'dicairkan',
             'collectibility' => 'lancar',
-            'disbursed_at' => now()->toDateString(),
+            'disbursed_at' => $berlaku->toDateString(),
+            // Disamakan dengan cabang jurnalnya. Tanpa ini baris pinjaman dan
+            // jurnalnya menunjuk cabang berbeda, dan angsurannya nanti ikut
+            // yang salah.
+            'branch_id' => $this->loanBranches->resolveOrFail($loan->branch_id),
         ]);
     }
 
-    private function cashAccount(): ChartOfAccount
+    /**
+     * Akun kas yang dikredit saat pencairan: kas pencairan pinjaman yang
+     * ditetapkan di Pengaturan → Kas Cabang.
+     *
+     * Bukan akun kas cabang seperti angsuran. Uang pencairan keluar dari kas
+     * kecil unit, sementara angsurannya masuk lewat kas AO — keduanya memang
+     * akun yang berbeda, dan menyamakannya justru membuat salah satunya
+     * salah. `loans.branch_id` juga tidak bisa dipakai sebagai penunjuk unit
+     * (temuan 25 Agu 2026: 142 pinjaman aktif seluruhnya tersimpan di cabang
+     * root "KPPD Pusat"), jadi akunnya memang harus ditetapkan sendiri.
+     *
+     * Sebelumnya di sini tertulis konstanta '1101'. Di koperasi yang bagan
+     * akunnya sendiri, '1101' bukan akun kas yang dipakai — malah dijadikan
+     * akun header — sehingga pencairan selalu ditolak JournalEngine.
+     */
+    private function cashAccount(Loan $loan): ChartOfAccount
     {
-        return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
+        return $this->cashAccounts->forLoanDisbursement($loan->branch_id);
+    }
+
+    /**
+     * Membatalkan PENGAJUAN yang belum pernah dicairkan — salah input,
+     * pengajuan ganda, atau yang diajukan ulang karena datanya keliru.
+     *
+     * Berbeda dari cancelDisbursement() di bawah, yang menangani pinjaman
+     * yang uangnya sudah keluar dan karena itu perlu jurnal pembalik. Di
+     * sini belum ada jurnal sama sekali, jadi tidak ada yang dibalik: yang
+     * dicatat hanya status, alasan, dan siapa yang membatalkan.
+     *
+     * Ini menutup jalan buntu yang nyata. Aturan satu-orang-satu-suara di
+     * guardCanDecide() berlaku untuk menyetujui MAUPUN menolak, jadi
+     * penyetuju yang sudah terlanjur memberi suara tidak bisa lagi menolak
+     * pengajuan yang ternyata salah — sementara "tolak" adalah satu-satunya
+     * jalan keluar yang tersedia sebelumnya. Pembatalan di sini tidak
+     * melanggar aturan itu: ia bukan suara, melainkan penarikan pengajuan,
+     * dan dibatasi ke pembuatnya sendiri atau admin_sistem/manajer lewat
+     * canBeCancelledBy().
+     *
+     * Suara yang sudah masuk sengaja TIDAK dihapus: jejak siapa pernah
+     * menyetujui apa adalah catatan audit, dan pinjaman yang dibatalkan
+     * tidak akan pernah dinilai ulang dari baris yang sama.
+     */
+    public function cancelApplication(Loan $loan, string $reason, int $cancelledBy): Loan
+    {
+        if ($loan->isCancelled()) {
+            throw LoanApprovalException::alreadyCancelled();
+        }
+
+        if ($loan->status !== 'diajukan') {
+            throw LoanApprovalException::applicationNotPending($loan->status);
+        }
+
+        $loan->update([
+            'status' => 'dibatalkan',
+            'cancelled_at' => now(),
+            'cancelled_by' => $cancelledBy,
+            'cancellation_reason' => $reason,
+        ]);
+
+        return $loan->fresh();
     }
 
     /**

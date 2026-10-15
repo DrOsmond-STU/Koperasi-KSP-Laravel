@@ -16,6 +16,7 @@ use App\Services\Dashboard\RetributionDashboardService;
 use App\Services\Reporting\ReportTypeRegistry;
 use App\Services\Retribution\RetributionReportService;
 use App\Services\Retribution\RetributionService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -46,14 +47,20 @@ class RetributionController extends Controller
 
     public function store(StoreRetributionTransactionRequest $request): RedirectResponse
     {
-        $member = $request->validated('payer_type') === 'anggota'
+        $payerType = $request->validated('payer_type');
+
+        $member = $payerType === 'anggota'
             ? Member::query()->findOrFail($request->validated('member_id'))
+            : null;
+
+        $retributionType = $payerType === 'umum' && $request->filled('retribution_type_id')
+            ? RetributionType::query()->findOrFail($request->validated('retribution_type_id'))
             : null;
 
         try {
             $transaction = $this->retributionService->record(
                 branchId: (int) $request->validated('branch_id'),
-                payerType: $request->validated('payer_type'),
+                payerType: $payerType,
                 payerName: $request->validated('payer_name'),
                 member: $member,
                 totalAmount: (float) $request->validated('total_amount'),
@@ -61,6 +68,7 @@ class RetributionController extends Controller
                 createdBy: $request->user()->id,
                 description: $request->validated('description'),
                 date: $request->filled('transaction_date') ? Carbon::parse($request->validated('transaction_date')) : null,
+                retributionType: $retributionType,
             );
         } catch (RetributionException $exception) {
             return redirect()->route('staf.retribusi-upf.index', ['tab' => 'transaksi'])->with('error', $exception->getMessage());
@@ -116,20 +124,66 @@ class RetributionController extends Controller
         $branchId = $this->resolveBranchId($request);
         $date = $request->string('tanggal')->value() ?: now()->toDateString();
 
+        // Transaksi dengan total Rp 0 (mis. seluruh nilainya sudah dibatalkan/nihil)
+        // tidak perlu tampil di laporan cetak — hanya menuh-menuhi halaman.
         $rows = $this->reportService->retribusiUpf([
             'branch_id' => $branchId,
             'period_start' => $date,
             'period_end' => $date,
-        ]);
+        ])->filter(fn (array $row) => (float) $row['total_amount'] !== 0.0)->values();
 
-        $pdf = $this->renderPrintPdf('prints.laporan.upf-harian', [
+        // Kolom jenis retribusi yang totalnya nihil hari itu tidak perlu ikut
+        // tampil — cuma bikin tabel makin lebar tanpa menambah informasi.
+        $activeTypes = RetributionType::query()->where('is_active', true)->orderBy('sort_order')->orderBy('id')->get()
+            ->filter(fn (RetributionType $type) => (float) $rows->sum("retribusi_line_{$type->id}") !== 0.0)->values();
+
+        // Laporan ini punya kolom per jenis retribusi UPF yang dinamis (bisa banyak),
+        // sehingga A4/F4 sering memotong angka di sisi kanan. Dicetak di A3 lanskap
+        // secara khusus untuk laporan ini saja — tidak lewat GeneratesPrintPdf agar
+        // pengaturan kertas global (dipakai cetakan lain) tidak ikut berubah.
+        $pdf = Pdf::loadView('prints.laporan.upf-harian', [
             'date' => $date,
             'branch' => $branchId ? Branch::query()->find($branchId) : null,
             'rows' => $rows,
-            'activeTypes' => RetributionType::query()->where('is_active', true)->orderBy('sort_order')->orderBy('id')->get(),
-        ]);
+            'totalAmount' => $rows->sum('total_amount'),
+            'activeTypes' => $activeTypes,
+        ])->setPaper('a3', 'landscape');
 
         return $pdf->download('laporan-upf-'.$date.'.pdf');
+    }
+
+    /**
+     * Cetak "Rekap Pendapatan UPF" (potrait, periode fleksibel harian s/d
+     * bulanan). Menampilkan breakdown per jenis retribusi + total kas
+     * masuk. Reuse RetributionReportService::rekapPendapatan().
+     */
+    public function printRekap(Request $request): Response
+    {
+        $this->authorize('retribusi_upf.read');
+
+        $branchId = $this->resolveBranchId($request);
+        $periodStart = $request->date('period_start')?->toDateString() ?: now()->startOfMonth()->toDateString();
+        $periodEnd = $request->date('period_end')?->toDateString() ?: now()->toDateString();
+
+        // Guard: kalau end < start, swap otomatis supaya cetakan tetap
+        // masuk akal dan tidak menampilkan hasil kosong yang membingungkan.
+        if ($periodEnd < $periodStart) {
+            [$periodStart, $periodEnd] = [$periodEnd, $periodStart];
+        }
+
+        $rekap = $this->reportService->rekapPendapatan([
+            'branch_id' => $branchId,
+            'period_start' => $periodStart,
+            'period_end' => $periodEnd,
+        ]);
+
+        $pdf = $this->renderPrintPdf('prints.laporan.upf-rekap', [
+            'rekap' => $rekap,
+            'branch' => $branchId ? Branch::query()->find($branchId) : null,
+            'cashAccount' => $this->retributionService->cashAccount(),
+        ], orientationOverride: 'portrait');
+
+        return $pdf->download('rekap-upf-'.$periodStart.'_sd_'.$periodEnd.'.pdf');
     }
 
     /**
@@ -138,32 +192,104 @@ class RetributionController extends Controller
     private function baseViewData(Request $request): array
     {
         $branchId = $this->resolveBranchId($request);
-        $activeTypes = RetributionType::query()->where('is_active', true)->orderBy('sort_order')->orderBy('id')->get();
+        $filters = $this->transactionFilters($request);
+        $activeTypes = RetributionType::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+
+        // Jenis retribusi "split" (persentase < 100, dijumlahkan harus 100)
+        // dipakai untuk pembagian otomatis transaksi Anggota. Jenis "umum"
+        // (persentase = 100) dipakai per-transaksi Umum (dipilih satu).
+        $splitTypes = $activeTypes->filter(fn (RetributionType $type) => (float) $type->percentage < 100)->values();
+        $umumTypes = $activeTypes->filter(fn (RetributionType $type) => (float) $type->percentage >= 100)->values();
+
+        // Anggota untuk retribusi (Kios/Blok). Kalau master data KIOS/BLOK
+        // sudah terisi di produksi, kita batasi ke sana; kalau kosong (mis.
+        // production baru, master data belum di-set), fallback ke semua
+        // anggota yang belum "keluar" — supaya daftar tidak pernah kosong
+        // dan petugas tetap bisa memilih pembayar.
+        $membersQuery = Member::query()
+            ->whereIn('status', ['aktif', 'calon', 'nonaktif'])
+            ->orderBy('name');
+
+        $hasKiosBlokMembers = (clone $membersQuery)
+            ->whereHas('memberType', fn ($q) => $q->whereIn('code', ['KIOS', 'BLOK']))
+            ->exists();
+
+        if ($hasKiosBlokMembers) {
+            $membersQuery->whereHas('memberType', fn ($q) => $q->whereIn('code', ['KIOS', 'BLOK']));
+        }
 
         return [
             'summary' => $this->dashboardService->summary($branchId),
             'branches' => $this->availableBranches($request),
             'selectedBranchId' => $branchId,
             'activeTypes' => $activeTypes,
+            'splitTypes' => $splitTypes,
+            'umumTypes' => $umumTypes,
+            'splitPercentageTotal' => $splitTypes->sum('percentage'),
             'activePercentageTotal' => $activeTypes->sum('percentage'),
-            'members' => Member::query()
-                ->whereHas('memberType', fn ($q) => $q->whereIn('code', ['KIOS', 'BLOK']))
-                ->where('status', 'aktif')
-                ->orderBy('name')
-                ->get(),
-            'recentTransactions' => RetributionTransaction::query()
-                ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
-                ->with(['lines', 'branch'])
-                ->latest('transaction_date')
-                ->latest('id')
-                ->limit(20)
-                ->get(),
+            'members' => $membersQuery->with('memberType')->get(),
+            'transactions' => $this->filteredTransactions($branchId, $filters),
+            'filters' => $filters,
             'staticColumns' => ReportTypeRegistry::columnsFor('retribusi_upf'),
+            'cashAccount' => $this->retributionService->cashAccount(),
         ];
     }
 
     /**
-     * Sama pola dengan DashboardController::resolveBranchId().
+     * @return array{q: ?string, date_from: ?string, date_to: ?string, payment_method: ?string, status: ?string}
+     */
+    private function transactionFilters(Request $request): array
+    {
+        return [
+            'q' => $request->string('q')->trim()->value() ?: null,
+            'date_from' => $request->string('date_from')->value() ?: null,
+            'date_to' => $request->string('date_to')->value() ?: null,
+            'payment_method' => $request->string('payment_method')->value() ?: null,
+            'status' => $request->string('status')->value() ?: null,
+        ];
+    }
+
+    /**
+     * Tab Transaksi sebelumnya cuma menampilkan 20 transaksi terbaru tanpa
+     * cara melihat riwayat lebih lama sama sekali — kalau cabang itu punya
+     * ≥20 transaksi di satu hari saja, tanggal-tanggal sebelumnya jadi
+     * tidak pernah terlihat. Sekarang seluruh riwayat (sejak input pertama)
+     * bisa dijangkau lewat pagination, dengan filter tanggal/metode/status
+     * dan pencarian nomor transaksi/nama pembayar.
+     *
+     * @param  array{q: ?string, date_from: ?string, date_to: ?string, payment_method: ?string, status: ?string}  $filters
+     */
+    private function filteredTransactions(?int $branchId, array $filters): \Illuminate\Pagination\LengthAwarePaginator
+    {
+        return RetributionTransaction::query()
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($filters['q'], fn ($q, $search) => $q->where(
+                fn ($w) => $w->where('transaction_number', 'like', "%{$search}%")
+                    ->orWhere('payer_name', 'like', "%{$search}%")
+            ))
+            ->when($filters['date_from'], fn ($q, $date) => $q->whereDate('transaction_date', '>=', $date))
+            ->when($filters['date_to'], fn ($q, $date) => $q->whereDate('transaction_date', '<=', $date))
+            ->when($filters['payment_method'], fn ($q, $method) => $q->where('payment_method', $method))
+            ->when($filters['status'] === 'aktif', fn ($q) => $q->whereNull('cancelled_at'))
+            ->when($filters['status'] === 'dibatalkan', fn ($q) => $q->whereNotNull('cancelled_at'))
+            ->with(['lines', 'branch'])
+            ->latest('transaction_date')
+            ->latest('id')
+            ->paginate(25)
+            ->withQueryString();
+    }
+
+    /**
+     * Sama pola dengan DashboardController::resolveBranchId(), kecuali
+     * default-nya: modul Retribusi ini secara konsep terikat ke cabang
+     * "Unit Pengelola Fasilitas (UPF)" — begitu user belum memilih cabang
+     * lain secara eksplisit, tampilkan data cabang itu (bukan konsolidasi
+     * semua cabang), supaya KPI dashboard & pilihan Cabang di form
+     * Transaksi konsisten menunjuk cabang yang sama.
      */
     private function resolveBranchId(Request $request): ?int
     {
@@ -171,14 +297,39 @@ class RetributionController extends Controller
         $requested = $request->integer('branch_id') ?: null;
 
         if ($allowed === null) {
-            return $requested;
+            return $requested ?? $this->defaultUpfBranchId();
         }
 
         if ($requested !== null && ! in_array($requested, $allowed, true)) {
             abort(403, 'Anda tidak memiliki akses ke cabang ini.');
         }
 
-        return $requested ?? ($allowed[0] ?? null);
+        return $requested ?? $this->preferredAllowedBranchId($allowed);
+    }
+
+    /**
+     * Cabang "Unit Pengelola Fasilitas (UPF)" dicocokkan lewat nama
+     * (bukan id/code tetap) karena cabang ini didaftarkan langsung oleh
+     * pengurus lewat menu Master Cabang, bukan lewat seeder — tidak ada
+     * id/code yang bisa diasumsikan konsisten di semua instalasi.
+     */
+    private function defaultUpfBranchId(): ?int
+    {
+        return Branch::query()->where('name', 'LIKE', '%UPF%')->value('id');
+    }
+
+    /**
+     * @param  array<int, int>  $allowed
+     */
+    private function preferredAllowedBranchId(array $allowed): ?int
+    {
+        $upfId = $this->defaultUpfBranchId();
+
+        if ($upfId !== null && in_array($upfId, $allowed, true)) {
+            return $upfId;
+        }
+
+        return $allowed[0] ?? null;
     }
 
     private function availableBranches(Request $request)

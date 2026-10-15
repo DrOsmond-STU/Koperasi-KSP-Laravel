@@ -31,11 +31,39 @@ class FinancialReportEngine
 {
     private const RAK_ACCOUNT_CODE = '1132';
 
-    private const CASH_BANK_CODES = ['1101', '1102', '1110'];
-
-    private const SHU_BERJALAN_ACCOUNT_CODE = '3150';
-
     public function __construct(private readonly GeneralLedgerService $ledger) {}
+
+    /**
+     * Kode akun SHU berjalan — lihat config/koperasi.php.
+     *
+     * Dulu konstanta '3150'. Koperasi yang mengganti bagan akunnya dengan
+     * bagan sistem lama tidak punya akun itu, dan barisnya lenyap dari Neraca
+     * tanpa peringatan apa pun — Neraca lalu timpang persis sebesar laba/rugi
+     * berjalan.
+     */
+    private function shuBerjalanAccountCode(): string
+    {
+        return (string) config('koperasi.akun_shu_berjalan', '3150');
+    }
+
+    /**
+     * Akun kas & setara kas, dicocokkan sebagai awalan kode.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, ChartOfAccount>
+     */
+    private function cashBankAccounts()
+    {
+        $prefixes = (array) config('koperasi.akun_kas_bank', ['1101', '1102', '1110']);
+
+        return ChartOfAccount::query()
+            ->where(function ($query) use ($prefixes) {
+                foreach ($prefixes as $prefix) {
+                    $query->orWhere('code', 'like', $prefix.'%');
+                }
+            })
+            ->where('is_postable', true)
+            ->get();
+    }
 
     /**
      * Neraca (Balance Sheet) — RPT-01/RPT-05.
@@ -66,7 +94,7 @@ class FinancialReportEngine
 
             if ($eliminated) {
                 $balance = '0.00';
-            } elseif ($account->code === self::SHU_BERJALAN_ACCOUNT_CODE) {
+            } elseif ($account->code === $this->shuBerjalanAccountCode()) {
                 // Belum ada mekanisme tutup buku (yang menjurnal Pendapatan/
                 // Beban ke akun ini) — jadi saldonya dihitung LIVE dari
                 // laba/rugi kumulatif sejak awal ledger, bukan dibaca dari
@@ -169,7 +197,7 @@ class FinancialReportEngine
 
     private function computeArusKas(?int $branchId, string $periodStart, string $periodEnd): array
     {
-        $cashAccounts = ChartOfAccount::query()->whereIn('code', self::CASH_BANK_CODES)->get();
+        $cashAccounts = $this->cashBankAccounts();
         $dayBeforeStart = Carbon::parse($periodStart)->subDay()->toDateString();
 
         $opening = '0.00';
