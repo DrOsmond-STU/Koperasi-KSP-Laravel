@@ -100,7 +100,7 @@
         </div>
 
         @if ($batch->savings->count() > 0)
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>Anggota</th><th>Produk</th><th>No. Rekening</th><th>Saldo</th><th>Keterangan</th>@if($isDraft)<th></th>@endif</tr></thead>
                 <tbody>
                 @foreach ($batch->savings as $row)
@@ -186,7 +186,7 @@
         </div>
 
         @if ($batch->loans->count() > 0)
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>Anggota</th><th>Produk</th><th>No. Lama</th><th>Sisa Pokok</th><th>Kolektibilitas</th>@if($isDraft)<th></th>@endif</tr></thead>
                 <tbody>
                 @foreach ($batch->loans as $row)
@@ -307,7 +307,7 @@
 
         @php $allInstallments = $batch->loans->flatMap(fn($l) => $l->installments->map(fn($i) => [$i, $l])); @endphp
         @if ($allInstallments->count() > 0)
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>No. Pinjaman Lama</th><th>Angsuran ke-</th><th>Jatuh Tempo</th><th>Pokok</th><th>Jasa</th><th>Denda</th><th>Status</th>@if($isDraft)<th></th>@endif</tr></thead>
                 <tbody>
                 @foreach ($allInstallments as [$row, $loan])
@@ -406,7 +406,7 @@
         </div>
 
         @if ($batch->coaLines->count() > 0)
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>Akun</th><th>Posisi</th><th>Saldo</th>@if($isDraft)<th></th>@endif</tr></thead>
                 <tbody>
                 @foreach ($batch->coaLines as $row)
@@ -481,7 +481,7 @@
         </div>
 
         @if ($batch->upf->count() > 0)
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>Jenis Retribusi</th><th>Saldo Pendapatan</th><th>Keterangan</th>@if($isDraft)<th></th>@endif</tr></thead>
                 <tbody>
                 @foreach ($batch->upf as $row)
@@ -552,7 +552,7 @@
         </div>
 
         @if ($batch->stock->count() > 0)
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>Barang</th><th>Qty</th><th>Harga Satuan</th><th>Nilai</th><th>Keterangan</th>@if($isDraft)<th></th>@endif</tr></thead>
                 <tbody>
                 @foreach ($batch->stock as $row)

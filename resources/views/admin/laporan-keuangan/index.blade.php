@@ -53,7 +53,7 @@
                 $aktivaRows = $neraca['rows']->filter(fn ($row) => $row['account']->type === 'ASET');
                 $pasivaRows = $neraca['rows']->filter(fn ($row) => $row['account']->type !== 'ASET');
             @endphp
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>Akun</th><th>Saldo</th></tr></thead>
                 <tbody>
                     <tr class="section-row"><td colspan="2">Aktiva</td></tr>
@@ -107,7 +107,7 @@
                 $pendapatanRows = $labaRugi['rows']->filter(fn ($row) => $row['account']->type === 'PENDAPATAN');
                 $bebanRows = $labaRugi['rows']->filter(fn ($row) => $row['account']->type === 'BEBAN');
             @endphp
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>Akun</th><th>Jumlah</th></tr></thead>
                 <tbody>
                     <tr class="section-row"><td colspan="2">Pendapatan</td></tr>
@@ -149,7 +149,7 @@
         @if (! $arusKas['has_data'])
             <p class="empty-note">Tidak ada mutasi kas/bank pada periode ini.</p>
         @else
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <tbody>
                     <tr><td>Saldo Awal</td><td>Rp {{ number_format((float) $arusKas['opening_balance'], 2, ',', '.') }}</td></tr>
                     <tr><td>Total Masuk</td><td>Rp {{ number_format((float) $arusKas['total_masuk'], 2, ',', '.') }}</td></tr>
