@@ -28,6 +28,16 @@
             background: var(--leaf); color: var(--pine-bright); border: 1px solid var(--line);
         }
         .balance-bar.unbalanced { background: var(--brick-soft); color: var(--brick); }
+
+        /* Pembatalan jurnal umum — form kecil di dalam baris riwayat. */
+        details.batal-jurnal { display: inline-block; }
+        details.batal-jurnal > summary { list-style: none; cursor: pointer; color: var(--brick); font-weight: 600; }
+        details.batal-jurnal > summary::-webkit-details-marker { display: none; }
+        details.batal-jurnal[open] > summary { margin-bottom: 6px; }
+        .batal-form { display: flex; flex-direction: column; gap: 6px; min-width: 230px; padding: 10px; border: 1px solid var(--brick); border-radius: 9px; background: var(--brick-soft); }
+        .batal-form input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; font-size: 12.5px; }
+        .batal-form button { padding: 7px 10px; background: var(--brick); color: #fff; border: none; border-radius: 7px; font-weight: 700; cursor: pointer; font-size: 12px; }
+        .batal-form small { color: var(--brick); font-size: 11px; line-height: 1.4; }
     </style>
 
     <h2>Jurnal Umum</h2>
@@ -156,18 +166,29 @@
                                     <td data-column="status">
                                         @if ($isCancelled)
                                             <span style="color: var(--brick); font-weight: 600;">Dibatalkan</span>
+                                            <div class="hint" style="margin-top: 2px;">pembalik #{{ $entry->reversals->first()->id }}</div>
                                         @else
                                             <span style="color: var(--ok);">Aktif</span>
                                         @endif
                                     </td>
                                     <td>
                                         <a href="{{ route('admin.jurnal-umum.print', $entry) }}" target="_blank">Cetak</a>
-                                        @can('jurnal.adjust')
-                                            @if (! $isCancelled)
-                                                &nbsp;·&nbsp;
-                                                <a href="{{ route('admin.jurnal-penyesuaian.create', ['entry_id' => $entry->id]) }}" style="color: var(--brick);">Batalkan</a>
-                                            @endif
-                                        @endcan
+                                        {{-- Hanya jurnal yang diinput dari menu ini, belum dibatalkan, dan
+                                             boleh dibatalkan user ini (GeneralJournalController::create()). --}}
+                                        @if (in_array($entry->id, $idBisaDibatalkan ?? [], true))
+                                            &nbsp;·&nbsp;
+                                            <details class="batal-jurnal">
+                                                <summary>Batalkan</summary>
+                                                <form method="POST" action="{{ route('admin.jurnal-umum.cancel', $entry) }}" class="batal-form"
+                                                      onsubmit="return confirm('Batalkan jurnal #{{ $entry->id }}? Jurnal pembalik akan diposting dan tidak bisa diurungkan.');">
+                                                    @csrf
+                                                    <input type="text" name="reason" maxlength="255" required placeholder="Alasan pembatalan">
+                                                    <input type="password" name="password" required autocomplete="current-password" placeholder="Kata sandi Anda">
+                                                    <button type="submit">Batalkan Jurnal #{{ $entry->id }}</button>
+                                                    <small>Jurnal asal tetap tersimpan; sistem memposting jurnal pembalik bertanggal hari ini.</small>
+                                                </form>
+                                            </details>
+                                        @endif
                                     </td>
                                 </tr>
                             @endforeach

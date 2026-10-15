@@ -214,6 +214,8 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.jurnal-umum.store');
     Route::get('/admin/jurnal-umum/{entry}/cetak', [GeneralJournalController::class, 'print'])
         ->name('admin.jurnal-umum.print');
+    Route::post('/admin/jurnal-umum/{entry}/batal', [GeneralJournalController::class, 'cancel'])
+        ->name('admin.jurnal-umum.cancel');
 
     Route::get('/admin/laporan-keuangan', [FinancialReportController::class, 'index'])
         ->name('admin.laporan-keuangan.index');
