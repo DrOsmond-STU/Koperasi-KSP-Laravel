@@ -963,5 +963,6 @@
         document.querySelectorAll('.dt-wrap[data-dt]').forEach(initDataTable);
     </script>
     @include('partials.pager-tabel')
+    @include('partials.cegah-kirim-ganda')
 </body>
 </html>
