@@ -55,7 +55,7 @@ class PosController extends Controller
             ? [
                 'member' => Member::query()->findOrFail($request->validated('member_id')),
                 'loan_product' => LoanProduct::query()->findOrFail($request->validated('loan_product_id')),
-                'tenor_months' => (int) $request->validated('tenor_months'),
+                'tenor_days' => (int) $request->validated('tenor_days'),
             ]
             : null;
 

@@ -97,6 +97,19 @@ class JournalEngine
     public function reverse(JournalEntry $entry, string $reason, int $userId): JournalEntry
     {
         return DB::transaction(function () use ($entry, $reason, $userId) {
+            // Satu jurnal hanya boleh dibalik SEKALI. Baris jurnal asal dikunci
+            // dulu supaya dua permintaan pembatalan yang hampir bersamaan
+            // (klik ganda, kirim ulang) tidak sama-sama lolos: yang kedua
+            // menunggu sampai yang pertama selesai, lalu ditolak di sini dan
+            // seluruh transaksinya (saldo, status) ikut dibatalkan. Audit
+            // produksi 16 Okt 2026 menemukan 2 jurnal yang terlanjur dibalik
+            // dua kali — koreksinya jadi dobel di Buku Besar & Neraca.
+            $locked = JournalEntry::query()->whereKey($entry->id)->lockForUpdate()->firstOrFail();
+
+            if ($locked->reversals()->exists()) {
+                throw JournalPostingException::alreadyReversed($entry->id);
+            }
+
             $reversal = JournalEntry::query()->create([
                 'branch_id' => $entry->branch_id,
                 'entry_date' => now()->toDateString(),

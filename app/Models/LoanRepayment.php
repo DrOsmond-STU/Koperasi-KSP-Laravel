@@ -3,9 +3,11 @@
 namespace App\Models;
 
 use App\Models\Concerns\Auditable;
+use App\Models\Concerns\AuthorizesOwner;
 use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * One payment EVENT against a loan — written only by LoanRepaymentService.
@@ -15,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class LoanRepayment extends Model
 {
-    use Auditable, BelongsToBranch;
+    use Auditable, AuthorizesOwner, BelongsToBranch;
 
     protected $fillable = [
         'branch_id',
@@ -23,7 +25,18 @@ class LoanRepayment extends Model
         'amount',
         'principal_portion',
         'interest_portion',
+        'penalty_portion',
+        'schedule_allocations',
         'balance_after',
+        // Kolom ini sempat kosong di seluruh baris karena tidak pernah masuk
+        // daftar fillable: create() membuangnya diam-diam tanpa galat apa pun.
+        // Isinya selalu sama dengan paid_at (lihat LoanRepaymentService) —
+        // didaftarkan di sini supaya tabel ini seragam dengan
+        // savings_transactions dan retribution_transactions yang memakai nama
+        // kolom yang sama untuk maksud yang sama.
+        'transaction_date',
+        'paid_at',
+        'migrated_at',
         'journal_entry_id',
         'created_by',
         'description',
@@ -39,7 +52,12 @@ class LoanRepayment extends Model
             'amount' => 'decimal:2',
             'principal_portion' => 'decimal:2',
             'interest_portion' => 'decimal:2',
+            'penalty_portion' => 'decimal:2',
+            'schedule_allocations' => 'array',
             'balance_after' => 'decimal:2',
+            'transaction_date' => 'date',
+            'paid_at' => 'date',
+            'migrated_at' => 'datetime',
             'cancelled_at' => 'datetime',
         ];
     }
@@ -47,6 +65,16 @@ class LoanRepayment extends Model
     public function isCancelled(): bool
     {
         return $this->cancelled_at !== null;
+    }
+
+    /**
+     * Tanggal pembayaran untuk ditampilkan — paid_at kalau ada, fallback ke
+     * created_at untuk baris lama (sebelum kolom ini ada) yang tidak punya
+     * tanggal asli lagi.
+     */
+    public function paidOn(): Carbon
+    {
+        return $this->paid_at ?? $this->created_at;
     }
 
     public function loan(): BelongsTo

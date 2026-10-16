@@ -9,6 +9,7 @@ use App\Http\Requests\UpdateSignatureSlotRequest;
 use App\Models\DocumentSignatory;
 use App\Models\DocumentSignatureSlot;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 /**
@@ -32,6 +33,7 @@ class SignatureConfigController extends Controller
         'aktiva_tetap' => ['Diketahui/Disetujui oleh (Pengurus)'],
         'laporan_kas_bank' => ['Pengurus'],
         'laporan_upf' => ['Pengurus'],
+        'laporan_keuangan' => ['Disusun oleh (Bendahara)', 'Diperiksa oleh (Pengurus)', 'Disetujui oleh (Ketua Koperasi)'],
         'unit_usaha' => ['Diketahui oleh (Pengurus)'],
     ];
 
@@ -48,7 +50,7 @@ class SignatureConfigController extends Controller
                 ->orderBy('slot_order')
                 ->get()
                 ->groupBy('document_group'),
-            'documentGroups' => array_keys(self::DEFAULT_SLOTS),
+            'documentGroups' => $this->supportedDocumentGroups(),
         ]);
     }
 
@@ -103,7 +105,15 @@ class SignatureConfigController extends Controller
 
     private function ensureDefaultSlotsExist(): void
     {
+        $supported = $this->supportedDocumentGroups();
+
         foreach (self::DEFAULT_SLOTS as $group => $labels) {
+            // Lewati grup yang belum ada di ENUM document_group kolom DB —
+            // lihat docblock supportedDocumentGroups().
+            if (! in_array($group, $supported, true)) {
+                continue;
+            }
+
             if (DocumentSignatureSlot::query()->where('document_group', $group)->exists()) {
                 continue;
             }
@@ -116,5 +126,36 @@ class SignatureConfigController extends Controller
                 ]);
             }
         }
+    }
+
+    /**
+     * Kolom `document_group` adalah MySQL ENUM (lihat migration
+     * create_document_signature_slots_table) — daftar nilai yang diterima
+     * DB bisa tertinggal dari DEFAULT_SLOTS di kode ini kalau migration
+     * ALTER penambah grup baru belum sempat dijalankan di suatu instalasi
+     * (mis. 'laporan_keuangan' ditambahkan belakangan untuk cetakan
+     * Laporan Keuangan). Introspeksi langsung dari skema di sini supaya
+     * halaman ini TIDAK PERNAH gagal insert/500 karena mismatch itu — grup
+     * yang belum didukung skema cukup disembunyikan dari daftar & dilewati
+     * saat seed default, sampai migration-nya benar-benar dijalankan.
+     *
+     * @return array<int, string>
+     */
+    private function supportedDocumentGroups(): array
+    {
+        $type = DB::selectOne(
+            "SHOW COLUMNS FROM document_signature_slots WHERE Field = 'document_group'"
+        )?->Type ?? '';
+
+        preg_match_all("/'((?:[^'\\\\]|\\\\.)*)'/", $type, $matches);
+
+        $enumValues = array_map(fn (string $value) => stripslashes($value), $matches[1] ?? []);
+
+        // Introspeksi gagal (mis. bukan MySQL, atau format SHOW COLUMNS
+        // berbeda) → jangan sampai malah mematikan seluruh fitur, anggap
+        // semua grup didukung seperti perilaku sebelumnya.
+        return empty($enumValues)
+            ? array_keys(self::DEFAULT_SLOTS)
+            : array_values(array_intersect(array_keys(self::DEFAULT_SLOTS), $enumValues));
     }
 }

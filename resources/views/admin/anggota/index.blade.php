@@ -18,6 +18,13 @@
         .btn-secondary { display: inline-block; padding: 9px 16px; background: var(--paper); color: var(--pine); border: 1px solid var(--line); border-radius: 9px; font-weight: 700; font-size: 13px; cursor: pointer; }
         .print-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .print-form select { padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; font-size: 13px; }
+        .penavigasi { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; font-size: 13px; color: var(--muted); }
+        .penavigasi-halaman { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+        .penavigasi-halaman a, .penavigasi-halaman span.nomor { min-width: 34px; box-sizing: border-box; text-align: center; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--pine); text-decoration: none; font-weight: 600; }
+        .penavigasi-halaman span.aktif { background: var(--pine); border-color: var(--pine); color: #fff; }
+        .penavigasi-halaman span.nonaktif { opacity: .45; }
+        .penavigasi form { display: flex; align-items: center; gap: 6px; }
+        .penavigasi select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; background: var(--surface); color: inherit; }
     </style>
 
     <h2>Data Anggota</h2>
@@ -29,6 +36,7 @@
     <div class="toolbar">
         <form method="GET" action="{{ route('admin.members.index') }}">
             <input class="search-input" type="text" name="q" value="{{ $search }}" placeholder="Cari nama atau nomor anggota...">
+            <input type="hidden" name="per_page" value="{{ $perHalaman }}">
         </form>
         <a href="{{ route('admin.members.create') }}" class="btn-primary">+ Tambah Anggota</a>
     </div>
@@ -67,7 +75,32 @@
         </form>
     @endcan
 
-    <table class="data-table">
+    {{--
+        Laporan Pinjaman per Anggota (massal) — kombinasi cabang + status,
+        lengkap dengan outstanding & historis pembayaran per pinjaman.
+        Tombol "Cetak Pinjaman" per baris di tabel bawah tetap ada untuk
+        cetak satu anggota saja (semua status, tanpa perlu buka form ini).
+    --}}
+    @can('pinjaman.print')
+        <form method="GET" action="{{ route('admin.print.loans.index') }}" class="print-form" style="margin-bottom: 14px;" target="_blank">
+            <select name="status">
+                <option value="semua">Semua Status Pinjaman</option>
+                <option value="aktif">Aktif (belum lunas)</option>
+                <option value="lunas">Lunas</option>
+            </select>
+            <select name="branch_id">
+                <option value="">Semua Cabang</option>
+                @foreach ($branches as $branch)
+                    <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                @endforeach
+            </select>
+            <button type="submit" class="btn-secondary">🖨 Cetak Pinjaman (Massal)</button>
+        </form>
+    @endcan
+
+    {{-- data-no-paginate: daftar ini sudah dipaginasi di server, jadi pager
+         klien (partials/pager-tabel) tidak perlu memotongnya lagi. --}}
+    <table class="data-table" data-no-paginate>
         <thead>
             <tr>
                 <th>No. Anggota</th><th>Nama</th><th>Jenis Anggota</th><th>Cabang</th><th>Status</th><th>Aksi</th>
@@ -93,8 +126,79 @@
                     </td>
                 </tr>
             @empty
-                <tr><td colspan="6">Belum ada anggota — tambahkan yang pertama.</td></tr>
+                <tr><td colspan="6">
+                    @if ($search !== '')
+                        Tidak ada anggota yang cocok dengan "{{ $search }}".
+                    @else
+                        Belum ada anggota — tambahkan yang pertama.
+                    @endif
+                </td></tr>
             @endforelse
         </tbody>
     </table>
+
+    {{-- Penavigasi ditulis tangan (bukan $members->links() yang bermarkup
+         Tailwind), pola sama dengan admin/pinjaman/index. withQueryString() di
+         controller membawa pencarian & ukuran halaman ke setiap tautan. --}}
+    @if ($members->total() > 0)
+        @php
+            $halamanIni = $members->currentPage();
+            $halamanAkhir = $members->lastPage();
+            $dari = max(1, $halamanIni - 2);
+            $sampai = min($halamanAkhir, $halamanIni + 2);
+        @endphp
+        <div class="penavigasi">
+            <span>
+                Menampilkan {{ number_format($members->firstItem(), 0, ',', '.') }}–{{ number_format($members->lastItem(), 0, ',', '.') }}
+                dari {{ number_format($members->total(), 0, ',', '.') }} anggota
+                · Halaman {{ $halamanIni }} dari {{ $halamanAkhir }}
+            </span>
+
+            @if ($members->hasPages())
+                <nav class="penavigasi-halaman" aria-label="Halaman daftar anggota">
+                    @if ($members->onFirstPage())
+                        <span class="nomor nonaktif">‹</span>
+                    @else
+                        <a href="{{ $members->previousPageUrl() }}" title="Sebelumnya">‹</a>
+                    @endif
+
+                    @if ($dari > 1)
+                        <a href="{{ $members->url(1) }}">1</a>
+                        @if ($dari > 2)<span>…</span>@endif
+                    @endif
+                    @for ($p = $dari; $p <= $sampai; $p++)
+                        @if ($p === $halamanIni)
+                            <span class="nomor aktif" aria-current="page">{{ $p }}</span>
+                        @else
+                            <a href="{{ $members->url($p) }}">{{ $p }}</a>
+                        @endif
+                    @endfor
+                    @if ($sampai < $halamanAkhir)
+                        @if ($sampai < $halamanAkhir - 1)<span>…</span>@endif
+                        <a href="{{ $members->url($halamanAkhir) }}">{{ $halamanAkhir }}</a>
+                    @endif
+
+                    @if ($members->hasMorePages())
+                        <a href="{{ $members->nextPageUrl() }}" title="Berikutnya">›</a>
+                    @else
+                        <span class="nomor nonaktif">›</span>
+                    @endif
+                </nav>
+            @endif
+
+            <form method="GET" action="{{ route('admin.members.index') }}">
+                @if ($search !== '')
+                    <input type="hidden" name="q" value="{{ $search }}">
+                @endif
+                <label for="per-page-anggota">Tampilkan</label>
+                <select id="per-page-anggota" name="per_page" onchange="this.form.submit()">
+                    @foreach ($pilihanPerHalaman as $n)
+                        <option value="{{ $n }}" @selected($n === $perHalaman)>{{ $n }}</option>
+                    @endforeach
+                </select>
+                <span>per halaman</span>
+                <noscript><button type="submit" class="btn-secondary">OK</button></noscript>
+            </form>
+        </div>
+    @endif
 @endsection

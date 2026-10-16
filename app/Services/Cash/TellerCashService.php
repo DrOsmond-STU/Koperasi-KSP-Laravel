@@ -5,6 +5,7 @@ namespace App\Services\Cash;
 use App\Models\CashCategory;
 use App\Models\ChartOfAccount;
 use App\Models\TellerCashTransaction;
+use App\Services\Accounting\CashAccountResolver;
 use App\Services\Accounting\JournalEngine;
 use Illuminate\Support\Facades\DB;
 
@@ -15,9 +16,10 @@ use Illuminate\Support\Facades\DB;
  */
 class TellerCashService
 {
-    private const DEFAULT_CASH_ACCOUNT_CODE = '1101';
-
-    public function __construct(private readonly JournalEngine $journalEngine) {}
+    public function __construct(
+        private readonly JournalEngine $journalEngine,
+        private readonly CashAccountResolver $cashAccounts,
+    ) {}
 
     public function record(
         CashCategory $category,
@@ -28,7 +30,7 @@ class TellerCashService
         ?ChartOfAccount $cashAccount = null,
         ?string $idempotencyKey = null,
     ): TellerCashTransaction {
-        $cashAccount ??= $this->defaultCashAccount();
+        $cashAccount = $this->cashAccounts->forBranch($branchId, $cashAccount);
 
         return DB::transaction(function () use ($category, $amount, $branchId, $createdBy, $description, $cashAccount, $idempotencyKey) {
             $lines = $category->isMasuk()
@@ -65,9 +67,18 @@ class TellerCashService
     /**
      * @return array<int, array{account_code: string, account_name: string, debit: float, credit: float}>
      */
-    public function previewLines(CashCategory $category, float $amount, ?ChartOfAccount $cashAccount = null): array
+    public function previewLines(CashCategory $category, float $amount, ?ChartOfAccount $cashAccount = null, ?int $branchId = null): array
     {
-        $cashAccount ??= $this->defaultCashAccount();
+        // Pratinjau harus memperlihatkan akun yang BENAR-BENAR akan dipakai
+        // record(), jadi ikut menerima cabangnya. Kalau akun kasnya belum
+        // bisa ditentukan, halaman pratinjau tidak boleh ikut gagal —
+        // barisnya dikosongkan dan kegagalan sebenarnya muncul saat simpan.
+        $cashAccount ??= $this->cashAccounts->tryForBranch($branchId);
+
+        if ($cashAccount === null) {
+            return [];
+        }
+
         $categoryAccount = $category->account;
 
         return $category->isMasuk()
@@ -79,10 +90,5 @@ class TellerCashService
                 ['account_code' => $categoryAccount->code, 'account_name' => $categoryAccount->name, 'debit' => $amount, 'credit' => 0],
                 ['account_code' => $cashAccount->code, 'account_name' => $cashAccount->name, 'debit' => 0, 'credit' => $amount],
             ];
-    }
-
-    private function defaultCashAccount(): ChartOfAccount
-    {
-        return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
     }
 }

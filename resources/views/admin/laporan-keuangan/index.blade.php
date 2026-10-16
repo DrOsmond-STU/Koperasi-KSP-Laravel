@@ -53,39 +53,49 @@
                 $aktivaRows = $neraca['rows']->filter(fn ($row) => $row['account']->type === 'ASET');
                 $pasivaRows = $neraca['rows']->filter(fn ($row) => $row['account']->type !== 'ASET');
             @endphp
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>Akun</th><th>Saldo</th></tr></thead>
                 <tbody>
                     <tr class="section-row"><td colspan="2">Aktiva</td></tr>
                     @foreach ($aktivaRows as $row)
                         <tr>
                             <td>{{ $row['account']->code }} — {{ $row['account']->name }} {{ $row['eliminated'] ? '(dieliminasi)' : '' }}</td>
-                            <td>Rp {{ number_format((float) $row['balance'], 0, ',', '.') }}</td>
+                            <td>Rp {{ number_format((float) $row['balance'], 2, ',', '.') }}</td>
                         </tr>
                     @endforeach
-                    <tr class="total-row"><td>Total Aktiva</td><td>Rp {{ number_format((float) $neraca['total_aset'], 0, ',', '.') }}</td></tr>
+                    <tr class="total-row"><td>Total Aktiva</td><td>Rp {{ number_format((float) $neraca['total_aset'], 2, ',', '.') }}</td></tr>
 
                     <tr class="section-row"><td colspan="2">Pasiva</td></tr>
                     @foreach ($pasivaRows as $row)
                         <tr>
                             <td>{{ $row['account']->code }} — {{ $row['account']->name }} {{ $row['eliminated'] ? '(dieliminasi)' : '' }}</td>
-                            <td>Rp {{ number_format((float) $row['balance'], 0, ',', '.') }}</td>
+                            <td>Rp {{ number_format((float) $row['balance'], 2, ',', '.') }}</td>
                         </tr>
                     @endforeach
-                    <tr class="total-row"><td>Total Pasiva (Liabilitas + Ekuitas)</td><td>Rp {{ number_format((float) bcadd($neraca['total_liabilitas'], $neraca['total_ekuitas'], 2), 0, ',', '.') }}</td></tr>
+                    <tr class="total-row"><td>Total Pasiva (Liabilitas + Ekuitas)</td><td>Rp {{ number_format((float) bcadd($neraca['total_liabilitas'], $neraca['total_ekuitas'], 2), 2, ',', '.') }}</td></tr>
                 </tbody>
             </table>
             <p class="{{ $neraca['is_balanced'] ? 'badge-ok' : 'badge-bad' }}">{{ $neraca['is_balanced'] ? 'Seimbang' : 'TIDAK SEIMBANG' }}</p>
         @endif
-        <form method="POST" action="{{ route('admin.laporan-keuangan.export') }}">
+        <form method="POST" action="{{ route('admin.laporan-keuangan.export') }}" style="display:inline-block; margin-right:10px;">
             @csrf
             <input type="hidden" name="report_kind" value="neraca">
             <input type="hidden" name="basis" value="{{ $basis }}">
             <input type="hidden" name="branch_id" value="{{ $selectedBranchId }}">
             <input type="hidden" name="as_of_date" value="{{ $asOfDate }}">
             <select name="format"><option value="pdf">PDF</option><option value="xlsx">Excel</option></select>
-            <button type="submit" class="btn-primary">Ekspor</button>
+            <button type="submit" class="btn-primary">Ekspor Stafel</button>
         </form>
+        {{-- Cetak Neraca dalam bentuk skontro (T-form Aset vs Kewajiban+
+             Modal). Reuse filter bar di atas — cakupan (Konsolidasi vs
+             Cabang) diambil dari `branch_id`, tanggal dari `as_of_date`,
+             basis dari `basis`. Landscape dipaksa di controller karena
+             dua kolom sisi-sisi tidak muat di portrait. --}}
+        <a class="btn-primary" style="text-decoration:none; display:inline-block;"
+           href="{{ route('admin.laporan-keuangan.print-scontro', ['basis' => $basis, 'branch_id' => $selectedBranchId, 'as_of_date' => $asOfDate]) }}"
+           target="_blank">
+            Cetak Neraca (Skontro)
+        </a>
     </div>
 
     <div class="panel">
@@ -97,28 +107,28 @@
                 $pendapatanRows = $labaRugi['rows']->filter(fn ($row) => $row['account']->type === 'PENDAPATAN');
                 $bebanRows = $labaRugi['rows']->filter(fn ($row) => $row['account']->type === 'BEBAN');
             @endphp
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>Akun</th><th>Jumlah</th></tr></thead>
                 <tbody>
                     <tr class="section-row"><td colspan="2">Pendapatan</td></tr>
                     @foreach ($pendapatanRows as $row)
                         <tr>
                             <td>{{ $row['account']->code }} — {{ $row['account']->name }}</td>
-                            <td>Rp {{ number_format((float) $row['amount'], 0, ',', '.') }}</td>
+                            <td>Rp {{ number_format((float) $row['amount'], 2, ',', '.') }}</td>
                         </tr>
                     @endforeach
-                    <tr class="total-row"><td>Total Pendapatan</td><td>Rp {{ number_format((float) $labaRugi['total_pendapatan'], 0, ',', '.') }}</td></tr>
+                    <tr class="total-row"><td>Total Pendapatan</td><td>Rp {{ number_format((float) $labaRugi['total_pendapatan'], 2, ',', '.') }}</td></tr>
 
                     <tr class="section-row"><td colspan="2">Beban</td></tr>
                     @foreach ($bebanRows as $row)
                         <tr>
                             <td>{{ $row['account']->code }} — {{ $row['account']->name }}</td>
-                            <td>Rp {{ number_format((float) $row['amount'], 0, ',', '.') }}</td>
+                            <td>Rp {{ number_format((float) $row['amount'], 2, ',', '.') }}</td>
                         </tr>
                     @endforeach
-                    <tr class="total-row"><td>Total Beban</td><td>Rp {{ number_format((float) $labaRugi['total_beban'], 0, ',', '.') }}</td></tr>
+                    <tr class="total-row"><td>Total Beban</td><td>Rp {{ number_format((float) $labaRugi['total_beban'], 2, ',', '.') }}</td></tr>
 
-                    <tr class="total-row"><td>SHU (Pendapatan − Beban)</td><td>Rp {{ number_format((float) $labaRugi['shu'], 0, ',', '.') }}</td></tr>
+                    <tr class="total-row"><td>SHU (Pendapatan − Beban)</td><td>Rp {{ number_format((float) $labaRugi['shu'], 2, ',', '.') }}</td></tr>
                 </tbody>
             </table>
         @endif
@@ -139,12 +149,12 @@
         @if (! $arusKas['has_data'])
             <p class="empty-note">Tidak ada mutasi kas/bank pada periode ini.</p>
         @else
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <tbody>
-                    <tr><td>Saldo Awal</td><td>Rp {{ number_format((float) $arusKas['opening_balance'], 0, ',', '.') }}</td></tr>
-                    <tr><td>Total Masuk</td><td>Rp {{ number_format((float) $arusKas['total_masuk'], 0, ',', '.') }}</td></tr>
-                    <tr><td>Total Keluar</td><td>Rp {{ number_format((float) $arusKas['total_keluar'], 0, ',', '.') }}</td></tr>
-                    <tr class="total-row"><td>Saldo Akhir</td><td>Rp {{ number_format((float) $arusKas['closing_balance'], 0, ',', '.') }}</td></tr>
+                    <tr><td>Saldo Awal</td><td>Rp {{ number_format((float) $arusKas['opening_balance'], 2, ',', '.') }}</td></tr>
+                    <tr><td>Total Masuk</td><td>Rp {{ number_format((float) $arusKas['total_masuk'], 2, ',', '.') }}</td></tr>
+                    <tr><td>Total Keluar</td><td>Rp {{ number_format((float) $arusKas['total_keluar'], 2, ',', '.') }}</td></tr>
+                    <tr class="total-row"><td>Saldo Akhir</td><td>Rp {{ number_format((float) $arusKas['closing_balance'], 2, ',', '.') }}</td></tr>
                 </tbody>
             </table>
             <p class="{{ $arusKas['is_consistent'] ? 'badge-ok' : 'badge-bad' }}">{{ $arusKas['is_consistent'] ? 'Konsisten dengan Buku Besar' : 'TIDAK KONSISTEN' }}</p>

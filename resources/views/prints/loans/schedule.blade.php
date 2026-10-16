@@ -6,7 +6,7 @@
     <h2 style="font-size:13pt; margin:0 0 2px;">Jadwal &amp; Historis Angsuran — {{ $loan->loan_number }}</h2>
     <p style="font-size:9pt; color:#5C6E64; margin:0 0 4px;">
         {{ $loan->member->member_number }} — {{ $loan->member->name }} | {{ $loan->loanProduct->name }} |
-        Plafon Rp {{ number_format($loan->principal_amount, 0, ',', '.') }}, tenor {{ $loan->tenor_months }} bulan
+        Plafon Rp {{ number_format($loan->principal_amount, 2, ',', '.') }}, tenor {{ $loan->tenorLabel() }}
     </p>
     <p style="font-size:8pt; color:#5C6E64; margin:0 0 14px;">Dicetak: {{ $generatedAt->translatedFormat('d M Y H:i') }}</p>
 
@@ -28,10 +28,10 @@
                 <tr>
                     <td>{{ $schedule->installment_number }}</td>
                     <td>{{ $schedule->due_date->translatedFormat('d M Y') }}</td>
-                    <td>Rp {{ number_format($schedule->principal_amount, 0, ',', '.') }}</td>
-                    <td>Rp {{ number_format($schedule->interest_amount, 0, ',', '.') }}</td>
-                    <td>Rp {{ number_format($schedule->total_amount, 0, ',', '.') }}</td>
-                    <td>Rp {{ number_format($schedule->paid_amount, 0, ',', '.') }}</td>
+                    <td>Rp {{ number_format($schedule->principal_amount, 2, ',', '.') }}</td>
+                    <td>Rp {{ number_format($schedule->interest_amount, 2, ',', '.') }}</td>
+                    <td>Rp {{ number_format($schedule->total_amount, 2, ',', '.') }}</td>
+                    <td>Rp {{ number_format($schedule->paid_amount, 2, ',', '.') }}</td>
                     <td>{{ ucfirst(str_replace('_', ' ', $schedule->status)) }}</td>
                 </tr>
             @empty
@@ -48,20 +48,23 @@
                 <th>Nominal Bayar</th>
                 <th>Porsi Pokok</th>
                 <th>Porsi Jasa</th>
-                <th>Sisa Tunggakan</th>
+                <th>Porsi Denda</th>
+                <th>Sisa Pinjaman</th>
             </tr>
         </thead>
         <tbody>
             @forelse ($repayments as $repayment)
                 <tr>
-                    <td>{{ $repayment->created_at->translatedFormat('d M Y H:i') }}</td>
-                    <td>Rp {{ number_format($repayment->amount, 0, ',', '.') }}</td>
-                    <td>Rp {{ number_format($repayment->principal_portion, 0, ',', '.') }}</td>
-                    <td>Rp {{ number_format($repayment->interest_portion, 0, ',', '.') }}</td>
-                    <td>Rp {{ number_format($repayment->balance_after, 0, ',', '.') }}</td>
+                    <td>{{ $repayment->paidOn()->translatedFormat('d M Y') }}</td>
+                    <td>Rp {{ number_format($repayment->amount, 2, ',', '.') }}</td>
+                    <td>Rp {{ number_format($repayment->principal_portion, 2, ',', '.') }}</td>
+                    <td>Rp {{ number_format($repayment->interest_portion, 2, ',', '.') }}</td>
+                    <td>Rp {{ number_format($repayment->penalty_portion, 2, ',', '.') }}</td>
+                    {{-- Sisa pokok dari SisaPinjamanCalculator, bukan balance_after: denda tidak ikut menghitung sisa pinjaman. --}}
+                    <td>{{ $repayment->isCancelled() ? '– (dibatalkan)' : 'Rp '.number_format($sisaSetelah[$repayment->id] ?? $repayment->balance_after, 2, ',', '.') }}</td>
                 </tr>
             @empty
-                <tr><td colspan="5">Belum ada pembayaran angsuran.</td></tr>
+                <tr><td colspan="6">Belum ada pembayaran angsuran.</td></tr>
             @endforelse
         </tbody>
     </table>

@@ -5,6 +5,7 @@
 @section('content')
     <style>
         .form-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; max-width: 760px; margin-bottom: 20px; }
+        .form-card--wide { max-width: none; }
         .field { margin-bottom: 14px; }
         .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
         .field input, .field select { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; }
@@ -16,9 +17,6 @@
         .error-text { color: var(--brick); font-size: 12px; margin-top: 4px; }
         .status-msg { color: var(--ok); font-size: 13px; margin-bottom: 14px; }
         .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
-        .data-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
-        .data-table th, .data-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
-
         .lines-table { width: 100%; border-collapse: collapse; margin: 10px 0; }
         .lines-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 0 8px 6px; }
         .lines-table td { padding: 4px 8px 4px 0; vertical-align: top; }
@@ -30,6 +28,16 @@
             background: var(--leaf); color: var(--pine-bright); border: 1px solid var(--line);
         }
         .balance-bar.unbalanced { background: var(--brick-soft); color: var(--brick); }
+
+        /* Pembatalan jurnal umum — form kecil di dalam baris riwayat. */
+        details.batal-jurnal { display: inline-block; }
+        details.batal-jurnal > summary { list-style: none; cursor: pointer; color: var(--brick); font-weight: 600; }
+        details.batal-jurnal > summary::-webkit-details-marker { display: none; }
+        details.batal-jurnal[open] > summary { margin-bottom: 6px; }
+        .batal-form { display: flex; flex-direction: column; gap: 6px; min-width: 230px; padding: 10px; border: 1px solid var(--brick); border-radius: 9px; background: var(--brick-soft); }
+        .batal-form input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; font-size: 12.5px; }
+        .batal-form button { padding: 7px 10px; background: var(--brick); color: #fff; border: none; border-radius: 7px; font-weight: 700; cursor: pointer; font-size: 12px; }
+        .batal-form small { color: var(--brick); font-size: 11px; line-height: 1.4; }
     </style>
 
     <h2>Jurnal Umum</h2>
@@ -109,25 +117,88 @@
         </form>
     </div>
 
-    <div class="form-card">
+    <div class="form-card form-card--wide">
         <h3 style="margin-top:0;">Transaksi Jurnal Umum Terbaru</h3>
         @if ($recentEntries->isEmpty())
             <p class="hint">Belum ada transaksi jurnal umum.</p>
         @else
-            <table class="data-table">
-                <thead><tr><th>Tanggal</th><th>Keterangan</th><th>Cabang</th><th>Total</th><th>Aksi</th></tr></thead>
-                <tbody>
-                    @foreach ($recentEntries as $entry)
-                        <tr>
-                            <td>{{ $entry->entry_date->translatedFormat('d M Y') }}</td>
-                            <td>{{ $entry->description }}</td>
-                            <td>{{ $entry->branch?->name }}</td>
-                            <td>Rp {{ number_format((float) $entry->lines->sum('debit'), 0, ',', '.') }}</td>
-                            <td><a href="{{ route('admin.jurnal-umum.print', $entry) }}" target="_blank">Cetak</a></td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
+            @php
+                $branchOptions = $recentEntries->pluck('branch.name')->filter()->unique()->sort()->values();
+            @endphp
+            <div class="dt-wrap" data-dt data-date-column="tanggal">
+                <div class="dt-toolbar">
+                    <input type="search" class="dt-search" placeholder="Cari keterangan, cabang, dll...">
+
+                    <div class="dt-period">
+                        <span>Periode</span>
+                        <input type="date" class="dt-date-from" aria-label="Dari tanggal">
+                        <span>s/d</span>
+                        <input type="date" class="dt-date-to" aria-label="Sampai tanggal">
+                    </div>
+
+                    <select class="dt-filter" data-filter-column="cabang">
+                        <option value="">Cabang — Semua</option>
+                        @foreach ($branchOptions as $branchName)
+                            <option value="{{ $branchName }}">{{ $branchName }}</option>
+                        @endforeach
+                    </select>
+
+                    <select class="dt-filter" data-filter-column="status">
+                        <option value="">Status — Semua</option>
+                        <option value="Aktif">Aktif</option>
+                        <option value="Dibatalkan">Dibatalkan</option>
+                    </select>
+
+                    <span class="dt-count"></span>
+                </div>
+
+                <div class="dt-table-scroll">
+                    <table class="dt-table">
+                        <thead><tr><th>Tanggal</th><th>Keterangan</th><th>Cabang</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <tbody>
+                            @foreach ($recentEntries as $entry)
+                                @php $isCancelled = $entry->reversals->isNotEmpty(); @endphp
+                                <tr>
+                                    <td data-column="tanggal">{{ $entry->entry_date->format('d-m-Y') }}</td>
+                                    <td data-column="keterangan">{{ $entry->description }}</td>
+                                    <td data-column="cabang">{{ $entry->branch?->name }}</td>
+                                    <td data-column="total">Rp {{ number_format((float) $entry->lines->sum('debit'), 2, ',', '.') }}</td>
+                                    <td data-column="status">
+                                        @if ($isCancelled)
+                                            <span style="color: var(--brick); font-weight: 600;">Dibatalkan</span>
+                                            <div class="hint" style="margin-top: 2px;">pembalik #{{ $entry->reversals->first()->id }}</div>
+                                        @else
+                                            <span style="color: var(--ok);">Aktif</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <a href="{{ route('admin.jurnal-umum.print', $entry) }}" target="_blank">Cetak</a>
+                                        {{-- Hanya jurnal yang diinput dari menu ini, belum dibatalkan, dan
+                                             boleh dibatalkan user ini (GeneralJournalController::create()). --}}
+                                        @if (in_array($entry->id, $idBisaDibatalkan ?? [], true))
+                                            &nbsp;·&nbsp;
+                                            <details class="batal-jurnal">
+                                                <summary>Batalkan</summary>
+                                                <form method="POST" action="{{ route('admin.jurnal-umum.cancel', $entry) }}" class="batal-form"
+                                                      onsubmit="return confirm('Batalkan jurnal #{{ $entry->id }}? Jurnal pembalik akan diposting dan tidak bisa diurungkan.');">
+                                                    @csrf
+                                                    <input type="text" name="reason" maxlength="255" required placeholder="Alasan pembatalan">
+                                                    <input type="password" name="password" required autocomplete="current-password" placeholder="Kata sandi Anda">
+                                                    <button type="submit">Batalkan Jurnal #{{ $entry->id }}</button>
+                                                    <small>Jurnal asal tetap tersimpan; sistem memposting jurnal pembalik bertanggal hari ini.</small>
+                                                </form>
+                                            </details>
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+
+                <p class="dt-empty" hidden>Tidak ada data yang cocok dengan pencarian/filter.</p>
+            </div>
+            <p class="hint">Transaksi yang sudah diposting tidak dapat diubah atau dihapus langsung (menjaga keabsahan pembukuan/audit trail). Gunakan <strong>Batalkan</strong> untuk membuat jurnal balik (koreksi) — entri asal tetap tersimpan sebagai riwayat, lalu buat entri baru yang benar melalui form di atas.</p>
         @endif
     </div>
 

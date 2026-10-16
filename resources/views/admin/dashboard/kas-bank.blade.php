@@ -85,7 +85,7 @@
     <div class="kpi-detail-panels">
         <div class="kpi-detail" id="kpi-detail-saldo" hidden>
             <h4>Rincian Saldo per Akun Kas/Bank</h4>
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>Akun</th><th>Saldo</th></tr></thead>
                 <tbody>
                     @foreach ($summary['balances'] as $row)
@@ -99,7 +99,7 @@
             @if (count($masukCategories) === 0)
                 <p class="empty-note">Belum ada kas masuk hari ini.</p>
             @else
-                <table class="data-table">
+                <table class="data-table" data-no-paginate>
                     <thead><tr><th>Kategori</th><th>Total</th></tr></thead>
                     <tbody>
                         @foreach ($masukCategories as $row)
@@ -114,7 +114,7 @@
             @if (count($keluarCategories) === 0)
                 <p class="empty-note">Belum ada kas keluar hari ini.</p>
             @else
-                <table class="data-table">
+                <table class="data-table" data-no-paginate>
                     <thead><tr><th>Kategori</th><th>Total</th></tr></thead>
                     <tbody>
                         @foreach ($keluarCategories as $row)
@@ -213,7 +213,7 @@
                 </div>
             </div>
         @endforeach
-        <table class="data-table">
+        <table class="data-table" data-no-paginate>
             <thead><tr><th>Akun</th><th>Saldo</th></tr></thead>
             <tbody>
                 @foreach ($balanceRows as $row)
@@ -245,7 +245,7 @@
                     </div>
                 </div>
             @endforeach
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>Kategori</th><th>Jenis</th><th>Total</th></tr></thead>
                 <tbody>
                     @foreach ($summary['category_breakdown'] as $row)
@@ -265,7 +265,7 @@
         @if ($summary['recent_entries']->isEmpty())
             <p class="empty-note">Belum ada transaksi kas/bank pada cabang ini.</p>
         @else
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>Tanggal</th><th>Keterangan</th></tr></thead>
                 <tbody>
                     @foreach ($summary['recent_entries'] as $entry)

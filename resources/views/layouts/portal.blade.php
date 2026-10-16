@@ -154,5 +154,7 @@
     <footer class="app-footer">
         @include('partials.brand-footer')
     </footer>
+    @include('partials.pager-tabel')
+    @include('partials.cegah-kirim-ganda')
 </body>
 </html>
