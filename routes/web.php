@@ -68,6 +68,7 @@ use App\Http\Controllers\MfaSetupController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Staf\LoanApplicationController;
 use App\Http\Controllers\Staf\LoanRepaymentController as StafLoanRepaymentController;
+use App\Http\Controllers\Staf\LoanRepaymentListController as StafLoanRepaymentListController;
 use App\Http\Controllers\Staf\PosController;
 use App\Http\Controllers\Staf\RetributionController;
 use App\Http\Controllers\Staf\SalesReturnController;
@@ -423,6 +424,10 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
 
     Route::get('/staf/angsuran', [StafLoanRepaymentController::class, 'create'])
         ->name('staf.angsuran.create');
+    Route::get('/staf/angsuran/daftar', [StafLoanRepaymentListController::class, 'index'])
+        ->name('staf.angsuran.daftar');
+    Route::get('/staf/angsuran/daftar/cetak', [StafLoanRepaymentListController::class, 'print'])
+        ->name('staf.angsuran.daftar.cetak');
     Route::post('/staf/angsuran/preview', [StafLoanRepaymentController::class, 'preview'])
         ->name('staf.angsuran.preview');
     Route::post('/staf/angsuran', [StafLoanRepaymentController::class, 'store'])

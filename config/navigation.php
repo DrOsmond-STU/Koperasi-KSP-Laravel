@@ -29,6 +29,7 @@ return [
                 ['label' => 'Transaksi Teller', 'route' => 'staf.teller.create', 'permission' => 'simpanan.create', 'icon' => 'repeat'],
                 ['label' => 'Pengajuan Pinjaman', 'route' => 'staf.pengajuan-pinjaman.create', 'permission' => 'pinjaman.create', 'icon' => 'send'],
                 ['label' => 'Catat Angsuran', 'route' => 'staf.angsuran.create', 'permission' => 'pinjaman.create', 'icon' => 'repeat'],
+                ['label' => 'Daftar Angsuran Anggota', 'route' => 'staf.angsuran.daftar', 'permission' => 'pinjaman.read', 'icon' => 'clipboard'],
                 ['label' => 'Persetujuan Pinjaman', 'route' => 'admin.pinjaman.index', 'permission' => 'pinjaman.approve', 'icon' => 'check-circle'],
                 ['label' => 'Perbaikan Jadwal Angsuran', 'route' => 'admin.pinjaman.perbaikan-jadwal.index', 'permission' => 'saldo_awal.update', 'icon' => 'tool'],
                 ['label' => 'Penyelarasan Jadwal Angsuran', 'route' => 'admin.pinjaman.penyelarasan-jadwal.index', 'permission' => 'saldo_awal.update', 'icon' => 'sliders'],

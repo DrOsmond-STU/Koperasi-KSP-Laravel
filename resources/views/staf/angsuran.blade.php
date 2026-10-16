@@ -138,6 +138,9 @@
             @empty
                 <p style="color: var(--muted); font-size: 13px;">Belum ada angsuran dicatat hari ini.</p>
             @endforelse
+            <p style="margin: 12px 0 0; font-size: 12px;">
+                <a href="{{ route('staf.angsuran.daftar') }}">Lihat semua angsuran → Daftar Angsuran Anggota</a>
+            </p>
         </div>
     </div>
 
