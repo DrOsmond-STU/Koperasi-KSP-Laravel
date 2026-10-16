@@ -126,7 +126,7 @@
                     <a href="{{ route('admin.print.loan-repayment.show', $repayment) }}" target="_blank" style="font-size:11px;">Cetak Bukti</a>
                     @if ($repayment->isCancelled())
                         <p style="font-size:11px; color:var(--muted); margin: 2px 0 0;">Dibatalkan: {{ $repayment->cancellation_reason }}</p>
-                    @elseif ($repayment->canBeCancelledBy(auth()->user()))
+                    @elseif ($repayment->journal_entry_id && $repayment->canBeCancelledBy(auth()->user()))
                         <button type="button" class="btn-cancel-toggle" data-toggle-cancel="{{ $repayment->id }}">Batalkan</button>
                         <form method="POST" action="{{ route('staf.angsuran.cancel', $repayment) }}" class="cancel-form" id="cancel-form-{{ $repayment->id }}">
                             @csrf

@@ -20,4 +20,14 @@ class AdjustmentException extends RuntimeException
     {
         return new self("Jurnal #{$entryId} sudah pernah dibalik/dikoreksi sebelumnya — tidak bisa dibalik dua kali.");
     }
+
+    /**
+     * Jurnal milik modul yang punya tombol Batalkan sendiri tidak boleh
+     * dibalik dari sini: jurnalnya akan batal sementara transaksinya (saldo
+     * rekening, jadwal angsuran, status) tetap aktif.
+     */
+    public static function milikModul(int $entryId, string $modul): self
+    {
+        return new self("Jurnal #{$entryId} milik {$modul} — batalkan lewat menu itu supaya transaksi, jurnal, Buku Besar, dan Neraca batal bersama-sama.");
+    }
 }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\Accounting\JournalPostingException;
 use App\Http\Middleware\BootstrapInstallerEnvironment;
 use App\Http\Middleware\EnsureBranchScope;
 use App\Http\Middleware\EnsureHasLinkedMember;
@@ -48,4 +49,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*'),
         );
+        // Jurnal ditolak JournalEngine (mis. pembatalan ganda karena tombol
+        // Batalkan terklik dua kali) — kembalikan ke halaman asal dengan pesan,
+        // bukan halaman error 500. Transaksi DB-nya sudah dibatalkan utuh.
+        $exceptions->render(function (JournalPostingException $exception, Request $request) {
+            if ($request->expectsJson() || $request->isMethod('GET')) {
+                return null;
+            }
+
+            return back()->with('error', $exception->getMessage());
+        });
     })->create();

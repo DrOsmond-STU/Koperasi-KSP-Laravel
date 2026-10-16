@@ -40,4 +40,15 @@ class LoanRepaymentException extends RuntimeException
     {
         return new self('Angsuran ini sudah dibatalkan sebelumnya.');
     }
+
+    /**
+     * Angsuran hasil impor riwayat (sebelum sistem dipakai) tidak punya
+     * jurnal — nilainya sudah tercakup di Saldo Awal. Membatalkannya hanya
+     * akan mengubah jadwal angsuran tanpa jurnal pembalik, sehingga jadwal
+     * dan Buku Besar tidak cocok lagi.
+     */
+    public static function noJournal(): self
+    {
+        return new self('Angsuran ini hasil impor riwayat dan tidak punya jurnal (nilainya sudah termasuk di Saldo Awal), jadi tidak bisa dibatalkan dari sini. Koreksi lewat Saldo Awal atau Jurnal Umum.');
+    }
 }

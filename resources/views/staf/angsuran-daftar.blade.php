@@ -184,7 +184,7 @@
                             @can('pinjaman.print')
                                 <br><a href="{{ route('admin.print.loan-repayment.show', $repayment) }}" target="_blank" style="font-size:11px;">Cetak Bukti</a>
                             @endcan
-                            @if (! $repayment->isCancelled() && $repayment->canBeCancelledBy(auth()->user()))
+                            @if (! $repayment->isCancelled() && $repayment->journal_entry_id && $repayment->canBeCancelledBy(auth()->user()))
                                 &nbsp;·&nbsp;
                                 <button type="button" class="btn-cancel-toggle" data-toggle-cancel="{{ $repayment->id }}">Batalkan</button>
                                 <form method="POST" action="{{ route('staf.angsuran.cancel', $repayment) }}" class="cancel-form" id="cancel-form-{{ $repayment->id }}">

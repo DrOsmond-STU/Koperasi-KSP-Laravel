@@ -20,6 +20,9 @@ class JournalAdjustmentController extends Controller
         $this->authorize('jurnal.adjust');
 
         $selectedId = $request->integer('entry_id') ?: null;
+        $selectedEntry = $selectedId !== null
+            ? JournalEntry::query()->with(['lines.account', 'reversals'])->find($selectedId)
+            : null;
 
         return view('admin.jurnal-penyesuaian', [
             'entries' => JournalEntry::query()
@@ -28,9 +31,10 @@ class JournalAdjustmentController extends Controller
                 ->latest()
                 ->limit(50)
                 ->get(),
-            'selectedEntry' => $selectedId !== null
-                ? JournalEntry::query()->with('lines.account')->find($selectedId)
-                : null,
+            'selectedEntry' => $selectedEntry,
+            // Ditampilkan sebagai peringatan & formnya disembunyikan — lihat
+            // AdjustmentService::modulPemilik().
+            'modulPemilik' => $selectedEntry ? $this->adjustmentService->modulPemilik($selectedEntry) : null,
         ]);
     }
 

@@ -538,6 +538,10 @@ class LoanRepaymentService
             throw LoanRepaymentException::alreadyCancelled();
         }
 
+        if ($repayment->journal_entry_id === null) {
+            throw LoanRepaymentException::noJournal();
+        }
+
         return DB::transaction(function () use ($repayment, $reason, $cancelledBy) {
             $loan = $repayment->loan;
 

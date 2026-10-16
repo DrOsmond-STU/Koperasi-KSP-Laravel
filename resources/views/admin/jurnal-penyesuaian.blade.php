@@ -64,6 +64,16 @@
                 </tbody>
             </table>
 
+            @if ($modulPemilik)
+                <p class="error-text" style="margin-top: 16px;">
+                    Jurnal ini milik {{ $modulPemilik }}. Batalkan transaksinya lewat menu tersebut —
+                    di sana transaksi, jurnal, Buku Besar, dan Neraca batal bersama-sama.
+                </p>
+            @elseif ($selectedEntry->reversals->isNotEmpty())
+                <p class="error-text" style="margin-top: 16px;">
+                    Jurnal ini sudah dibalik oleh jurnal #{{ $selectedEntry->reversals->pluck('id')->implode(', #') }} — tidak bisa dibalik lagi.
+                </p>
+            @else
             <form method="POST" action="{{ route('admin.jurnal-penyesuaian.store', $selectedEntry) }}" style="margin-top: 16px;">
                 @csrf
                 <div class="field">
@@ -76,6 +86,7 @@
                 </div>
                 <button type="submit" class="btn-danger">Posting Jurnal Balik</button>
             </form>
+            @endif
         </div>
     @endif
 @endsection
