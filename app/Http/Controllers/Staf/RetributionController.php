@@ -147,6 +147,9 @@ class RetributionController extends Controller
             'rows' => $rows,
             'totalAmount' => $rows->sum('total_amount'),
             'activeTypes' => $activeTypes,
+            // Supaya total laporan bisa dicocokkan dengan Kartu Buku Besar kas
+            // pada tanggal yang sama — lihat RetributionReportService::rekonsiliasiHarian().
+            'rekonsiliasi' => $this->reportService->rekonsiliasiHarian($branchId, $date),
         ])->setPaper('a3', 'landscape');
 
         return $pdf->download('laporan-upf-'.$date.'.pdf');

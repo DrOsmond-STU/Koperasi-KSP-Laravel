@@ -6,6 +6,7 @@ use App\Models\RetributionTransaction;
 use App\Models\RetributionTransactionLine;
 use App\Models\RetributionType;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Sumber baris untuk laporan dinamis "retribusi_upf" (dipanggil dari
@@ -58,6 +59,78 @@ class RetributionReportService
 
             return $row;
         });
+    }
+
+    /**
+     * Rekonsiliasi Laporan Harian UPF dengan Kartu Buku Besar kas (permintaan
+     * Okt 2026: laporan 13 Okt selisih Rp 6.500 dari Buku Besar).
+     *
+     * Laporan harian hanya memuat transaksi yang TIDAK batal bertanggal hari
+     * itu, sedangkan Buku Besar mencatat jurnal asal pada tanggal transaksi
+     * dan jurnal pembaliknya pada tanggal PEMBATALAN. Bila keduanya jatuh di
+     * hari yang sama, saling meniadakan; bila berbeda hari, muncul selisih:
+     *  - "masuk": transaksi bertanggal hari ini yang dibatalkan di hari lain —
+     *    jurnal asalnya tetap ada di Buku Besar hari ini (+);
+     *  - "batal": pembatalan hari ini atas transaksi bertanggal lain — jurnal
+     *    pembaliknya mengurangi Buku Besar hari ini (−).
+     * Tanggal yang dipakai adalah tanggal JURNAL (entry_date), persis yang
+     * dibaca Kartu Buku Besar.
+     *
+     * @return array{masuk: Collection<int, array<string, mixed>>, batal: Collection<int, array<string, mixed>>, koreksi: Collection<int, array<string, mixed>>, total_masuk: float, total_batal: float, total_koreksi: float}
+     */
+    public function rekonsiliasiHarian(?int $branchId, string $date): array
+    {
+        // Query builder polos: cabang sudah ditegakkan lewat $branchId oleh
+        // controller (resolveBranchId), dan global scope cabang memakai nama
+        // tabel penuh yang tidak cocok dengan alias di bawah.
+        $dasar = fn () => DB::table('retribution_transactions as r')
+            ->join('journal_entries as asal', 'asal.id', '=', 'r.journal_entry_id')
+            ->join('journal_entries as balik', 'balik.id', '=', 'r.reversal_journal_entry_id')
+            ->whereNotNull('r.cancelled_at')
+            ->when($branchId, fn ($q, $id) => $q->where('r.branch_id', $id))
+            ->select([
+                'r.transaction_number', 'r.payer_name', 'r.total_amount', 'r.cancellation_reason',
+                'asal.entry_date as tanggal_transaksi', 'balik.entry_date as tanggal_batal',
+            ])
+            ->orderBy('r.id');
+
+        $petakan = fn ($baris) => [
+            'transaction_number' => $baris->transaction_number,
+            'payer_name' => $baris->payer_name,
+            'total_amount' => (float) $baris->total_amount,
+            'cancellation_reason' => $baris->cancellation_reason,
+            'tanggal_transaksi' => substr((string) $baris->tanggal_transaksi, 0, 10),
+            'tanggal_batal' => substr((string) $baris->tanggal_batal, 0, 10),
+        ];
+
+        $masuk = $dasar()->whereDate('asal.entry_date', $date)->whereDate('balik.entry_date', '<>', $date)->get()->map($petakan);
+        $batal = $dasar()->whereDate('balik.entry_date', $date)->whereDate('asal.entry_date', '<>', $date)->get()->map($petakan);
+
+        // Koreksi di luar pembatalan resmi: pembalik berlebih atas jurnal
+        // transaksi retribusi (mis. #13175, klik ganda) bernilai minus, dan
+        // jurnal yang menetralkannya (mis. #15579) bernilai plus.
+        $berlebih = DB::table('journal_entries as x')
+            ->join('retribution_transactions as r', 'r.journal_entry_id', '=', 'x.reversal_of_entry_id')
+            ->where(fn ($q) => $q->whereNull('r.reversal_journal_entry_id')->orWhereColumn('r.reversal_journal_entry_id', '<>', 'x.id'))
+            ->when($branchId, fn ($q, $id) => $q->where('r.branch_id', $id));
+        $koreksi = (clone $berlebih)->whereDate('x.entry_date', $date)
+            ->get(['x.id', 'x.description', 'r.transaction_number', 'r.payer_name', 'r.total_amount'])
+            ->map(fn ($k) => ['journal_id' => $k->id, 'description' => $k->description, 'transaction_number' => $k->transaction_number, 'payer_name' => $k->payer_name, 'amount' => -1 * (float) $k->total_amount])
+            ->merge(
+                DB::table('journal_entries as y')->joinSub((clone $berlebih)->select(['x.id as berlebih_id', 'r.transaction_number', 'r.payer_name', 'r.total_amount']), 'b', 'b.berlebih_id', '=', 'y.reversal_of_entry_id')
+                    ->whereDate('y.entry_date', $date)
+                    ->get(['y.id', 'y.description', 'b.transaction_number', 'b.payer_name', 'b.total_amount'])
+                    ->map(fn ($k) => ['journal_id' => $k->id, 'description' => $k->description, 'transaction_number' => $k->transaction_number, 'payer_name' => $k->payer_name, 'amount' => (float) $k->total_amount])
+            )->values();
+
+        return [
+            'masuk' => $masuk,
+            'batal' => $batal,
+            'koreksi' => $koreksi,
+            'total_masuk' => round((float) $masuk->sum('total_amount'), 2),
+            'total_batal' => round((float) $batal->sum('total_amount'), 2),
+            'total_koreksi' => round((float) $koreksi->sum('amount'), 2),
+        ];
     }
 
     /**
