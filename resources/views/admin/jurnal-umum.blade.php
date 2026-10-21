@@ -185,7 +185,7 @@
                                                     <input type="text" name="reason" maxlength="255" required placeholder="Alasan pembatalan">
                                                     <input type="password" name="password" required autocomplete="current-password" placeholder="Kata sandi Anda">
                                                     <button type="submit">Batalkan Jurnal #{{ $entry->id }}</button>
-                                                    <small>Jurnal asal tetap tersimpan; sistem memposting jurnal pembalik bertanggal hari ini.</small>
+                                                    <small>Jurnal asal tetap tersimpan; sistem memposting jurnal pembalik bertanggal sama dengan jurnal asal.</small>
                                                 </form>
                                             </details>
                                         @endif

@@ -169,7 +169,7 @@
             </tbody>
         </table>
         <p style="font-size:7.5pt; color:#5C6E64; margin:0 0 10px;">
-            Jurnal pembatalan dicatat pada tanggal pembatalan. Pembatalan yang terjadi di dalam periode yang sama
+            Jurnal pembalik yang dibuat sebelum aturan baru (Okt 2026) bertanggal hari pembatalan. Pembatalan yang terjadi di dalam periode yang sama
             saling meniadakan; yang melewati batas periode ditampilkan di atas. Pendapatan sebenarnya tetap angka
             "Total kas masuk".
         </p>

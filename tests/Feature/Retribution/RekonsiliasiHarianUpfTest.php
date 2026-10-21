@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Retribution;
 
+use App\Exceptions\Accounting\JournalPostingException;
+use App\Models\AccountingPeriod;
 use App\Models\Branch;
 use App\Models\ChartOfAccount;
 use App\Models\JournalEntry;
@@ -22,8 +24,12 @@ use Tests\TestCase;
 /**
  * Laporan Harian UPF harus bisa dicocokkan dengan Kartu Buku Besar kas pada
  * tanggal yang sama. Kasus nyata 13 Okt 2026: transaksi bertanggal 12 Okt
- * dibatalkan 13 Okt — jurnal pembaliknya bertanggal 13 Okt, sehingga laporan
- * 13 Okt selisih Rp 6.500 dari Buku Besar.
+ * dibatalkan 13 Okt — jurnal pembaliknya (aturan lama) bertanggal 13 Okt,
+ * sehingga laporan 13 Okt selisih Rp 6.500 dari Buku Besar.
+ *
+ * Aturan baru: jurnal pembalik bertanggal sama dengan transaksi yang
+ * dibatalkan. Tes rekonsiliasi di bawah meniru data lama lewat
+ * pakaiTanggalLama() (jurnal pembalik dipindah ke tanggal pembatalan).
  */
 class RekonsiliasiHarianUpfTest extends TestCase
 {
@@ -67,6 +73,12 @@ class RekonsiliasiHarianUpfTest extends TestCase
         );
     }
 
+    /** Meniru data sebelum aturan baru: jurnal pembalik bertanggal hari pembatalan. */
+    private function pakaiTanggalLama(RetributionTransaction $transaksi, string $tanggalBatal): void
+    {
+        DB::table('journal_entries')->where('id', $transaksi->fresh()->reversal_journal_entry_id)->update(['entry_date' => $tanggalBatal]);
+    }
+
     /** Mutasi kas retribusi di Buku Besar pada satu tanggal (yang dibaca Kartu Buku Besar). */
     private function mutasiKasBukuBesar(string $tanggal): float
     {
@@ -96,6 +108,7 @@ class RekonsiliasiHarianUpfTest extends TestCase
         $this->travelTo(Carbon::parse('2026-10-12 14:00'));
         $this->catat('2026-10-12', 250000, 'Aktif 12 Okt');
         app(RetributionService::class)->reverseTransaction($b, 'SALAH', $this->petugas->id);
+        $this->pakaiTanggalLama($b, '2026-10-12');
 
         // 13 Okt: transaksi A diinput dengan tanggal 12 Okt lalu dibatalkan 13 Okt
         // (persis RB-261013-6783), plus transaksi aktif 13 Okt.
@@ -104,6 +117,7 @@ class RekonsiliasiHarianUpfTest extends TestCase
         $this->catat('2026-10-13', 300000, 'Aktif 13 Okt');
         $this->travelTo(Carbon::parse('2026-10-13 12:20'));
         app(RetributionService::class)->reverseTransaction($a->fresh(), 'ada dua nama', $this->petugas->id);
+        $this->pakaiTanggalLama($a, '2026-10-13');
 
         $svc = app(RetributionReportService::class);
 
@@ -148,6 +162,8 @@ class RekonsiliasiHarianUpfTest extends TestCase
 
         $this->travelTo(Carbon::parse('2026-10-16 15:18'));
         $penetral = app(JournalEngine::class)->reverse($berlebih->load('lines'), 'menetralkan', $this->petugas->id);
+        // Penetral #15579 dibuat sebelum aturan baru: bertanggal 16 Okt.
+        DB::table('journal_entries')->where('id', $penetral->id)->update(['entry_date' => '2026-10-16']);
 
         $svc = app(RetributionReportService::class);
         $rek9 = $svc->rekonsiliasiHarian($this->cabang->id, '2026-10-09');
@@ -192,10 +208,12 @@ class RekonsiliasiHarianUpfTest extends TestCase
         $this->travelTo(Carbon::parse('2026-10-12 14:00'));
         $this->catat('2026-10-12', 250000, 'Aktif 12 Okt');
         app(RetributionService::class)->reverseTransaction($b, 'SALAH', $this->petugas->id);
+        $this->pakaiTanggalLama($b, '2026-10-12');
         $a = $this->catat('2026-10-12', 6500, 'A.1');
         $this->travelTo(Carbon::parse('2026-10-13 12:20'));
         $this->catat('2026-10-13', 300000, 'Aktif 13 Okt');
         app(RetributionService::class)->reverseTransaction($a->fresh(), 'ada dua nama', $this->petugas->id);
+        $this->pakaiTanggalLama($a, '2026-10-13');
 
         $svc = app(RetributionReportService::class);
         $periode = [
@@ -227,6 +245,48 @@ class RekonsiliasiHarianUpfTest extends TestCase
         ]));
         $response->assertOk();
         $this->assertStringContainsString('application/pdf', (string) $response->headers->get('content-type'));
+    }
+
+    public function test_cancellation_on_a_later_day_is_journaled_on_the_transaction_date(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-12 09:00'));
+        $a = $this->catat('2026-10-12', 6500, 'A.1');
+        $this->catat('2026-10-12', 250000, 'Aktif 12 Okt');
+        $this->travelTo(Carbon::parse('2026-10-13 12:20'));
+        $this->catat('2026-10-13', 300000, 'Aktif 13 Okt');
+        app(RetributionService::class)->reverseTransaction($a, 'ada dua nama', $this->petugas->id);
+
+        $a->refresh();
+        $this->assertSame('2026-10-12', JournalEntry::query()->findOrFail($a->reversal_journal_entry_id)->entry_date->toDateString());
+        $this->assertSame('2026-10-13', $a->cancelled_at->toDateString());
+
+        $svc = app(RetributionReportService::class);
+        foreach (['2026-10-12', '2026-10-13'] as $tanggal) {
+            $this->assertEqualsWithDelta($this->mutasiKasBukuBesar($tanggal), $this->totalLaporan($tanggal), 0.001, $tanggal);
+            $rek = $svc->rekonsiliasiHarian($this->cabang->id, $tanggal);
+            $this->assertCount(0, $rek['masuk']);
+            $this->assertCount(0, $rek['batal']);
+        }
+    }
+
+    public function test_cancellation_is_rejected_when_the_transaction_period_is_closed(): void
+    {
+        $this->travelTo(Carbon::parse('2026-09-30 09:00'));
+        $t = $this->catat('2026-09-30', 6500, 'September');
+        AccountingPeriod::query()->create([
+            'branch_id' => $this->cabang->id, 'period_start' => '2026-09-01', 'period_end' => '2026-09-30', 'status' => 'closed',
+        ]);
+
+        $this->travelTo(Carbon::parse('2026-10-02 10:00'));
+        try {
+            app(RetributionService::class)->reverseTransaction($t, 'telat', $this->petugas->id);
+            $this->fail('Pembatalan di periode tertutup seharusnya ditolak.');
+        } catch (JournalPostingException $e) {
+            $this->assertStringContainsString('sudah ditutup', $e->getMessage());
+        }
+
+        $this->assertNull($t->fresh()->cancelled_at);
+        $this->assertSame(0, JournalEntry::query()->whereNotNull('reversal_of_entry_id')->count());
     }
 
     public function test_daily_print_still_downloads_with_the_reconciliation_section(): void

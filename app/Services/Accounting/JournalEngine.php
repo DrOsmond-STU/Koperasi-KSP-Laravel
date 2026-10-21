@@ -93,6 +93,12 @@ class JournalEngine
     /**
      * Posts a reversing entry that mirrors $entry with debit/credit swapped.
      * The original entry is never modified (append-only — LED-06).
+     *
+     * Jurnal pembalik bertanggal SAMA dengan jurnal yang dibatalkan
+     * (permintaan pemilik Okt 2026), supaya laporan harian/periode tiap
+     * modul langsung cocok dengan Kartu Buku Besar tanpa rekonsiliasi lintas
+     * tanggal. Karena itu pembatalan atas transaksi di periode akuntansi
+     * yang sudah ditutup ditolak.
      */
     public function reverse(JournalEntry $entry, string $reason, int $userId): JournalEntry
     {
@@ -110,9 +116,12 @@ class JournalEngine
                 throw JournalPostingException::alreadyReversed($entry->id);
             }
 
+            $tanggal = Carbon::parse($locked->entry_date);
+            $this->assertPeriodOpen((int) $locked->branch_id, $tanggal);
+
             $reversal = JournalEntry::query()->create([
                 'branch_id' => $entry->branch_id,
-                'entry_date' => now()->toDateString(),
+                'entry_date' => $tanggal->toDateString(),
                 'description' => "Koreksi/pembalik jurnal #{$entry->id}: {$reason}",
                 'created_by' => $userId,
                 'reversal_of_entry_id' => $entry->id,

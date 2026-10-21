@@ -103,8 +103,8 @@
             </tbody>
         </table>
         <p style="font-size:7.5pt; color:#5C6E64; margin:0 0 10px;">
-            Jurnal pembatalan dicatat pada tanggal pembatalan, sehingga transaksi yang dibatalkan di hari lain
-            tercatat di Buku Besar pada dua tanggal berbeda. Pendapatan sebenarnya tetap angka "Total transaksi aktif".
+            Jurnal pembalik yang dibuat sebelum aturan baru (Okt 2026) bertanggal hari pembatalan, sehingga transaksi
+            yang dibatalkan di hari lain tercatat di Buku Besar pada dua tanggal berbeda. Pendapatan sebenarnya tetap angka "Total transaksi aktif".
         </p>
     @endif
 
