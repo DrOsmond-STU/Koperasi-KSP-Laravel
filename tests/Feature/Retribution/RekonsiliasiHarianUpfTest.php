@@ -172,6 +172,63 @@ class RekonsiliasiHarianUpfTest extends TestCase
         $this->assertCount(0, $rek['batal']);
     }
 
+    /** Mutasi kas retribusi di Buku Besar selama satu periode. */
+    private function mutasiKasBukuBesarPeriode(string $awal, string $akhir): float
+    {
+        return (float) DB::table('journal_lines as l')
+            ->join('journal_entries as e', 'e.id', '=', 'l.journal_entry_id')
+            ->where('l.chart_of_account_id', $this->jenis->coa_revenue_account_id)
+            ->whereDate('e.entry_date', '>=', $awal)->whereDate('e.entry_date', '<=', $akhir)
+            ->selectRaw('COALESCE(SUM(l.credit) - SUM(l.debit), 0) n')
+            ->value('n');
+    }
+
+    public function test_period_reconciliation_only_lists_cancellations_crossing_the_period_boundary(): void
+    {
+        // B: 9 Okt, batal 12 Okt. A: bertanggal 12 Okt, batal 13 Okt.
+        $this->travelTo(Carbon::parse('2026-10-09 10:00'));
+        $b = $this->catat('2026-10-09', 6500, 'Pedagang B');
+        $this->catat('2026-10-09', 100000, 'Aktif 9 Okt');
+        $this->travelTo(Carbon::parse('2026-10-12 14:00'));
+        $this->catat('2026-10-12', 250000, 'Aktif 12 Okt');
+        app(RetributionService::class)->reverseTransaction($b, 'SALAH', $this->petugas->id);
+        $a = $this->catat('2026-10-12', 6500, 'A.1');
+        $this->travelTo(Carbon::parse('2026-10-13 12:20'));
+        $this->catat('2026-10-13', 300000, 'Aktif 13 Okt');
+        app(RetributionService::class)->reverseTransaction($a->fresh(), 'ada dua nama', $this->petugas->id);
+
+        $svc = app(RetributionReportService::class);
+        $periode = [
+            // Kedua pembatalan terjadi di dalam periode: saling meniadakan.
+            ['2026-10-01', '2026-10-31', [], []],
+            ['2026-10-09', '2026-10-13', [], []],
+            // Periode berakhir 12 Okt: A dibatalkan sesudahnya.
+            ['2026-10-01', '2026-10-12', [$a->transaction_number], []],
+            // Periode mulai 13 Okt: pembatalan A atas transaksi sebelum periode.
+            ['2026-10-13', '2026-10-31', [], [$a->transaction_number]],
+            // Periode 10-12 Okt: A keluar sesudah, B dibatalkan atas transaksi sebelum.
+            ['2026-10-10', '2026-10-12', [$a->transaction_number], [$b->transaction_number]],
+        ];
+        foreach ($periode as [$awal, $akhir, $masuk, $batal]) {
+            $rek = $svc->rekonsiliasiPeriode($this->cabang->id, $awal, $akhir);
+            $this->assertSame($masuk, $rek['masuk']->pluck('transaction_number')->all(), "$awal s/d $akhir");
+            $this->assertSame($batal, $rek['batal']->pluck('transaction_number')->all(), "$awal s/d $akhir");
+            $kasMasuk = $svc->rekapPendapatan(['branch_id' => $this->cabang->id, 'period_start' => $awal, 'period_end' => $akhir])['total_cash_in'];
+            $this->assertEqualsWithDelta(
+                $this->mutasiKasBukuBesarPeriode($awal, $akhir),
+                $kasMasuk + $rek['total_masuk'] - $rek['total_batal'] + $rek['total_koreksi'],
+                0.001,
+                "$awal s/d $akhir",
+            );
+        }
+
+        $response = $this->actingAs($this->petugas)->get(route('staf.retribusi-upf.print-rekap', [
+            'period_start' => '2026-10-13', 'period_end' => '2026-10-31', 'branch_id' => $this->cabang->id,
+        ]));
+        $response->assertOk();
+        $this->assertStringContainsString('application/pdf', (string) $response->headers->get('content-type'));
+    }
+
     public function test_daily_print_still_downloads_with_the_reconciliation_section(): void
     {
         $this->travelTo(Carbon::parse('2026-10-12 09:00'));

@@ -80,6 +80,24 @@ class RetributionReportService
      */
     public function rekonsiliasiHarian(?int $branchId, string $date): array
     {
+        return $this->rekonsiliasiPeriode($branchId, $date, $date);
+    }
+
+    /**
+     * Rekonsiliasi yang sama untuk satu periode (dipakai Rekap Pendapatan
+     * UPF): "masuk" = transaksi dalam periode yang dibatalkan SETELAH
+     * periode berakhir, "batal" = pembatalan dalam periode atas transaksi
+     * SEBELUM periode dimulai, "koreksi" = jurnal koreksi dalam periode.
+     * Pembatalan yang asal & pembaliknya sama-sama di dalam periode saling
+     * meniadakan sehingga tidak dimunculkan.
+     *
+     * @return array{masuk: Collection<int, array<string, mixed>>, batal: Collection<int, array<string, mixed>>, koreksi: Collection<int, array<string, mixed>>, total_masuk: float, total_batal: float, total_koreksi: float}
+     */
+    public function rekonsiliasiPeriode(?int $branchId, string $start, string $end): array
+    {
+        $dalam = fn (string $kolom) => fn ($q) => $q->whereDate($kolom, '>=', $start)->whereDate($kolom, '<=', $end);
+        $luar = fn (string $kolom) => fn ($q) => $q->whereDate($kolom, '<', $start)->orWhereDate($kolom, '>', $end);
+
         // Query builder polos: cabang sudah ditegakkan lewat $branchId oleh
         // controller (resolveBranchId), dan global scope cabang memakai nama
         // tabel penuh yang tidak cocok dengan alias di bawah.
@@ -103,8 +121,8 @@ class RetributionReportService
             'tanggal_batal' => substr((string) $baris->tanggal_batal, 0, 10),
         ];
 
-        $masuk = $dasar()->whereDate('asal.entry_date', $date)->whereDate('balik.entry_date', '<>', $date)->get()->map($petakan);
-        $batal = $dasar()->whereDate('balik.entry_date', $date)->whereDate('asal.entry_date', '<>', $date)->get()->map($petakan);
+        $masuk = $dasar()->where($dalam('asal.entry_date'))->where($luar('balik.entry_date'))->get()->map($petakan);
+        $batal = $dasar()->where($dalam('balik.entry_date'))->where($luar('asal.entry_date'))->get()->map($petakan);
 
         // Koreksi di luar pembatalan resmi: pembalik berlebih atas jurnal
         // transaksi retribusi (mis. #13175, klik ganda) bernilai minus, dan
@@ -113,12 +131,12 @@ class RetributionReportService
             ->join('retribution_transactions as r', 'r.journal_entry_id', '=', 'x.reversal_of_entry_id')
             ->where(fn ($q) => $q->whereNull('r.reversal_journal_entry_id')->orWhereColumn('r.reversal_journal_entry_id', '<>', 'x.id'))
             ->when($branchId, fn ($q, $id) => $q->where('r.branch_id', $id));
-        $koreksi = (clone $berlebih)->whereDate('x.entry_date', $date)
+        $koreksi = (clone $berlebih)->where($dalam('x.entry_date'))
             ->get(['x.id', 'x.description', 'r.transaction_number', 'r.payer_name', 'r.total_amount'])
             ->map(fn ($k) => ['journal_id' => $k->id, 'description' => $k->description, 'transaction_number' => $k->transaction_number, 'payer_name' => $k->payer_name, 'amount' => -1 * (float) $k->total_amount])
             ->merge(
                 DB::table('journal_entries as y')->joinSub((clone $berlebih)->select(['x.id as berlebih_id', 'r.transaction_number', 'r.payer_name', 'r.total_amount']), 'b', 'b.berlebih_id', '=', 'y.reversal_of_entry_id')
-                    ->whereDate('y.entry_date', $date)
+                    ->where($dalam('y.entry_date'))
                     ->get(['y.id', 'y.description', 'b.transaction_number', 'b.payer_name', 'b.total_amount'])
                     ->map(fn ($k) => ['journal_id' => $k->id, 'description' => $k->description, 'transaction_number' => $k->transaction_number, 'payer_name' => $k->payer_name, 'amount' => (float) $k->total_amount])
             )->values();

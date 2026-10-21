@@ -116,6 +116,65 @@
         </tr>
     </table>
 
+    {{-- Rekonsiliasi dengan Kartu Buku Besar kas untuk periode ini: jurnal
+         pembalik bertanggal hari pembatalan, jadi pembatalan yang melewati
+         batas periode membuat total rekap berbeda dari Buku Besar.
+         Lihat RetributionReportService::rekonsiliasiPeriode(). --}}
+    @php
+        $rek = ($rekonsiliasi ?? []) + ['masuk' => collect(), 'batal' => collect(), 'koreksi' => collect(), 'total_masuk' => 0, 'total_batal' => 0, 'total_koreksi' => 0];
+        $totalBukuBesar = round($rekap['total_cash_in'] + $rek['total_masuk'] - $rek['total_batal'] + $rek['total_koreksi'], 2);
+        $tgl = fn (string $d) => \Illuminate\Support\Carbon::parse($d)->translatedFormat('d M Y');
+    @endphp
+    <h3 style="font-size:11pt; margin:16px 0 6px;">Rekonsiliasi dengan Buku Besar Kas</h3>
+    @if ($rek['masuk']->isEmpty() && $rek['batal']->isEmpty() && $rek['koreksi']->isEmpty())
+        <p style="font-size:9pt; margin:0 0 10px;">
+            Tidak ada pembatalan yang melewati batas periode — total kas masuk rekap ini sama dengan mutasi kas
+            retribusi di Buku Besar pada periode ini (Rp {{ number_format($totalBukuBesar, 2, ',', '.') }}, di luar setoran kas).
+        </p>
+    @else
+        <table class="data-table" style="margin-bottom: 8px; font-size:8pt;">
+            <thead>
+                <tr><th>Keterangan</th><th>No. Transaksi</th><th>Tgl Transaksi</th><th>Tgl Batal</th><th style="width:95px; text-align:right;">Jumlah (Rp)</th></tr>
+            </thead>
+            <tbody>
+                <tr><td colspan="4" style="font-weight:700;">Total kas masuk (rekap di atas)</td><td style="text-align:right; font-weight:700;">{{ number_format($rekap['total_cash_in'], 2, ',', '.') }}</td></tr>
+                @foreach ($rek['masuk'] as $r)
+                    <tr>
+                        <td>(+) Transaksi periode ini, dibatalkan setelah periode</td>
+                        <td>{{ $r['transaction_number'] }}<br><span style="color:#5C6E64;">{{ $r['payer_name'] }}</span></td>
+                        <td>{{ $tgl($r['tanggal_transaksi']) }}</td><td>{{ $tgl($r['tanggal_batal']) }}</td>
+                        <td style="text-align:right;">{{ number_format($r['total_amount'], 2, ',', '.') }}</td>
+                    </tr>
+                @endforeach
+                @foreach ($rek['batal'] as $r)
+                    <tr>
+                        <td>(-) Pembatalan dalam periode atas transaksi sebelum periode</td>
+                        <td>{{ $r['transaction_number'] }}<br><span style="color:#5C6E64;">{{ $r['payer_name'] }}</span></td>
+                        <td>{{ $tgl($r['tanggal_transaksi']) }}</td><td>{{ $tgl($r['tanggal_batal']) }}</td>
+                        <td style="text-align:right;">({{ number_format($r['total_amount'], 2, ',', '.') }})</td>
+                    </tr>
+                @endforeach
+                @foreach ($rek['koreksi'] as $k)
+                    <tr>
+                        <td>(&plusmn;) Koreksi jurnal atas transaksi retribusi</td>
+                        <td>{{ $k['transaction_number'] }}<br><span style="color:#5C6E64;">{{ $k['payer_name'] }}</span></td>
+                        <td colspan="2">Jurnal #{{ $k['journal_id'] }} — {{ $k['description'] }}</td>
+                        <td style="text-align:right;">{{ $k['amount'] < 0 ? '('.number_format(abs($k['amount']), 2, ',', '.').')' : number_format($k['amount'], 2, ',', '.') }}</td>
+                    </tr>
+                @endforeach
+                <tr style="background:#F4F7F4;">
+                    <td colspan="4" style="font-weight:700;">Mutasi kas retribusi menurut Buku Besar periode ini (di luar setoran kas)</td>
+                    <td style="text-align:right; font-weight:700;">{{ number_format($totalBukuBesar, 2, ',', '.') }}</td>
+                </tr>
+            </tbody>
+        </table>
+        <p style="font-size:7.5pt; color:#5C6E64; margin:0 0 10px;">
+            Jurnal pembatalan dicatat pada tanggal pembatalan. Pembatalan yang terjadi di dalam periode yang sama
+            saling meniadakan; yang melewati batas periode ditampilkan di atas. Pendapatan sebenarnya tetap angka
+            "Total kas masuk".
+        </p>
+    @endif
+
     <p style="font-size:8pt; color:#9AA9A0; margin-top:18px;">
         Catatan: rekap ini menghitung total kas masuk dari transaksi retribusi UPF pada periode di
         atas — tidak termasuk transaksi yang dibatalkan. Nilai per jenis retribusi diambil dari

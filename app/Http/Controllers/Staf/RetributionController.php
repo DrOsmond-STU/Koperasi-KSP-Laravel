@@ -184,6 +184,7 @@ class RetributionController extends Controller
             'rekap' => $rekap,
             'branch' => $branchId ? Branch::query()->find($branchId) : null,
             'cashAccount' => $this->retributionService->cashAccount(),
+            'rekonsiliasi' => $this->reportService->rekonsiliasiPeriode($branchId, $periodStart, $periodEnd),
         ], orientationOverride: 'portrait');
 
         return $pdf->download('rekap-upf-'.$periodStart.'_sd_'.$periodEnd.'.pdf');
