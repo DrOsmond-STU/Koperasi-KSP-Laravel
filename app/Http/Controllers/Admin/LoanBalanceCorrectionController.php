@@ -104,8 +104,14 @@ class LoanBalanceCorrectionController extends Controller
             return back()->withInput()->with('error', 'Koreksi gagal dan dibatalkan seluruhnya: '.$e->getMessage());
         }
 
-        return redirect()
-            ->route('admin.pinjaman.perbaikan-saldo.show', ['loan' => $repayment->loan_id, 'per' => $request->input('per')])
+        $kartu = redirect()->route('admin.pinjaman.perbaikan-saldo.show', ['loan' => $repayment->loan_id, 'per' => $request->input('per')]);
+
+        if ($baru->id === $repayment->id) {
+            return $kartu->with('status', "Angsuran #{$repayment->id} dibatalkan tanpa pengganti (Rp "
+                .number_format((float) $repayment->amount, 0, ',', '.').'). Jurnalnya dibalik, jadwal & status pinjaman diselaraskan.');
+        }
+
+        return $kartu
             ->with('status', "Angsuran #{$repayment->id} dibatalkan dan diganti angsuran #{$baru->id} "
                 .'(tgl '.$baru->transaction_date->translatedFormat('d M Y').', Rp '.number_format((float) $baru->amount, 0, ',', '.')
                 .'). Jurnal lama dibalik, jurnal baru diposting, jadwal & status pinjaman diselaraskan.');

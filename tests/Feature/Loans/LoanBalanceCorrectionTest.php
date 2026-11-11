@@ -170,6 +170,37 @@ class LoanBalanceCorrectionTest extends TestCase
         $this->assertSame((string) $t->d, (string) $t->k);
     }
 
+    public function test_koreksi_nol_membatalkan_angsuran_tanpa_pengganti(): void
+    {
+        [$loan, $salah] = $this->kasusMujahidin();
+        $admin = $this->pengguna('bendahara');
+        $jumlahAngsuran = LoanRepayment::query()->count();
+        $isian = ['tanggal' => '2026-07-01', 'pokok' => 0, 'jasa' => 0, 'denda' => 0, 'alasan' => 'transaksi seharusnya tidak ada', 'per' => '2026-08-31'];
+
+        // Pratinjau: tidak ditolak, tidak menyimpan apa pun.
+        $this->actingAs($admin)->get(route('admin.pinjaman.perbaikan-saldo.koreksi', ['repayment' => $salah] + $isian + ['pratinjau' => 1]))
+            ->assertOk()->assertSee('Pratinjau sesudah koreksi')->assertSee('tanpa pengganti')->assertDontSee('tidak bisa diterapkan');
+        $this->assertFalse($salah->fresh()->isCancelled());
+
+        $this->actingAs($admin)->post(route('admin.pinjaman.perbaikan-saldo.simpan', $salah), $isian + ['konfirmasi' => 1])
+            ->assertRedirect(route('admin.pinjaman.perbaikan-saldo.show', ['loan' => $loan->id, 'per' => '2026-08-31']))
+            ->assertSessionHas('status');
+
+        $salah->refresh();
+        $this->assertTrue($salah->isCancelled());
+        $this->assertSame($jumlahAngsuran, LoanRepayment::query()->count(), 'Tidak boleh ada angsuran pengganti.');
+        $pembalik = JournalEntry::query()->findOrFail($salah->reversal_journal_entry_id);
+        $this->assertSame((int) $salah->journal_entry_id, (int) $pembalik->reversal_of_entry_id);
+        $this->assertTrue(AuditLog::query()->where('action', 'koreksi_angsuran')->where('auditable_id', $salah->id)->exists());
+
+        $k = app(LoanBalanceCorrectionService::class)->kartu($loan->fresh(), Carbon::parse('2026-08-31'));
+        $this->assertEqualsWithDelta(70000, $k['saldo_per']['pokok'], 0.001);
+        $this->assertEqualsWithDelta(20000, $k['saldo_per']['jasa'], 0.001);
+
+        $t = DB::selectOne('SELECT ROUND(SUM(debit),2) d, ROUND(SUM(credit),2) k FROM journal_lines');
+        $this->assertSame((string) $t->d, (string) $t->k);
+    }
+
     public function test_koreksi_ditolak_bila_tanggal_tidak_sesudah_saldo_awal_atau_tidak_ada_perubahan(): void
     {
         [$loan, $salah] = $this->kasusMujahidin();

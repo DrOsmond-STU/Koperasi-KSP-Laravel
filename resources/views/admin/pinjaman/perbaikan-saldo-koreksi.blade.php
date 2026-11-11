@@ -59,6 +59,10 @@
         </div>
         <label style="font-size:13px; display:block; margin-top:12px; max-width:820px;">Alasan koreksi (wajib, tercatat di jejak audit)<br>
             <input type="text" name="alasan" maxlength="200" value="{{ $nilai('alasan', '') }}" required placeholder="mis. salah tanggal: uang diterima 2 Okt 2026" style="padding:7px 9px; width:100%;"></label>
+        <p class="tenang" style="margin-top:8px; max-width:820px;">
+            Bila transaksi ini <strong>seharusnya tidak ada</strong> (mis. input ganda), isi pokok, jasa dan denda = 0:
+            angsuran dibatalkan dan jurnalnya dibalik tanpa angsuran pengganti.
+        </p>
         <p style="margin-top:12px;">
             <button type="submit" class="btn-save">Pratinjau Hasil Koreksi</button>
             <span class="tenang" style="margin-left:8px;">Pratinjau tidak menyimpan apa pun.</span>
@@ -68,6 +72,7 @@
     @if ($data !== null && $pratinjau !== null)
         @php
             $selisihJumlah = round(($data['pokok'] + $data['jasa'] + $data['denda']) - (float) $r->amount, 2);
+            $tanpaPengganti = ($data['pokok'] + $data['jasa'] + $data['denda']) < 0.005;
             $j = $pratinjau['jadwal'];
         @endphp
         <div class="panel" style="overflow-x:auto;">
@@ -82,7 +87,12 @@
                     <tr><td>Status pinjaman</td><td class="num">{{ ucfirst($sekarang['loan']->status) }}</td><td class="num"><strong>{{ ucfirst($pratinjau['loan']->status) }}</strong></td></tr>
                 </tbody>
             </table>
-            @if (abs($selisihJumlah) > 0.005)
+            @if ($tanpaPengganti)
+                <p class="warn-note" style="font-size:12.5px;">
+                    ⚠ Angsuran #{{ $r->id }} akan dibatalkan tanpa pengganti: kas penerima berkurang {{ $rp($r->amount) }} (jurnal asalnya dibalik).
+                    Pastikan uang ini memang tidak pernah diterima dari anggota.
+                </p>
+            @elseif (abs($selisihJumlah) > 0.005)
                 <p class="warn-note" style="font-size:12.5px;">
                     ⚠ Jumlah uang angsuran pengganti ({{ $rp($data['pokok'] + $data['jasa'] + $data['denda']) }}) berbeda dari angsuran asal ({{ $rp($r->amount) }}):
                     kas penerima ikut {{ $selisihJumlah > 0 ? 'bertambah' : 'berkurang' }} {{ $rp(abs($selisihJumlah)) }}. Pastikan memang begitu uang yang diterima.
@@ -104,12 +114,17 @@
                 <div class="konfirmasi">
                     <input type="checkbox" name="konfirmasi" value="1" id="konfirmasi" required>
                     <label for="konfirmasi" style="font-weight:400;">
-                        Saya sudah memeriksa pratinjau di atas. Angsuran #{{ $r->id }} dibatalkan (jurnal dibalik) dan diganti angsuran baru
-                        bertanggal {{ \Illuminate\Support\Carbon::parse($data['tanggal'])->translatedFormat('d M Y') }}: pokok {{ $rp($data['pokok']) }},
-                        jasa {{ $rp($data['jasa']) }}, denda {{ $rp($data['denda']) }}.
+                        @if ($tanpaPengganti)
+                            Saya sudah memeriksa pratinjau di atas. Angsuran #{{ $r->id }} ({{ $rp($r->amount) }}) seharusnya tidak ada:
+                            dibatalkan dan jurnalnya dibalik <strong>tanpa angsuran pengganti</strong>.
+                        @else
+                            Saya sudah memeriksa pratinjau di atas. Angsuran #{{ $r->id }} dibatalkan (jurnal dibalik) dan diganti angsuran baru
+                            bertanggal {{ \Illuminate\Support\Carbon::parse($data['tanggal'])->translatedFormat('d M Y') }}: pokok {{ $rp($data['pokok']) }},
+                            jasa {{ $rp($data['jasa']) }}, denda {{ $rp($data['denda']) }}.
+                        @endif
                     </label>
                 </div>
-                <button type="submit" class="btn-save" onclick="return confirm('Simpan koreksi angsuran #{{ $r->id }}?');">Simpan Koreksi</button>
+                <button type="submit" class="btn-save" onclick="return confirm('{{ $tanpaPengganti ? 'Batalkan angsuran #'.$r->id.' tanpa pengganti?' : 'Simpan koreksi angsuran #'.$r->id.'?' }}');">{{ $tanpaPengganti ? 'Batalkan Angsuran' : 'Simpan Koreksi' }}</button>
             </form>
         </div>
     @endif

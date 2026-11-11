@@ -275,9 +275,12 @@ class LoanBalanceCorrectionService
         $alasan = trim((string) $data['alasan']);
         $jumlah = round($pokok + $jasa + $denda, 2);
 
-        if ($pokok < 0 || $jasa < 0 || $denda < 0 || $jumlah <= 0) {
-            throw new RuntimeException('Pokok, jasa dan denda tidak boleh minus, dan jumlahnya harus lebih dari nol.');
+        if ($pokok < 0 || $jasa < 0 || $denda < 0) {
+            throw new RuntimeException('Pokok, jasa dan denda tidak boleh minus.');
         }
+        // Pokok + jasa + denda = 0 berarti transaksi ini seharusnya tidak
+        // ada: angsuran dibatalkan (jurnalnya dibalik) TANPA pengganti.
+        $tanpaPengganti = $jumlah < 0.005;
         if ($tanggal->isAfter(now()->endOfDay())) {
             throw new RuntimeException('Tanggal transaksi tidak boleh di masa depan.');
         }
@@ -285,7 +288,7 @@ class LoanBalanceCorrectionService
             throw new RuntimeException('Alasan koreksi wajib diisi.');
         }
 
-        return DB::transaction(function () use ($asal, $tanggal, $pokok, $jasa, $denda, $jumlah, $alasan, $userId) {
+        return DB::transaction(function () use ($asal, $tanggal, $pokok, $jasa, $denda, $jumlah, $alasan, $userId, $tanpaPengganti) {
             $loan = Loan::query()->withoutGlobalScopes()->lockForUpdate()->findOrFail($asal->loan_id);
             $lama = LoanRepayment::query()->withoutGlobalScopes()->lockForUpdate()->findOrFail($asal->id);
 
@@ -297,6 +300,10 @@ class LoanBalanceCorrectionService
             }
             if ($lama->journal_entry_id === null) {
                 throw LoanRepaymentException::noJournal();
+            }
+
+            if ($tanpaPengganti) {
+                return $this->batalkanTanpaPengganti($loan, $lama, $alasan, $userId);
             }
 
             $posisi = $this->sisaPinjaman->posisiAwal(collect([$loan]))[$loan->id];
@@ -395,6 +402,49 @@ class LoanBalanceCorrectionService
 
             return $baru->fresh();
         });
+    }
+
+    /**
+     * Angsuran yang seharusnya tidak pernah ada (mis. input ganda / salah
+     * pinjaman): tandai dibatalkan dan balik jurnalnya — tanpa angsuran
+     * pengganti — lalu selaraskan jadwal & status. Dipanggil dari koreksi()
+     * di dalam transaksinya, dengan pinjaman & angsuran sudah terkunci.
+     */
+    private function batalkanTanpaPengganti(Loan $loan, LoanRepayment $lama, string $alasan, int $userId): LoanRepayment
+    {
+        /** @var JournalEntry $jurnalAsal */
+        $jurnalAsal = JournalEntry::query()->withoutGlobalScopes()->findOrFail($lama->journal_entry_id);
+
+        $pembalik = $this->journalEngine->reverse($jurnalAsal, "Pembatalan angsuran #{$lama->id}: {$alasan}", $userId);
+        $lama->update([
+            'cancelled_at' => now(),
+            'cancelled_by' => $userId,
+            'cancellation_reason' => mb_substr('Dibatalkan tanpa pengganti (Perbaikan Saldo Pinjaman): '.$alasan, 0, 255),
+            'reversal_journal_entry_id' => $pembalik->id,
+        ]);
+
+        AuditLog::query()->create([
+            'actor_id' => $userId,
+            'actor_role' => auth()->user()?->getRoleNames()->implode(','),
+            'branch_id' => $loan->branch_id,
+            'action' => 'koreksi_angsuran',
+            'auditable_type' => LoanRepayment::class,
+            'auditable_id' => $lama->id,
+            'before' => [
+                'repayment_id' => $lama->id, 'tanggal' => $this->tanggal($lama), 'jumlah' => (float) $lama->amount,
+                'pokok' => (float) $lama->principal_portion, 'jasa' => (float) $lama->interest_portion,
+                'denda' => (float) $lama->penalty_portion, 'jurnal' => $jurnalAsal->id,
+            ],
+            'after' => [
+                'dibatalkan_tanpa_pengganti' => true, 'jurnal_pembalik' => $pembalik->id, 'alasan' => $alasan,
+            ],
+            'ip_address' => request()?->ip(),
+            'user_agent' => request()?->userAgent(),
+        ]);
+
+        $this->selaraskanBilaPerlu($loan, $userId);
+
+        return $lama->fresh();
     }
 
     /**
