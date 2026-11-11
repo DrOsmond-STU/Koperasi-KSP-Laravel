@@ -21,6 +21,7 @@ use App\Http\Controllers\Admin\JournalAdjustmentController;
 use App\Http\Controllers\Admin\JournalReportController;
 use App\Http\Controllers\Admin\LaporanController;
 use App\Http\Controllers\Admin\LoanApprovalController;
+use App\Http\Controllers\Admin\LoanBalanceCorrectionController;
 use App\Http\Controllers\Admin\LoanBranchRepairController;
 use App\Http\Controllers\Admin\LoanProductController;
 use App\Http\Controllers\Admin\LoanScheduleAlignmentController;
@@ -481,6 +482,21 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.pinjaman.penyelarasan-jadwal.show');
     Route::get('/admin/pinjaman/penyelarasan-jadwal/riwayat/{alignment}', [LoanScheduleAlignmentController::class, 'riwayat'])
         ->name('admin.pinjaman.penyelarasan-jadwal.riwayat');
+
+    // Perbaikan Saldo Pinjaman Anggota — kartu pinjaman per tanggal menurut
+    // buku besar + koreksi angsuran (batal & catat ulang dengan jurnal yang
+    // benar) + penyelarasan jadwal/status (permintaan pemilik 11 Nov 2026,
+    // lihat LoanBalanceCorrectionService). Hak akses sama dengan Perbaikan Jadwal.
+    Route::get('/admin/pinjaman/perbaikan-saldo', [LoanBalanceCorrectionController::class, 'index'])
+        ->name('admin.pinjaman.perbaikan-saldo.index');
+    Route::get('/admin/pinjaman/perbaikan-saldo/pinjaman/{loan}', [LoanBalanceCorrectionController::class, 'show'])
+        ->name('admin.pinjaman.perbaikan-saldo.show');
+    Route::post('/admin/pinjaman/perbaikan-saldo/pinjaman/{loan}/selaraskan', [LoanBalanceCorrectionController::class, 'selaraskan'])
+        ->name('admin.pinjaman.perbaikan-saldo.selaraskan');
+    Route::get('/admin/pinjaman/perbaikan-saldo/angsuran/{repayment}/koreksi', [LoanBalanceCorrectionController::class, 'edit'])
+        ->name('admin.pinjaman.perbaikan-saldo.koreksi');
+    Route::post('/admin/pinjaman/perbaikan-saldo/angsuran/{repayment}/koreksi', [LoanBalanceCorrectionController::class, 'update'])
+        ->name('admin.pinjaman.perbaikan-saldo.simpan');
 
     Route::get('/admin/cetakan/simpanan', [PrintSavingsController::class, 'index'])
         ->name('admin.print.savings.index');
