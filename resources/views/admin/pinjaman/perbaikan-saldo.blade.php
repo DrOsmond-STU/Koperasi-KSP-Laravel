@@ -35,8 +35,9 @@
             <h3 style="margin-top:0;">Pinjaman yang perlu diperiksa ({{ $daftar->count() }})</h3>
             <p class="tenang" style="margin-top:-6px;">
                 Sisa pokok/jasa minus, berstatus lunas padahal masih bersisa, jadwal tidak selaras dengan buku besar,
-                angsuran bertanggal sebelum saldo awal/pencairan, atau angsuran yang diinput lebih dari
-                {{ \App\Services\Loans\LoanBalanceCorrectionService::HARI_INPUT_TERLAMBAT }} hari setelah tanggalnya.
+                atau angsuran bertanggal sebelum saldo awal/pencairan. Angsuran yang diinput lebih dari
+                {{ \App\Services\Loans\LoanBalanceCorrectionService::HARI_INPUT_TERLAMBAT }} hari setelah tanggalnya ikut
+                ditandai sebagai catatan (cari nomor pinjamannya untuk melihat semua pinjaman).
             </p>
         @else
             <h3 style="margin-top:0;">Hasil pencarian "{{ $cari }}" ({{ $daftar->count() }})</h3>

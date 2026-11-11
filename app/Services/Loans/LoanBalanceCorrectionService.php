@@ -236,6 +236,11 @@ class LoanBalanceCorrectionService
                     $masalah[] = $dini.' angsuran bertanggal sebelum '.($p['migrasi'] ? 'saldo awal' : 'pencairan');
                 }
             }
+            // Sekadar catatan: input ulang angsuran lama yang dibatalkan
+            // memang wajar diinput belakangan, jadi alasan ini sendirian
+            // tidak membuat pinjaman masuk daftar (pemindaian produksi 11 Nov
+            // 2026: 69 dari 80 pinjaman hanya karena ini).
+            $berat = $masalah !== [];
             $terlambat = $rows->filter(fn (LoanRepayment $r) => Carbon::parse($this->tanggal($r))->startOfDay()
                 ->diffInDays($r->created_at->copy()->startOfDay(), false) > self::HARI_INPUT_TERLAMBAT)->count();
             if ($terlambat > 0) {
@@ -247,9 +252,10 @@ class LoanBalanceCorrectionService
                 'sisa_pokok' => $sisaPokok,
                 'sisa_jasa' => $sisaJasa,
                 'masalah' => $masalah,
+                'perlu_diperiksa' => $berat,
             ];
         })
-            ->filter(fn (array $r) => $cari !== null && $cari !== '' ? true : $r['masalah'] !== [])
+            ->filter(fn (array $r) => $cari !== null && $cari !== '' ? true : $r['perlu_diperiksa'])
             ->values();
     }
 
