@@ -108,22 +108,30 @@ class LoanRepaymentService
         ?\DateTimeInterface $date = null,
         ?int $cashAccountId = null,
     ): LoanRepayment {
-        if ($loan->status !== 'dicairkan') {
-            throw LoanRepaymentException::notActive($loan->status);
-        }
-
-        $plan = $this->previewAllocation($loan, $amount);
-
-        if ($plan['remaining_unallocated'] > 0) {
-            throw LoanRepaymentException::overpayment(
-                number_format($amount, 2, '.', ''),
-                number_format($plan['outstanding_before'], 2, '.', ''),
-            );
-        }
-
         $entryDate = $date ?? now();
 
-        return DB::transaction(function () use ($loan, $amount, $createdBy, $description, $idempotencyKey, $plan, $entryDate, $cashAccountId) {
+        return DB::transaction(function () use ($loan, $amount, $createdBy, $description, $idempotencyKey, $entryDate, $cashAccountId) {
+            // Klik ganda / kiriman ulang: kunci pinjaman dulu, lalu cek kunci
+            // idempotensi dan hitung alokasi dari jadwal TERBARU — lihat
+            // lockLoan()/repaymentForIdempotencyKey().
+            $this->lockLoan($loan);
+            if ($ulang = $this->repaymentForIdempotencyKey($idempotencyKey)) {
+                return $ulang;
+            }
+
+            if ($loan->status !== 'dicairkan') {
+                throw LoanRepaymentException::notActive($loan->status);
+            }
+
+            $plan = $this->previewAllocation($loan, $amount);
+
+            if ($plan['remaining_unallocated'] > 0) {
+                throw LoanRepaymentException::overpayment(
+                    number_format($amount, 2, '.', ''),
+                    number_format($plan['outstanding_before'], 2, '.', ''),
+                );
+            }
+
             foreach ($plan['allocations'] as $allocation) {
                 $schedule = LoanSchedule::query()->lockForUpdate()->findOrFail($allocation['schedule_id']);
 
@@ -384,10 +392,6 @@ class LoanRepaymentService
         ?\DateTimeInterface $date = null,
         ?int $cashAccountId = null,
     ): LoanRepayment {
-        if ($loan->status !== 'dicairkan') {
-            throw LoanRepaymentException::notActive($loan->status);
-        }
-
         $principalPortion = round($principalPortion, 2);
         $interestPortion = round($interestPortion, 2);
         $penaltyPortion = round($penaltyPortion, 2);
@@ -404,28 +408,45 @@ class LoanRepaymentService
         }
 
         $scheduleConsumption = round($principalPortion + $interestPortion, 2);
-        $plan = $this->previewManualAllocation($loan, $principalPortion, $interestPortion);
-
-        if ($plan['principal_unallocated'] > 0) {
-            throw LoanRepaymentException::principalOverpayment(
-                number_format($principalPortion, 2, '.', ''),
-                number_format($plan['principal_before'], 2, '.', ''),
-            );
-        }
-
-        if ($plan['interest_unallocated'] > 0) {
-            throw LoanRepaymentException::interestOverpayment(
-                number_format($interestPortion, 2, '.', ''),
-                number_format($plan['interest_before'], 2, '.', ''),
-            );
-        }
-
         $entryDate = $date ?? now();
 
         return DB::transaction(function () use (
             $loan, $product, $principalPortion, $interestPortion, $penaltyPortion, $totalAmount,
-            $scheduleConsumption, $createdBy, $description, $idempotencyKey, $plan, $entryDate, $cashAccountId,
+            $scheduleConsumption, $createdBy, $description, $idempotencyKey, $entryDate, $cashAccountId,
         ) {
+            // Klik ganda tombol Konfirmasi (audit 11 Nov 2026: dua angsuran
+            // tersimpan di detik yang sama, mis. 117-0151-01071 dan
+            // 117-0151-01060 pada 3 Sep 2026). Kunci pinjaman dulu supaya
+            // permintaan kedua menunggu yang pertama selesai, lalu:
+            //  - kunci idempotensi sama -> kembalikan angsuran yang sudah
+            //    tercatat, tidak mencatat lagi;
+            //  - status & alokasi dihitung dari jadwal TERBARU (setelah
+            //    kunci), bukan dari data yang dibaca sebelum menunggu.
+            $this->lockLoan($loan);
+            if ($ulang = $this->repaymentForIdempotencyKey($idempotencyKey)) {
+                return $ulang;
+            }
+
+            if ($loan->status !== 'dicairkan') {
+                throw LoanRepaymentException::notActive($loan->status);
+            }
+
+            $plan = $this->previewManualAllocation($loan, $principalPortion, $interestPortion);
+
+            if ($plan['principal_unallocated'] > 0) {
+                throw LoanRepaymentException::principalOverpayment(
+                    number_format($principalPortion, 2, '.', ''),
+                    number_format($plan['principal_before'], 2, '.', ''),
+                );
+            }
+
+            if ($plan['interest_unallocated'] > 0) {
+                throw LoanRepaymentException::interestOverpayment(
+                    number_format($interestPortion, 2, '.', ''),
+                    number_format($plan['interest_before'], 2, '.', ''),
+                );
+            }
+
             // Direkam apa adanya (bukan cuma dipakai lalu dibuang) — ini
             // satu-satunya jejak "baris jadwal mana disentuh berapa" milik
             // pembayaran INI, dipakai reverseRepayment() supaya pembatalan
@@ -543,6 +564,14 @@ class LoanRepaymentService
         }
 
         return DB::transaction(function () use ($repayment, $reason, $cancelledBy) {
+            // Dua klik "Batalkan" bersamaan: yang kedua menunggu di sini lalu
+            // melihat angsuran sudah dibatalkan.
+            $locked = LoanRepayment::query()->withoutGlobalScopes()->lockForUpdate()->findOrFail($repayment->id);
+            if ($locked->cancelled_at !== null) {
+                throw LoanRepaymentException::alreadyCancelled();
+            }
+            $repayment->setRawAttributes($locked->getAttributes(), true);
+
             $loan = $repayment->loan;
 
             foreach ((array) $repayment->schedule_allocations as $allocation) {
@@ -632,5 +661,31 @@ class LoanRepaymentService
     public function defaultCashAccount(): ?ChartOfAccount
     {
         return Branch::query()->where('name', 'LIKE', '%USP%')->first()?->cashAccount;
+    }
+
+    /**
+     * Kunci baris pinjaman (SELECT ... FOR UPDATE) dan muat ulang nilainya
+     * ke model yang dipegang pemanggil, supaya dua pembayaran untuk pinjaman
+     * yang sama dicatat bergiliran dan yang kedua melihat status terbaru.
+     */
+    private function lockLoan(Loan $loan): void
+    {
+        $locked = Loan::query()->withoutGlobalScopes()->lockForUpdate()->findOrFail($loan->id);
+        $loan->setRawAttributes($locked->getAttributes(), true);
+    }
+
+    /**
+     * Angsuran yang sudah tercatat dengan kunci idempotensi ini (kiriman
+     * ulang form yang sama), atau null kalau belum ada.
+     */
+    private function repaymentForIdempotencyKey(?string $idempotencyKey): ?LoanRepayment
+    {
+        if ($idempotencyKey === null) {
+            return null;
+        }
+
+        $journalEntryId = DB::table('journal_entry_idempotency_keys')->where('idempotency_key', $idempotencyKey)->value('journal_entry_id');
+
+        return $journalEntryId === null ? null : LoanRepayment::query()->withoutGlobalScopes()->where('journal_entry_id', $journalEntryId)->first();
     }
 }
