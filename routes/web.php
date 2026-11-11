@@ -216,6 +216,10 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.jurnal-umum.store');
     Route::get('/admin/jurnal-umum/{entry}/cetak', [GeneralJournalController::class, 'print'])
         ->name('admin.jurnal-umum.print');
+    Route::get('/admin/jurnal-umum/{entry}/edit', [GeneralJournalController::class, 'edit'])
+        ->name('admin.jurnal-umum.edit');
+    Route::put('/admin/jurnal-umum/{entry}', [GeneralJournalController::class, 'update'])
+        ->name('admin.jurnal-umum.update');
     Route::post('/admin/jurnal-umum/{entry}/batal', [GeneralJournalController::class, 'cancel'])
         ->name('admin.jurnal-umum.cancel');
 

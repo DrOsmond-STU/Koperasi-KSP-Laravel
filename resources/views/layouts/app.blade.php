@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="id" data-theme="{{ $theme }}">
-<head>
-    <meta charset="utf-8">
+<head><meta charset="utf-8">
+    
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ $branding['app_name'] }} — @yield('title', 'Beranda')</title>
     <style>
@@ -915,7 +915,15 @@
                     const matchesSearch = term === '' || row.textContent.toLowerCase().includes(term);
                     const matchesFilters = activeFilters.every(function (filter) {
                         const cell = row.querySelector('[data-column="' + filter.column + '"]');
-                        return cell && cell.textContent.trim() === filter.value;
+                        if (!cell) return false;
+                        // Sel yang punya teks tambahan (mis. keterangan kecil di
+                        // bawah label) bisa menetapkan nilai saringannya sendiri
+                        // lewat data-filter-value, supaya cocok exact-match tetap
+                        // bekerja tanpa bergantung pada isi seluruh sel.
+                        const cellValue = cell.dataset.filterValue !== undefined
+                            ? cell.dataset.filterValue
+                            : cell.textContent.trim();
+                        return cellValue === filter.value;
                     });
 
                     let matchesDate = true;

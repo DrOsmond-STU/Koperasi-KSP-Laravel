@@ -140,6 +140,34 @@ class JournalEngine
     }
 
     /**
+     * Koreksi jurnal umum: balik entri lama lalu posting entri pengganti,
+     * keduanya dalam SATU transaksi database. Kalau posting pengganti gagal
+     * (tidak balance, akun tidak postable, periode tertutup), pembaliknya
+     * ikut di-rollback — tidak pernah ada kondisi "sudah dibatalkan tapi
+     * penggantinya tidak jadi".
+     *
+     * Entri asal tetap tidak disentuh (LED-06). Yang berubah di Buku Besar,
+     * Laba Rugi, dan Neraca adalah: entri asal + pembalik = nol, lalu entri
+     * pengganti menggantikannya.
+     *
+     * @param  array{
+     *     branch_id: int,
+     *     entry_date: string|\DateTimeInterface,
+     *     description: string,
+     *     created_by: int,
+     *     lines: array<int, array{account_code?: string, chart_of_account_id?: int, debit?: float|string, credit?: float|string}>,
+     * }  $data
+     */
+    public function reverseAndRepost(JournalEntry $entry, string $reason, array $data): JournalEntry
+    {
+        return DB::transaction(function () use ($entry, $reason, $data) {
+            $this->reverse($entry, $reason, (int) $data['created_by']);
+
+            return $this->post($data);
+        });
+    }
+
+    /**
      * @return array{chart_of_account_id: int, debit: string, credit: string}
      */
     private function resolveLine(array $line): array

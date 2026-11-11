@@ -24,15 +24,22 @@ class GeneralLedgerController extends Controller
 
         $account = $accountId !== null ? ChartOfAccount::query()->find($accountId) : null;
 
+        // Bawaan: jurnal yang dibatalkan (asal + pembaliknya) disembunyikan
+        // supaya kartu buku besar tidak penuh riak bolak-balik yang net-nya
+        // nol. Saldo berjalan tidak terpengaruh — lihat catatan di
+        // GeneralLedgerService::linesFor().
+        $showCancelled = $request->boolean('tampilkan_dibatalkan');
+
         return view('admin.jurnal-buku-besar', [
             'accounts' => ChartOfAccount::query()->where('is_postable', true)->orderBy('code')->get(),
             'selectedAccount' => $account,
-            'lines' => $account !== null ? $this->ledgerService->linesFor($account, $branchId, $periodStart, $periodEnd) : collect(),
+            'lines' => $account !== null ? $this->ledgerService->linesFor($account, $branchId, $periodStart, $periodEnd, $showCancelled) : collect(),
             'periodStart' => $periodStart,
             'periodEnd' => $periodEnd,
             'branches' => $this->availableBranches($request),
             'selectedBranchId' => $branchId,
             'isConsolidated' => $branchId === null,
+            'showCancelled' => $showCancelled,
         ]);
     }
 

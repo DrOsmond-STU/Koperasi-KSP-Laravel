@@ -145,12 +145,13 @@
 
                     <select class="dt-filter" data-filter-column="status">
                         <option value="">Status — Semua</option>
-                        <option value="Aktif">Aktif</option>
+                        <option value="Aktif" selected>Aktif</option>
                         <option value="Dibatalkan">Dibatalkan</option>
                     </select>
 
                     <span class="dt-count"></span>
                 </div>
+                <p class="hint" style="margin-top:-6px; margin-bottom:10px;">Tabel secara bawaan hanya menampilkan jurnal berstatus <strong>Aktif</strong>. Pilih <strong>Status &rarr; Dibatalkan</strong> atau <strong>Semua</strong> untuk melihat riwayat pembatalan (data tetap tersimpan).</p>
 
                 <div class="dt-table-scroll">
                     <table class="dt-table">
@@ -163,7 +164,7 @@
                                     <td data-column="keterangan">{{ $entry->description }}</td>
                                     <td data-column="cabang">{{ $entry->branch?->name }}</td>
                                     <td data-column="total">Rp {{ number_format((float) $entry->lines->sum('debit'), 2, ',', '.') }}</td>
-                                    <td data-column="status">
+                                    <td data-column="status" data-filter-value="{{ $isCancelled ? 'Dibatalkan' : 'Aktif' }}">
                                         @if ($isCancelled)
                                             <span style="color: var(--brick); font-weight: 600;">Dibatalkan</span>
                                             <div class="hint" style="margin-top: 2px;">pembalik #{{ $entry->reversals->first()->id }}</div>
@@ -173,6 +174,10 @@
                                     </td>
                                     <td>
                                         <a href="{{ route('admin.jurnal-umum.print', $entry) }}" target="_blank">Cetak</a>
+                                        @if (in_array($entry->id, $idBisaDiedit ?? [], true))
+                                            &nbsp;·&nbsp;
+                                            <a href="{{ route('admin.jurnal-umum.edit', $entry) }}">Edit</a>
+                                        @endif
                                         {{-- Hanya jurnal yang diinput dari menu ini, belum dibatalkan, dan
                                              boleh dibatalkan user ini (GeneralJournalController::create()). --}}
                                         @if (in_array($entry->id, $idBisaDibatalkan ?? [], true))

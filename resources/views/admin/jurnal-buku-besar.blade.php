@@ -31,7 +31,15 @@
         </select>
         <input type="date" name="period_start" value="{{ $periodStart }}" onchange="this.form.submit()">
         <input type="date" name="period_end" value="{{ $periodEnd }}" onchange="this.form.submit()">
+        <label style="display:flex; align-items:center; gap:7px; font-size:13px; padding:8px 12px; border:1px solid var(--line); border-radius:9px; cursor:pointer;">
+            <input type="checkbox" name="tampilkan_dibatalkan" value="1" onchange="this.form.submit()" {{ ($showCancelled ?? false) ? 'checked' : '' }} style="margin:0;">
+            Tampilkan jurnal yang dibatalkan
+        </label>
     </form>
+
+    @unless ($showCancelled ?? false)
+        <p class="hint" style="margin-top:-8px; margin-bottom:14px;">Jurnal yang dibatalkan (entri asal + jurnal pembaliknya) tidak ditampilkan. Keduanya saling meniadakan, jadi <strong>saldo berjalan tidak terpengaruh</strong> — centang di atas untuk melihatnya.</p>
+    @endunless
 
     @if ($selectedAccount)
         {{-- Nominal ditampilkan 2 angka desimal, sama dengan presisi yang

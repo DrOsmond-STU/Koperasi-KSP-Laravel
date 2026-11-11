@@ -51,15 +51,27 @@ class GeneralLedgerService
      *
      * @return Collection<int, array{date: string, description: string, debit: string, credit: string, running_balance: string, is_opening: bool}>
      */
-    public function linesFor(ChartOfAccount $account, ?int $branchId, string $periodStart, string $periodEnd): Collection
+    public function linesFor(ChartOfAccount $account, ?int $branchId, string $periodStart, string $periodEnd, bool $showCancelled = false): Collection
     {
         $openingAsOf = \Illuminate\Support\Carbon::parse($periodStart)->subDay()->toDateString();
         $opening = $this->balanceFor($account, $branchId, $openingAsOf);
 
         $lines = JournalLine::query()
             ->where('chart_of_account_id', $account->id)
-            ->whereHas('journalEntry', function ($query) use ($branchId, $periodStart, $periodEnd) {
+            ->whereHas('journalEntry', function ($query) use ($branchId, $periodStart, $periodEnd, $showCancelled) {
                 $query->whereBetween('entry_date', [$periodStart, $periodEnd]);
+
+                // Jurnal yang dibatalkan disembunyikan SEBAGAI PASANGAN:
+                // entri asal DAN jurnal pembaliknya sama-sama dikeluarkan.
+                // Keduanya selalu bertanggal sama (JournalEngine::reverse()),
+                // jadi net kontribusinya nol dan saldo berjalan tidak berubah
+                // sedikit pun — yang hilang hanya riak bolak-balik yang tidak
+                // informatif. Menyembunyikan pembaliknya saja akan membuat
+                // saldo salah (entri asal tetap terhitung).
+                if (! $showCancelled) {
+                    $query->whereNull('reversal_of_entry_id')
+                        ->whereDoesntHave('reversals');
+                }
 
                 if ($branchId !== null) {
                     $query->where('branch_id', $branchId);

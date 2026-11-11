@@ -7,6 +7,7 @@ use App\Exceptions\Accounting\JournalPostingException;
 use App\Http\Controllers\Concerns\GeneratesPrintPdf;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreGeneralJournalRequest;
+use App\Http\Requests\UpdateGeneralJournalRequest;
 use App\Models\Branch;
 use App\Models\ChartOfAccount;
 use App\Models\JournalEntry;
@@ -16,6 +17,7 @@ use App\Services\Accounting\JournalEngine;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
@@ -66,6 +68,11 @@ class GeneralJournalController extends Controller
             'idBisaDibatalkan' => $recentEntries
                 ->filter(fn (JournalEntry $entry) => $entry->reversals->isEmpty()
                     && $this->bolehMembatalkan($user, $entry))
+                ->pluck('id')
+                ->all(),
+            'idBisaDiedit' => $recentEntries
+                ->filter(fn (JournalEntry $entry) => $entry->reversals->isEmpty()
+                    && $this->bolehMengedit($user, $entry))
                 ->pluck('id')
                 ->all(),
         ]);
@@ -144,6 +151,86 @@ class GeneralJournalController extends Controller
             ->with('status', "Jurnal umum #{$entry->id} dibatalkan — jurnal pembalik #{$pembalik->id} sudah diposting.");
     }
 
+    /**
+     * Form edit jurnal umum. Tidak mengubah apa pun sampai user menekan
+     * "Simpan Koreksi" — halaman ini hanya membaca entri asal dan menampilkan
+     * baris-barisnya kembali ke form.
+     */
+    public function edit(Request $request, JournalEntry $entry): View|RedirectResponse
+    {
+        $this->authorize('jurnal.adjust');
+
+        if (! $this->queryJurnalManual()->whereKey($entry->id)->exists()) {
+            return redirect()->route('admin.jurnal-umum.create')
+                ->with('error', "Jurnal #{$entry->id} bukan jurnal yang diinput dari menu Jurnal Umum — koreksi lewat modul asalnya.");
+        }
+
+        if ($entry->reversals()->exists()) {
+            return redirect()->route('admin.jurnal-umum.create')
+                ->with('error', "Jurnal #{$entry->id} sudah dibatalkan — tidak bisa diedit lagi. Buat entri baru melalui form Jurnal Umum.");
+        }
+
+        $entry->load('lines.account');
+
+        return view('admin.jurnal-umum-edit', [
+            'entry' => $entry,
+            'postableAccounts' => ChartOfAccount::query()->where('is_postable', true)->orderBy('code')->get(),
+            'branches' => $this->availableBranches($request),
+        ]);
+    }
+
+    /**
+     * Simpan koreksi: balik entri lama, lalu posting entri pengganti — satu
+     * transaksi database di JournalEngine::reverseAndRepost(). Entri asal
+     * tidak pernah di-UPDATE/DELETE, jadi jejak audit utuh dan Buku Besar /
+     * Laba Rugi / Neraca tetap konsisten (asal + pembalik = nol).
+     */
+    public function update(UpdateGeneralJournalRequest $request, JournalEntry $entry): RedirectResponse
+    {
+        if (! $this->queryJurnalManual()->whereKey($entry->id)->exists()) {
+            return redirect()->route('admin.jurnal-umum.create')
+                ->with('error', "Jurnal #{$entry->id} bukan jurnal yang diinput dari menu Jurnal Umum — koreksi lewat modul asalnya.");
+        }
+
+        if (! Hash::check($request->validated('password'), $request->user()->password)) {
+            return redirect()->route('admin.jurnal-umum.edit', $entry)
+                ->with('error', 'Kata sandi salah — koreksi dibatalkan.');
+        }
+
+        if ($entry->reversals()->exists()) {
+            return redirect()->route('admin.jurnal-umum.create')
+                ->with('error', "Jurnal #{$entry->id} sudah dibatalkan — tidak bisa diedit lagi.");
+        }
+
+        $lines = collect($request->validated('lines'))
+            ->map(fn (array $line) => [
+                'chart_of_account_id' => $line['chart_of_account_id'],
+                'debit' => $line['position'] === 'debit' ? $line['amount'] : 0,
+                'credit' => $line['position'] === 'kredit' ? $line['amount'] : 0,
+            ])
+            ->all();
+
+        try {
+            $pengganti = $this->journalEngine->reverseAndRepost(
+                $entry,
+                $request->validated('reason'),
+                [
+                    'branch_id' => $request->validated('branch_id'),
+                    'entry_date' => $request->validated('entry_date'),
+                    'description' => $request->validated('description'),
+                    'created_by' => $request->user()->id,
+                    'lines' => $lines,
+                ],
+            );
+        } catch (JournalPostingException $exception) {
+            return redirect()->route('admin.jurnal-umum.edit', $entry)
+                ->with('error', $exception->getMessage());
+        }
+
+        return redirect()->route('admin.jurnal-umum.create')
+            ->with('status', "Jurnal umum #{$entry->id} dikoreksi — jurnal pembalik sudah diposting dan jurnal pengganti #{$pengganti->id} dibuat.");
+    }
+
     public function print(JournalEntry $entry): Response
     {
         $this->authorize('jurnal.read');
@@ -180,6 +267,16 @@ class GeneralJournalController extends Controller
     {
         return $user->can('jurnal.adjust')
             || ($user->can('jurnal.create') && (int) $entry->created_by === (int) $user->id);
+    }
+
+    /**
+     * Edit = balik + posting ulang, jadi hanya pemegang jurnal.adjust
+     * (mis. Bendahara) yang boleh — lebih ketat daripada Batalkan, karena
+     * hasilnya mengubah angka laporan, bukan sekadar meniadakan entri.
+     */
+    private function bolehMengedit(User $user, JournalEntry $entry): bool
+    {
+        return $user->can('jurnal.adjust');
     }
 
     /**
