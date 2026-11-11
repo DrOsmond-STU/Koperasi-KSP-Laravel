@@ -40,6 +40,8 @@
             <input type="hidden" name="amount" value="{{ $amount }}">
             <input type="hidden" name="description" value="{{ $description }}">
             <input type="hidden" name="cash_account_id" value="{{ $cashAccount->id }}">
+            {{-- Satu kunci per konfirmasi: klik ganda tidak mencatat transaksi dua kali. --}}
+            <input type="hidden" name="idempotency_key" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
             <button type="submit" class="btn-primary">Konfirmasi &amp; Simpan</button>
             <a href="{{ route('staf.teller.create') }}" class="btn-ghost">Batal</a>
         </form>

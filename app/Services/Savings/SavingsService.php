@@ -105,6 +105,11 @@ class SavingsService
         $entryDate = $date ?? now();
 
         return DB::transaction(function () use ($account, $amount, $createdBy, $description, $idempotencyKey, $entryDate, $cashAccount) {
+            $this->lockAccount($account);
+            if ($ulang = $this->transactionForIdempotencyKey($idempotencyKey)) {
+                return $ulang;
+            }
+
             $product = $account->savingsProduct;
             $newBalance = bcadd((string) $account->balance, (string) $amount, 2);
             $cash = $cashAccount ?? $this->cashAccount();
@@ -150,13 +155,18 @@ class SavingsService
         ?\DateTimeInterface $date = null,
         ?ChartOfAccount $cashAccount = null,
     ): SavingsTransaction {
-        if (bccomp((string) $account->balance, (string) $amount, 2) < 0) {
-            throw new InsufficientBalanceException($account->account_number, (string) $account->balance, (string) $amount);
-        }
-
         $entryDate = $date ?? now();
 
         return DB::transaction(function () use ($account, $amount, $createdBy, $description, $idempotencyKey, $entryDate, $cashAccount) {
+            $this->lockAccount($account);
+            if ($ulang = $this->transactionForIdempotencyKey($idempotencyKey)) {
+                return $ulang;
+            }
+
+            if (bccomp((string) $account->balance, (string) $amount, 2) < 0) {
+                throw new InsufficientBalanceException($account->account_number, (string) $account->balance, (string) $amount);
+            }
+
             $product = $account->savingsProduct;
             $newBalance = bcsub((string) $account->balance, (string) $amount, 2);
             $cash = $cashAccount ?? $this->cashAccount();
@@ -206,6 +216,7 @@ class SavingsService
         int $createdBy,
         ?string $description = null,
     ): SavingsTransaction {
+        $this->lockAccount($account);
         if (bccomp((string) $account->balance, $amount, 2) < 0) {
             throw new InsufficientBalanceException($account->account_number, (string) $account->balance, $amount);
         }
@@ -237,6 +248,7 @@ class SavingsService
         int $createdBy,
         ?string $description = null,
     ): SavingsTransaction {
+        $this->lockAccount($account);
         $newBalance = bcadd((string) $account->balance, $amount, 2);
         $account->update(['balance' => $newBalance]);
 
@@ -270,6 +282,7 @@ class SavingsService
 
         return DB::transaction(function () use ($transaction, $reason, $cancelledBy) {
             $account = $transaction->savingsAccount;
+            $this->lockAccount($account);
             $amount = (string) $transaction->amount;
 
             if ($transaction->type === 'setor') {
@@ -333,6 +346,36 @@ class SavingsService
                 ? $this->deposit($account, $newAmount, $editedBy, $newDescription, null, $newDate)
                 : $this->withdraw($account, $newAmount, $editedBy, $newDescription, null, $newDate);
         });
+    }
+
+    /**
+     * Mengunci baris rekening (SELECT ... FOR UPDATE) lalu memuat ulang
+     * saldonya ke model yang dipakai pemanggil. Tanpa kunci ini dua
+     * transaksi yang tersimpan bersamaan (klik ganda — kasus #227/#228,
+     * 7 Okt 2026) sama-sama membaca saldo lama dan saling menimpa: jurnal
+     * terposting dua kali, saldo rekening hanya naik sekali. Wajib dipanggil
+     * di dalam DB::transaction.
+     */
+    private function lockAccount(SavingsAccount $account): void
+    {
+        $locked = SavingsAccount::query()->withoutGlobalScopes()->lockForUpdate()->findOrFail($account->id);
+        $account->setRawAttributes($locked->getAttributes(), true);
+    }
+
+    /**
+     * Kiriman ulang dengan idempotency key yang sama (klik ganda pada
+     * Konfirmasi & Simpan) mengembalikan transaksi yang sudah tercatat,
+     * tanpa memposting jurnal atau mengubah saldo lagi.
+     */
+    private function transactionForIdempotencyKey(?string $idempotencyKey): ?SavingsTransaction
+    {
+        if ($idempotencyKey === null) {
+            return null;
+        }
+
+        $journalEntryId = DB::table('journal_entry_idempotency_keys')->where('idempotency_key', $idempotencyKey)->value('journal_entry_id');
+
+        return $journalEntryId === null ? null : SavingsTransaction::query()->withoutGlobalScopes()->where('journal_entry_id', $journalEntryId)->first();
     }
 
     /**

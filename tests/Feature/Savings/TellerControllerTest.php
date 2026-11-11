@@ -224,6 +224,38 @@ class TellerControllerTest extends TestCase
             ->assertSessionHas('error', "Transaksi {$tx->id} sudah dibatalkan sebelumnya.");
     }
 
+    public function test_double_click_on_confirm_records_the_deposit_only_once(): void
+    {
+        // Kasus #227/#228 (7 Okt 2026): satu setoran tersimpan dua kali.
+        $teller = $this->teller();
+        $account = SavingsAccount::factory()->create(['balance' => 25000]);
+        $form = [
+            'savings_account_id' => $account->id, 'type' => 'setor', 'amount' => 500000,
+            'transaction_date' => now()->toDateString(), 'idempotency_key' => 'konfirmasi-uji-1',
+        ];
+
+        $this->actingAs($teller)->post(route('staf.teller.store'), $form)->assertRedirect(route('staf.teller.create'));
+        $this->actingAs($teller)->post(route('staf.teller.store'), $form)->assertRedirect(route('staf.teller.create'));
+
+        $this->assertSame(1, \App\Models\SavingsTransaction::query()->where('savings_account_id', $account->id)->count());
+        $this->assertEquals(525000, (float) $account->fresh()->balance);
+    }
+
+    public function test_deposit_with_a_stale_account_model_uses_the_current_balance(): void
+    {
+        // Proses kedua dari klik ganda memegang saldo lama; setelah dikunci,
+        // saldo dibaca ulang sehingga jurnal dan saldo tetap sejalan.
+        $teller = $this->teller();
+        $account = SavingsAccount::factory()->create(['balance' => 25000]);
+        $basi = SavingsAccount::query()->findOrFail($account->id);
+        \Illuminate\Support\Facades\DB::table('savings_accounts')->where('id', $account->id)->update(['balance' => 525000]);
+
+        $trx = app(\App\Services\Savings\SavingsService::class)->deposit($basi, 500000, $teller->id);
+
+        $this->assertEquals(1025000, (float) $account->fresh()->balance);
+        $this->assertEquals(1025000, (float) $trx->balance_after);
+    }
+
     public function test_teller_can_approve_a_members_withdrawal_request(): void
     {
         $teller = $this->teller();
