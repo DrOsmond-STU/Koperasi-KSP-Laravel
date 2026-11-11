@@ -109,7 +109,22 @@ class TellerController extends Controller
     {
         abort_unless($transaction->canBeCancelledBy($request->user()), 403, 'Anda hanya bisa membatalkan transaksi yang Anda buat sendiri.');
 
-        $this->savings->reverseTransaction($transaction, $request->validated('reason'), $request->user()->id);
+        try {
+            $this->savings->reverseTransaction($transaction, $request->validated('reason'), $request->user()->id);
+        } catch (TransactionAlreadyCancelledException) {
+            // Klik ganda / dua tab: pembatalan pertama sudah berhasil.
+            return back()->with('error', "Transaksi {$transaction->id} sudah dibatalkan sebelumnya.");
+        } catch (InsufficientBalanceException) {
+            // Laporan 11 Nov 2026 (transaksi #227): membatalkan setoran yang
+            // uangnya sudah ditarik akan membuat saldo minus — ditolak, tapi
+            // dengan pesan yang jelas, bukan halaman error 500.
+            $account = $transaction->savingsAccount;
+            $rp = fn ($n) => 'Rp '.number_format((float) $n, 2, ',', '.');
+
+            return back()->with('error', "Transaksi {$transaction->id} (setoran {$rp($transaction->amount)}) tidak bisa dibatalkan: "
+                ."saldo rekening {$account->account_number} sekarang tinggal {$rp($account->balance)}, sehingga pembatalan "
+                .'akan membuat saldo minus. Batalkan dulu penarikan yang terjadi setelah setoran ini, lalu coba lagi.');
+        }
 
         return redirect()
             ->route('staf.teller.create')

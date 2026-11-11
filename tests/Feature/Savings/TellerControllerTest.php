@@ -181,6 +181,49 @@ class TellerControllerTest extends TestCase
         app(\App\Services\Savings\SavingsService::class)->reverseTransaction($tx->fresh(), 'Kedua', $teller->id);
     }
 
+    public function test_cancelling_a_deposit_already_withdrawn_shows_a_message_instead_of_an_error_page(): void
+    {
+        // Kasus #227: setoran Rp 500.000 dibatalkan setelah uangnya ditarik
+        // (saldo tinggal Rp 25.000) — dulu halaman error 500.
+        $teller = $this->teller();
+        $account = SavingsAccount::factory()->create(['balance' => 0]);
+        $this->actingAs($teller)->post(route('staf.teller.store'), [
+            'savings_account_id' => $account->id, 'type' => 'setor', 'amount' => 500000, 'transaction_date' => now()->toDateString(),
+        ]);
+        $this->actingAs($teller)->post(route('staf.teller.store'), [
+            'savings_account_id' => $account->id, 'type' => 'tarik', 'amount' => 475000, 'transaction_date' => now()->toDateString(),
+        ]);
+        $setoran = \App\Models\SavingsTransaction::query()->where('savings_account_id', $account->id)->where('type', 'setor')->firstOrFail();
+
+        $this->actingAs($teller)
+            ->from(route('staf.teller.history'))
+            ->post(route('staf.teller.cancel', $setoran), ['reason' => 'Salah rekening'])
+            ->assertRedirect(route('staf.teller.history'))
+            ->assertSessionHas('error', fn ($pesan) => str_contains($pesan, 'tidak bisa dibatalkan') && str_contains($pesan, 'Rp 25.000,00'));
+
+        $this->assertNull($setoran->fresh()->cancelled_at);
+        $this->assertEquals(25000, (float) $account->fresh()->balance);
+
+        $this->actingAs($teller)->get(route('staf.teller.history'))->assertSee('tidak bisa dibatalkan');
+    }
+
+    public function test_cancelling_twice_shows_a_message_instead_of_an_error_page(): void
+    {
+        $teller = $this->teller();
+        $account = SavingsAccount::factory()->create(['balance' => 0]);
+        $this->actingAs($teller)->post(route('staf.teller.store'), [
+            'savings_account_id' => $account->id, 'type' => 'setor', 'amount' => 60000, 'transaction_date' => now()->toDateString(),
+        ]);
+        $tx = \App\Models\SavingsTransaction::query()->where('savings_account_id', $account->id)->firstOrFail();
+        $this->actingAs($teller)->post(route('staf.teller.cancel', $tx), ['reason' => 'Pertama']);
+
+        $this->actingAs($teller)
+            ->from(route('staf.teller.create'))
+            ->post(route('staf.teller.cancel', $tx->fresh()), ['reason' => 'Kedua'])
+            ->assertRedirect(route('staf.teller.create'))
+            ->assertSessionHas('error', "Transaksi {$tx->id} sudah dibatalkan sebelumnya.");
+    }
+
     public function test_teller_can_approve_a_members_withdrawal_request(): void
     {
         $teller = $this->teller();
