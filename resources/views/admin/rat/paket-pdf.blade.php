@@ -25,15 +25,15 @@
         <tbody>
             <tr class="section-row"><td colspan="2">Aktiva</td></tr>
             @foreach ($aktivaRows as $row)
-                <tr><td>{{ $row['account']->code }} — {{ $row['account']->name }}</td><td class="amount">Rp {{ number_format((float) $row['balance'], 0, ',', '.') }}</td></tr>
+                <tr><td>{{ $row['account']->code }} — {{ $row['account']->name }}</td><td class="amount">Rp {{ number_format((float) $row['balance'], 2, ',', '.') }}</td></tr>
             @endforeach
-            <tr><td><strong>Total Aktiva</strong></td><td class="amount"><strong>Rp {{ number_format((float) $neraca['total_aset'], 0, ',', '.') }}</strong></td></tr>
+            <tr><td><strong>Total Aktiva</strong></td><td class="amount"><strong>Rp {{ number_format((float) $neraca['total_aset'], 2, ',', '.') }}</strong></td></tr>
 
             <tr class="section-row"><td colspan="2">Pasiva</td></tr>
             @foreach ($pasivaRows as $row)
-                <tr><td>{{ $row['account']->code }} — {{ $row['account']->name }}</td><td class="amount">Rp {{ number_format((float) $row['balance'], 0, ',', '.') }}</td></tr>
+                <tr><td>{{ $row['account']->code }} — {{ $row['account']->name }}</td><td class="amount">Rp {{ number_format((float) $row['balance'], 2, ',', '.') }}</td></tr>
             @endforeach
-            <tr><td><strong>Total Pasiva (Liabilitas + Ekuitas)</strong></td><td class="amount"><strong>Rp {{ number_format((float) bcadd($neraca['total_liabilitas'], $neraca['total_ekuitas'], 2), 0, ',', '.') }}</strong></td></tr>
+            <tr><td><strong>Total Pasiva (Liabilitas + Ekuitas)</strong></td><td class="amount"><strong>Rp {{ number_format((float) bcadd($neraca['total_liabilitas'], $neraca['total_ekuitas'], 2), 2, ',', '.') }}</strong></td></tr>
         </tbody>
     </table>
 
@@ -46,17 +46,17 @@
         <tbody>
             <tr class="section-row"><td colspan="2">Pendapatan</td></tr>
             @foreach ($labaRugiPendapatanRows as $row)
-                <tr><td>{{ $row['account']->code }} — {{ $row['account']->name }}</td><td class="amount">Rp {{ number_format((float) $row['amount'], 0, ',', '.') }}</td></tr>
+                <tr><td>{{ $row['account']->code }} — {{ $row['account']->name }}</td><td class="amount">Rp {{ number_format((float) $row['amount'], 2, ',', '.') }}</td></tr>
             @endforeach
-            <tr><td>Total Pendapatan</td><td class="amount">Rp {{ number_format((float) $labaRugi['total_pendapatan'], 0, ',', '.') }}</td></tr>
+            <tr><td>Total Pendapatan</td><td class="amount">Rp {{ number_format((float) $labaRugi['total_pendapatan'], 2, ',', '.') }}</td></tr>
 
             <tr class="section-row"><td colspan="2">Beban</td></tr>
             @foreach ($labaRugiBebanRows as $row)
-                <tr><td>{{ $row['account']->code }} — {{ $row['account']->name }}</td><td class="amount">Rp {{ number_format((float) $row['amount'], 0, ',', '.') }}</td></tr>
+                <tr><td>{{ $row['account']->code }} — {{ $row['account']->name }}</td><td class="amount">Rp {{ number_format((float) $row['amount'], 2, ',', '.') }}</td></tr>
             @endforeach
-            <tr><td>Total Beban</td><td class="amount">Rp {{ number_format((float) $labaRugi['total_beban'], 0, ',', '.') }}</td></tr>
+            <tr><td>Total Beban</td><td class="amount">Rp {{ number_format((float) $labaRugi['total_beban'], 2, ',', '.') }}</td></tr>
 
-            <tr><td><strong>SHU (Pendapatan − Beban)</strong></td><td class="amount"><strong>Rp {{ number_format((float) $labaRugi['shu'], 0, ',', '.') }}</strong></td></tr>
+            <tr><td><strong>SHU (Pendapatan − Beban)</strong></td><td class="amount"><strong>Rp {{ number_format((float) $labaRugi['shu'], 2, ',', '.') }}</strong></td></tr>
         </tbody>
     </table>
 
@@ -65,7 +65,7 @@
         <thead><tr><th>Kategori</th><th class="amount">Nominal</th></tr></thead>
         <tbody>
             @foreach ($shu['allocations'] as $allocation)
-                <tr><td>{{ $allocation['category']->name }} ({{ $allocation['category']->percentage }}%)</td><td class="amount">Rp {{ number_format((float) $allocation['amount'], 0, ',', '.') }}</td></tr>
+                <tr><td>{{ $allocation['category']->name }} ({{ $allocation['category']->percentage }}%)</td><td class="amount">Rp {{ number_format((float) $allocation['amount'], 2, ',', '.') }}</td></tr>
             @endforeach
         </tbody>
     </table>

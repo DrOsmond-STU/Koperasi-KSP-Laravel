@@ -8,7 +8,55 @@
         .laporan-actions { display: flex; gap: 8px; flex-wrap: wrap; }
         .btn-primary { display: inline-block; padding: 9px 16px; background: var(--pine); color: #fff; border-radius: 9px; text-decoration: none; font-weight: 700; font-size: 13px; }
         .btn-secondary { display: inline-block; padding: 9px 16px; background: transparent; color: var(--pine-bright); border: 1px solid var(--pine); border-radius: 9px; text-decoration: none; font-weight: 700; font-size: 13px; }
+        .error-msg { color: var(--brick); font-size: 13px; margin-bottom: 14px; }
+        .potong-msg { background: var(--paper); border: 1px solid var(--line); border-left: 4px solid var(--brick); border-radius: 10px; padding: 12px 15px; font-size: 13px; line-height: 1.6; margin-bottom: 16px; }
+        /* Sub total & total dibedakan latarnya — lihat catatan yang sama di
+           prints/laporan/generic.blade.php. Memakai token tema supaya ikut
+           benar di mode gelap. */
+        .dt-table tr.baris-ringkasan td { background: var(--leaf); font-weight: 700; }
+        .dt-table tr.baris-judul td { background: var(--pine); color: #fff; font-weight: 700; letter-spacing: .03em; }
+
+        /* Baris total menempel di dasar area gulir supaya tetap terbaca pada
+           laporan panjang — angka penutup tidak ada gunanya kalau harus
+           digulir dulu sampai habis untuk melihatnya. */
+        .dt-table tfoot td {
+            position: sticky; bottom: 0; z-index: 2;
+            background: var(--paper); border-top: 2px solid var(--pine);
+            font-weight: 700; white-space: nowrap;
+        }
+        .dt-table tfoot .label-total { color: var(--muted); letter-spacing: .04em; font-size: 12px; }
+        /* SUB TOTAL per kelompok (mis. jenis simpanan). Hanya baris TOTAL yang
+           menempel di dasar area gulir — kalau semua baris kaki ikut sticky,
+           semuanya bertumpuk di posisi yang sama. */
+        .dt-table tfoot tr.baris-subtotal td { position: static; border-top: 1px solid var(--line); background: var(--leaf); }
+
+        /* Popover "Cetak Neraca (Skontro)". Native <details> supaya tidak
+           butuh JS library, dan blok isi tetap terikat di posisi tombolnya
+           lewat position:relative + absolute pada isi. Diberi z-index tinggi
+           supaya menutupi datatable di bawahnya waktu terbuka. */
+        details.scontro-popover { position: relative; }
+        details.scontro-popover > summary { list-style: none; cursor: pointer; }
+        details.scontro-popover > summary::-webkit-details-marker { display: none; }
+        details.scontro-popover[open] .scontro-panel {
+            position: absolute; top: calc(100% + 6px); right: 0; z-index: 40;
+            background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+            padding: 14px 16px; box-shadow: var(--shadow); min-width: 320px;
+        }
+        .scontro-panel h4 { margin: 0 0 10px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+        .scontro-panel .field { display: block; margin-bottom: 8px; font-size: 13px; }
+        .scontro-panel .field input[type=radio] { margin-right: 6px; }
+        .scontro-panel select {
+            width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+            font-size: 13px; margin-top: 4px;
+        }
+        .scontro-panel select:disabled { opacity: .5; background: var(--paper); }
+        .scontro-panel .hint { font-size: 11.5px; color: var(--muted); margin: 6px 0 12px; line-height: 1.45; }
+        .scontro-panel .row-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
     </style>
+
+    @if (session('error'))
+        <p class="error-msg">{{ session('error') }}</p>
+    @endif
 
     <div class="laporan-header">
         <div>
@@ -16,12 +64,88 @@
             <h2 style="margin: 0;">{{ $label }}</h2>
         </div>
         <div class="laporan-actions">
-            <a href="{{ route('admin.laporan.export-pdf', $module) }}" class="btn-secondary">Export PDF</a>
-            <a href="{{ route('admin.laporan.export-excel', $module) }}" class="btn-primary">Export Excel</a>
+            {{-- Cetak khusus bentuk skontro (T-form Aset di kiri, Kewajiban+
+                 Modal di kanan) — tampil hanya untuk dua modul Saldo Awal
+                 COA. Tombol ini melewati route/print/blade sendiri karena
+                 Export PDF generik meng-render datatable rata-tampilkan-
+                 layar, bukan tata letak Neraca berformat skontro. Klik
+                 tombol membuka pop-over pilihan cakupan (Konsolidasi vs
+                 Cabang tertentu). Periode tidak ditampilkan sebagai
+                 pilihan karena saldo awal terkunci pada `cutoff_date`
+                 batch — controller mengambilnya otomatis. --}}
+            @if (in_array($module, ['saldo_awal_neraca', 'saldo_awal_neraca_saldo']))
+                @php
+                    // Daftar cabang yang boleh diakses user. Kalau super
+                    // admin (`allowedBranchIds() === null`), tampilkan
+                    // semua cabang aktif.
+                    $userAllowedIds = optional(auth()->user())->allowedBranchIds() ?? null;
+                    $branchesForScontro = \App\Models\Branch::query()
+                        ->where('is_active', true)
+                        ->when(is_array($userAllowedIds), fn ($q) => $q->whereIn('id', $userAllowedIds))
+                        ->orderBy('name')
+                        ->get();
+                @endphp
+                <details class="scontro-popover">
+                    <summary class="btn-secondary">Cetak Neraca (Skontro) ▾</summary>
+                    <form class="scontro-panel" action="{{ route('admin.laporan.saldo-awal-neraca.print-scontro') }}" method="GET" target="_blank">
+                        <h4>Pilih Cakupan</h4>
+                        <label class="field">
+                            <input type="radio" name="cakupan" value="konsolidasi" checked
+                                   onchange="this.form.branch_id.disabled = true; this.form.branch_id.value = '';">
+                            Konsolidasi Seluruh Cabang
+                        </label>
+                        <label class="field">
+                            <input type="radio" name="cakupan" value="cabang"
+                                   onchange="this.form.branch_id.disabled = false; this.form.branch_id.focus();">
+                            Cabang tertentu:
+                        </label>
+                        <select name="branch_id" disabled>
+                            <option value="">— pilih cabang —</option>
+                            @foreach ($branchesForScontro as $b)
+                                <option value="{{ $b->id }}">{{ $b->name }}</option>
+                            @endforeach
+                        </select>
+                        <p class="hint">
+                            Periode otomatis mengikuti <em>cutoff_date</em> batch saldo awal
+                            yang sudah dikunci — tidak bisa dipilih di sini karena angkanya
+                            sudah terikat ke tanggal cutoff-nya.
+                        </p>
+                        <div class="row-actions">
+                            <button type="submit" class="btn-primary">Cetak PDF</button>
+                        </div>
+                    </form>
+                </details>
+            @endif
+            <a href="{{ route('admin.laporan.export-pdf', $module) }}" class="btn-secondary" data-export>Export PDF</a>
+            <a href="{{ route('admin.laporan.export-excel', $module) }}" class="btn-primary" data-export>Export Excel</a>
         </div>
     </div>
 
-    <div class="dt-wrap" data-dt @if ($dateColumn) data-date-column="{{ $dateColumn }}" @endif>
+    @if ($dipotong ?? false)
+        <div class="potong-msg">
+            Laporan ini berisi <strong>{{ number_format($jumlahPenuh, 0, ',', '.') }} baris</strong>.
+            Layar hanya menampilkan <strong>{{ number_format($maksBarisLayar, 0, ',', '.') }} baris pertama</strong>
+            supaya halamannya tetap bisa dibuka dan disaring.
+            <br>
+            <strong>Export PDF dan Export Excel tetap memuat seluruh baris</strong> yang lolos saringan —
+            pemotongan ini hanya berlaku di layar. Persempit dengan pencarian atau filter untuk melihat
+            bagian yang Anda cari.
+            @if (! empty($kolomDijumlah))
+                <br>
+                Karena itu <strong>baris TOTAL di bawah hanya menjumlah baris yang tampil</strong>, bukan
+                seluruh laporan. Total seluruh baris ada di Export PDF/Excel.
+            @endif
+        </div>
+    @endif
+
+    {{-- `data-sum-columns` adalah daftar kolom yang boleh dijumlah, sudah
+         diputuskan di server oleh PenjumlahLaporan. Datatable menyaring di sisi
+         klien, jadi totalnya harus dihitung ulang di browser tiap kali
+         saringannya berubah — tapi KOLOM MANA yang dijumlah tetap keputusan
+         server, supaya layar, PDF, dan Excel tidak bisa berbeda pendapat. --}}
+    <div class="dt-wrap" data-dt
+         @if ($dateColumn) data-date-column="{{ $dateColumn }}" @endif
+         @if (! empty($kolomDijumlah)) data-sum-columns="{{ implode(',', $kolomDijumlah) }}" @endif>
         <div class="dt-toolbar">
             <input type="search" class="dt-search" placeholder="Cari di semua kolom...">
 
@@ -57,13 +181,50 @@
                 </thead>
                 <tbody>
                     @foreach ($rows as $row)
-                        <tr>
+                        <tr @class([
+                            'baris-ringkasan' => ($row['_gaya'] ?? null) === 'ringkasan',
+                            'baris-judul' => ($row['_gaya'] ?? null) === 'judul',
+                        ])>
                             @foreach ($columns as $key => $columnLabel)
                                 <td data-column="{{ $key }}">{{ $row[$key] ?? '-' }}</td>
                             @endforeach
                         </tr>
                     @endforeach
                 </tbody>
+                @if (! empty($kolomDijumlah))
+                    @php
+                        // Kata "TOTAL" ditaruh di kolom pertama yang TIDAK
+                        // dijumlah, supaya barisnya punya label tanpa menimpa
+                        // angka. Aturan yang sama dipakai PenjumlahLaporan
+                        // untuk cetakan, jadi letaknya seragam.
+                        $kolomLabelTotal = collect(array_keys($columns))
+                            ->first(fn ($key) => ! in_array($key, $kolomDijumlah, true));
+                    @endphp
+                    <tfoot>
+                        @foreach ($subTotal ?? [] as $sub)
+                            <tr class="baris-subtotal" data-subtotal-kelompok="{{ $sub[$kolomSubTotal] ?? '' }}">
+                                @foreach ($columns as $key => $columnLabel)
+                                    @if (in_array($key, $kolomDijumlah, true))
+                                        <td data-subtotal-column="{{ $key }}">{{ $sub[$key] ?? '' }}</td>
+                                    @else
+                                        <td @class(['label-total' => $key === $kolomLabelTotal])>{{ $sub[$key] ?? '' }}</td>
+                                    @endif
+                                @endforeach
+                            </tr>
+                        @endforeach
+                        <tr>
+                            @foreach ($columns as $key => $columnLabel)
+                                @if (in_array($key, $kolomDijumlah, true))
+                                    <td data-total-column="{{ $key }}"></td>
+                                @elseif ($key === $kolomLabelTotal)
+                                    <td class="label-total">TOTAL</td>
+                                @else
+                                    <td></td>
+                                @endif
+                            @endforeach
+                        </tr>
+                    </tfoot>
+                @endif
             </table>
         </div>
 
@@ -71,4 +232,138 @@
             {{ $rows->isEmpty() ? 'Belum ada data untuk laporan ini.' : 'Tidak ada data yang cocok dengan pencarian/filter.' }}
         </p>
     </div>
+
+    {{--
+        Saringan datatable bekerja di sisi klien, jadi server tidak tahu apa yang
+        sedang tampil. Keadaan filter dititipkan ke URL ekspor saat tombolnya
+        ditekan, lalu diterapkan ulang di server dengan aturan yang sama —
+        tanpa ini, cetakan selalu berisi seluruh data meski layarnya tersaring.
+    --}}
+    <script>
+        (function () {
+            var wrap = document.querySelector('.dt-wrap[data-dt]');
+            if (!wrap) { return; }
+
+            document.querySelectorAll('[data-export]').forEach(function (link) {
+                link.addEventListener('click', function (event) {
+                    var p = new URLSearchParams();
+
+                    var cari = (wrap.querySelector('.dt-search') || {}).value || '';
+                    if (cari.trim() !== '') { p.set('cari', cari.trim()); }
+
+                    wrap.querySelectorAll('.dt-filter').forEach(function (select) {
+                        if (select.value !== '') { p.set('f_' + select.dataset.filterColumn, select.value); }
+                    });
+
+                    var dari = (wrap.querySelector('.dt-date-from') || {}).value || '';
+                    var sampai = (wrap.querySelector('.dt-date-to') || {}).value || '';
+                    if (dari !== '') { p.set('dari', dari); }
+                    if (sampai !== '') { p.set('sampai', sampai); }
+
+                    var qs = p.toString();
+                    if (qs === '') { return; }
+
+                    event.preventDefault();
+                    window.location = link.href + (link.href.indexOf('?') === -1 ? '?' : '&') + qs;
+                });
+            });
+        })();
+    </script>
+
+    {{--
+        SUB TOTAL per kelompok (mis. per jenis simpanan) berada DI DALAM tabel,
+        tepat di bawah transaksi kelompoknya (LaporanController::
+        sisipkanSubTotal()). Angkanya dihitung ulang dari baris yang sedang
+        TERLIHAT, sama seperti baris TOTAL di layouts/app. Didengarkan di
+        .dt-wrap (fase bubble), jadi selalu berjalan SETELAH datatable selesai
+        menyembunyikan/menampilkan baris — termasuk mengembalikan baris SUB
+        TOTAL yang ikut tersembunyi oleh pencarian/filter kolom.
+    --}}
+    <script>
+        (function () {
+            var wrap = document.querySelector('.dt-wrap[data-dt]');
+            if (!wrap) { return; }
+
+            var kolomKelompok = @json($kolomSubTotal ?? null);
+            if (!kolomKelompok) { return; }
+
+            var semuaBaris = Array.prototype.slice.call(wrap.querySelectorAll('tbody tr'));
+            var subRows = semuaBaris.filter(function (row) { return row.classList.contains('baris-ringkasan'); });
+            if (subRows.length === 0) { return; }
+
+            var sumColumns = (wrap.dataset.sumColumns || '').split(',').filter(Boolean);
+            var dataRows = semuaBaris.filter(function (row) {
+                return !row.classList.contains('baris-ringkasan') && !row.classList.contains('baris-judul');
+            });
+
+            function kelompokDari(row) {
+                var cell = row.querySelector('[data-column="' + kolomKelompok + '"]');
+                return cell ? cell.textContent.trim() : '';
+            }
+
+            // Kembar dengan PenjumlahLaporan::apakahAngka()/bacaAngka().
+            function isAngka(teks) {
+                var t = (teks || '').trim();
+                return /^\(?-?\s*(Rp\s*)?-?[\d., ]+\)?$/i.test(t) && /\d/.test(t);
+            }
+            function bacaAngka(teks) {
+                var t = (teks || '').trim();
+                var negatif = t.charAt(0) === '(' || t.indexOf('-') !== -1;
+                var nilai = parseFloat(t.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+                return negatif ? -nilai : nilai;
+            }
+            // Kolom uang 2 desimal, kembar dengan formatTotal() di layouts/app.
+            function formatTotal(nilai, pakaiRp) {
+                var bagian = Math.abs(nilai).toFixed(pakaiRp ? 2 : 0).split('.');
+                var teks = bagian[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + (bagian[1] ? ',' + bagian[1] : '');
+                return (nilai < 0 ? '-' : '') + (pakaiRp ? 'Rp ' : '') + teks;
+            }
+
+            // Awalan "Rp" mengikuti angka yang dirender server untuk kolom itu.
+            var pakaiRp = {};
+            sumColumns.forEach(function (key) {
+                pakaiRp[key] = semuaBaris.some(function (row) {
+                    var td = row.querySelector('[data-column="' + key + '"]');
+                    return td && isAngka(td.textContent) && /rp/i.test(td.textContent);
+                });
+            });
+
+            function hitung() {
+                var jumlah = {};
+                var terlihat = {};
+                dataRows.forEach(function (row) {
+                    if (row.classList.contains('dt-row-hidden')) { return; }
+                    var kelompok = kelompokDari(row);
+                    terlihat[kelompok] = true;
+                    jumlah[kelompok] = jumlah[kelompok] || {};
+                    sumColumns.forEach(function (key) {
+                        var c = row.querySelector('[data-column="' + key + '"]');
+                        if (c && isAngka(c.textContent)) {
+                            jumlah[kelompok][key] = (jumlah[kelompok][key] || 0) + bacaAngka(c.textContent);
+                        }
+                    });
+                });
+
+                subRows.forEach(function (sub) {
+                    var kelompok = kelompokDari(sub);
+                    // SUB TOTAL tampil selama kelompoknya masih punya transaksi
+                    // yang terlihat; kelompok yang tersaring habis ikut hilang.
+                    sub.classList.toggle('dt-row-hidden', !terlihat[kelompok]);
+                    sumColumns.forEach(function (key) {
+                        var td = sub.querySelector('[data-column="' + key + '"]');
+                        var nilai = (jumlah[kelompok] || {})[key];
+                        if (td) { td.textContent = nilai === undefined ? '' : formatTotal(nilai, pakaiRp[key]); }
+                    });
+                });
+            }
+
+            wrap.addEventListener('input', hitung);
+            wrap.addEventListener('change', hitung);
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', hitung);
+            } else {
+                hitung();
+            }
+        })();
+    </script>
 @endsection

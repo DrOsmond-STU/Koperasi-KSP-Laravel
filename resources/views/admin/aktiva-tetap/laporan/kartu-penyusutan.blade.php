@@ -29,9 +29,9 @@
                 @forelse ($entries as $entry)
                     <tr>
                         <td>{{ $entry->period }}</td>
-                        <td>Rp {{ number_format((float) $entry->opening_book_value, 0, ',', '.') }}</td>
-                        <td>Rp {{ number_format((float) $entry->depreciation_amount, 0, ',', '.') }}</td>
-                        <td>Rp {{ number_format((float) $entry->closing_book_value, 0, ',', '.') }}</td>
+                        <td>Rp {{ number_format((float) $entry->opening_book_value, 2, ',', '.') }}</td>
+                        <td>Rp {{ number_format((float) $entry->depreciation_amount, 2, ',', '.') }}</td>
+                        <td>Rp {{ number_format((float) $entry->closing_book_value, 2, ',', '.') }}</td>
                     </tr>
                 @empty
                     <tr><td colspan="4">Belum ada penyusutan untuk aset ini.</td></tr>

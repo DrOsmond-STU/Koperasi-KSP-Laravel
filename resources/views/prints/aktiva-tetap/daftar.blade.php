@@ -16,7 +16,7 @@
                     <td>{{ $asset->code }}</td>
                     <td>{{ $asset->name }}</td>
                     <td>{{ $asset->category->name }}</td>
-                    <td>Rp {{ number_format((float) $asset->acquisition_cost, 0, ',', '.') }}</td>
+                    <td>Rp {{ number_format((float) $asset->acquisition_cost, 2, ',', '.') }}</td>
                     <td>{{ $asset->acquisition_date->translatedFormat('d M Y') }}</td>
                     <td>{{ ucfirst($asset->status) }}</td>
                 </tr>

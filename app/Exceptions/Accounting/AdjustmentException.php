@@ -10,4 +10,24 @@ class AdjustmentException extends RuntimeException
     {
         return new self('Konfirmasi ulang kata sandi gagal — koreksi jurnal tidak diproses.');
     }
+
+    /**
+     * Insiden nyata (entri #3780, Sep 2026): submit ganda pada tombol
+     * "Posting Jurnal Balik" (double-click/resubmit) sempat membuat 2 jurnal
+     * balik untuk entri yang sama karena tidak ada pengecekan ini sebelumnya.
+     */
+    public static function alreadyReversed(int $entryId): self
+    {
+        return new self("Jurnal #{$entryId} sudah pernah dibalik/dikoreksi sebelumnya — tidak bisa dibalik dua kali.");
+    }
+
+    /**
+     * Jurnal milik modul yang punya tombol Batalkan sendiri tidak boleh
+     * dibalik dari sini: jurnalnya akan batal sementara transaksinya (saldo
+     * rekening, jadwal angsuran, status) tetap aktif.
+     */
+    public static function milikModul(int $entryId, string $modul): self
+    {
+        return new self("Jurnal #{$entryId} milik {$modul} — batalkan lewat menu itu supaya transaksi, jurnal, Buku Besar, dan Neraca batal bersama-sama.");
+    }
 }

@@ -172,6 +172,8 @@ class JournalEngineTest extends TestCase
         $this->assertDatabaseCount('journal_entries', 2);
         $this->assertEquals($original->id, $reversal->reversal_of_entry_id);
         $this->assertDatabaseHas('journal_entries', ['id' => $original->id]);
+        // Pembalik bertanggal sama dengan jurnal asal, bukan tanggal pembatalan.
+        $this->assertSame('2026-07-11', $reversal->entry_date->toDateString());
 
         $kasLine = $reversal->lines->firstWhere('chart_of_account_id', $original->lines->first()->chart_of_account_id);
         $this->assertEquals($original->lines->first()->debit, $kasLine->credit);

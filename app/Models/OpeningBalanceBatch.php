@@ -65,6 +65,12 @@ class OpeningBalanceBatch extends Model
         return $this->hasMany(OpeningBalanceStock::class);
     }
 
+    /** Koreksi Saldo Awal Neraca (jurnal koreksi, tidak mengubah coaLines). */
+    public function corrections(): HasMany
+    {
+        return $this->hasMany(OpeningBalanceCorrection::class);
+    }
+
     public function isDraft(): bool
     {
         return $this->status === 'draft';

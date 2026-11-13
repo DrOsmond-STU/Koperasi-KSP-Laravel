@@ -19,11 +19,32 @@ use App\Models\TellerCashTransaction;
  */
 class CashBankDashboardService
 {
-    private const CASH_BANK_CODES = ['1101', '1102', '1110'];
+    /**
+     * Akun kas & setara kas dicocokkan sebagai AWALAN kode (config/koperasi.php),
+     * bukan kode persis. Dulu daftarnya konstanta ['1101','1102','1110'];
+     * koperasi yang mengganti bagan akunnya dengan bagan sistem lama tidak
+     * punya kode-kode itu, sehingga dashboard menampilkan nol tanpa satu pun
+     * tanda bahwa akunnya memang tidak ketemu.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, ChartOfAccount>
+     */
+    private function cashBankAccounts()
+    {
+        $prefixes = (array) config('koperasi.akun_kas_bank', ['1101', '1102', '1110']);
+
+        return ChartOfAccount::query()
+            ->where(function ($query) use ($prefixes) {
+                foreach ($prefixes as $prefix) {
+                    $query->orWhere('code', 'like', $prefix.'%');
+                }
+            })
+            ->where('is_postable', true)
+            ->get();
+    }
 
     public function summary(?int $branchId = null): array
     {
-        $accounts = ChartOfAccount::query()->whereIn('code', self::CASH_BANK_CODES)->get();
+        $accounts = $this->cashBankAccounts();
         $accountIds = $accounts->pluck('id');
 
         $balances = $accounts->map(function ($account) use ($branchId) {
@@ -82,7 +103,7 @@ class CashBankDashboardService
      */
     public function dailyTransactions(string $date, ?int $branchId = null): array
     {
-        $accountIds = ChartOfAccount::query()->whereIn('code', self::CASH_BANK_CODES)->pluck('id');
+        $accountIds = $this->cashBankAccounts()->pluck('id');
 
         $openingBalance = (float) JournalLine::query()
             ->join('journal_entries', 'journal_lines.journal_entry_id', '=', 'journal_entries.id')
@@ -130,7 +151,7 @@ class CashBankDashboardService
      */
     private function dailyBalanceTrend(?int $branchId): array
     {
-        $accountIds = ChartOfAccount::query()->whereIn('code', self::CASH_BANK_CODES)->pluck('id');
+        $accountIds = $this->cashBankAccounts()->pluck('id');
         $start = now()->subDays(13)->startOfDay();
         $end = now()->endOfDay();
 

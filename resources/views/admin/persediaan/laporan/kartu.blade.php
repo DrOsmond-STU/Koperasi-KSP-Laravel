@@ -67,7 +67,7 @@
                         <td>{{ ucfirst(str_replace('_', ' ', $row->transaction_type)) }}</td>
                         <td>{{ (float) $row->qty_in > 0 ? rtrim(rtrim((string) $row->qty_in, '0'), '.') : '—' }}</td>
                         <td>{{ (float) $row->qty_out > 0 ? rtrim(rtrim((string) $row->qty_out, '0'), '.') : '—' }}</td>
-                        <td>Rp {{ number_format((float) $row->unit_cost, 0, ',', '.') }}</td>
+                        <td>Rp {{ number_format((float) $row->unit_cost, 2, ',', '.') }}</td>
                         <td>{{ rtrim(rtrim((string) $row->running_qty, '0'), '.') }}</td>
                     </tr>
                 @empty

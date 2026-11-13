@@ -27,7 +27,11 @@
                     <td>{{ $batch->branch->name }}</td>
                     <td>{{ $batch->cutoff_date->translatedFormat('d M Y') }}</td>
                     <td><span class="chip {{ $batch->status === 'locked' ? 'chip-locked' : 'chip-draft' }}">{{ $batch->status === 'locked' ? 'Terkunci' : 'Draft' }}</span></td>
-                    <td><a href="{{ route('admin.saldo-awal.show', $batch) }}">Buka</a></td>
+                    <td>
+                        <a href="{{ route('admin.saldo-awal.show', $batch) }}">Buka</a>
+                        &nbsp;·&nbsp;
+                        <a href="{{ route('admin.saldo-awal.koreksi', $batch) }}">Koreksi Data</a>
+                    </td>
                 </tr>
             @empty
                 <tr><td colspan="4">Belum ada batch migrasi.</td></tr>

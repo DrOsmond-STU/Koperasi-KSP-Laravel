@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="id" data-theme="{{ $theme }}">
-<head>
-    <meta charset="utf-8">
+<head><meta charset="utf-8">
+    
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ $branding['app_name'] }} — @yield('title', 'Beranda')</title>
     <style>
@@ -836,6 +836,61 @@
             const rows = Array.from(table.querySelectorAll('tbody tr'));
             const total = rows.length;
 
+            // --- Baris TOTAL di kaki tabel ---------------------------------
+            // Kolom mana yang dijumlah sudah diputuskan server (PenjumlahLaporan)
+            // dan dititipkan lewat data-sum-columns; di sini tinggal
+            // menjumlahkan baris yang sedang TERLIHAT. Itulah inti fiturnya:
+            // totalnya mengikuti saringan, bukan seluruh data.
+            const sumColumns = (wrap.dataset.sumColumns || '').split(',').filter(Boolean);
+            const totalCells = {};
+            sumColumns.forEach(function (key) {
+                totalCells[key] = wrap.querySelector('tfoot [data-total-column="' + key + '"]');
+            });
+
+            // Baris judul & sub total sudah memuat rekapnya sendiri — kalau
+            // ikut dijumlah, angkanya terhitung dua kali.
+            function isBarisData(row) {
+                return !row.classList.contains('baris-ringkasan')
+                    && !row.classList.contains('baris-judul');
+            }
+
+            // Kembar dengan PenjumlahLaporan::apakahAngka() di PHP.
+            function isAngka(teks) {
+                const t = (teks || '').trim();
+                return /^\(?-?\s*(Rp\s*)?-?[\d., ]+\)?$/i.test(t) && /\d/.test(t);
+            }
+
+            // Kembar dengan PenjumlahLaporan::bacaAngka(): titik = pemisah
+            // ribuan, koma = desimal, tanda kurung = negatif.
+            function bacaAngka(teks) {
+                const t = (teks || '').trim();
+                const negatif = t.charAt(0) === '(' || t.indexOf('-') !== -1;
+                const nilai = parseFloat(t.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+                return negatif ? -nilai : nilai;
+            }
+
+            // Kolom uang (berawalan "Rp") tampil 2 desimal, kembar dengan
+            // PenjumlahLaporan::baris(); kolom kuantitas tetap bilangan bulat.
+            function formatTotal(nilai, pakaiRp) {
+                const bagian = Math.abs(nilai).toFixed(pakaiRp ? 2 : 0).split('.');
+                const teks = bagian[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + (bagian[1] ? ',' + bagian[1] : '');
+                return (nilai < 0 ? '-' : '') + (pakaiRp ? 'Rp ' : '') + teks;
+            }
+
+            // Awalan "Rp" diambil dari isi kolomnya sendiri supaya kolom
+            // kuantitas tidak mendadak tampil sebagai uang. Gaya sebuah kolom
+            // tidak berubah oleh saringan, jadi cukup diperiksa sekali.
+            const pakaiRp = {};
+            sumColumns.forEach(function (key) {
+                const contoh = rows.find(function (row) {
+                    if (!isBarisData(row)) return false;
+                    const cell = row.querySelector('[data-column="' + key + '"]');
+                    return cell && isAngka(cell.textContent);
+                });
+                const cell = contoh && contoh.querySelector('[data-column="' + key + '"]');
+                pakaiRp[key] = !!cell && /rp/i.test(cell.textContent);
+            });
+
             // Baris tanggal dirender server-side sebagai "d-m-Y" atau
             // "d-m-Y H:i" (format Indonesia) — diubah ke "yyyy-mm-dd" supaya
             // bisa dibandingkan leksikal dengan value <input type="date">.
@@ -853,12 +908,22 @@
                 const dateTo = dateToInput?.value || '';
 
                 let visible = 0;
+                const jumlah = {};
+                sumColumns.forEach(function (key) { jumlah[key] = 0; });
 
                 rows.forEach(function (row) {
                     const matchesSearch = term === '' || row.textContent.toLowerCase().includes(term);
                     const matchesFilters = activeFilters.every(function (filter) {
                         const cell = row.querySelector('[data-column="' + filter.column + '"]');
-                        return cell && cell.textContent.trim() === filter.value;
+                        if (!cell) return false;
+                        // Sel yang punya teks tambahan (mis. keterangan kecil di
+                        // bawah label) bisa menetapkan nilai saringannya sendiri
+                        // lewat data-filter-value, supaya cocok exact-match tetap
+                        // bekerja tanpa bergantung pada isi seluruh sel.
+                        const cellValue = cell.dataset.filterValue !== undefined
+                            ? cell.dataset.filterValue
+                            : cell.textContent.trim();
+                        return cellValue === filter.value;
                     });
 
                     let matchesDate = true;
@@ -874,6 +939,21 @@
                     const show = matchesSearch && matchesFilters && matchesDate;
                     row.classList.toggle('dt-row-hidden', !show);
                     if (show) visible++;
+
+                    if (show && isBarisData(row)) {
+                        sumColumns.forEach(function (key) {
+                            const cell = row.querySelector('[data-column="' + key + '"]');
+                            if (cell && isAngka(cell.textContent)) {
+                                jumlah[key] += bacaAngka(cell.textContent);
+                            }
+                        });
+                    }
+                });
+
+                sumColumns.forEach(function (key) {
+                    if (totalCells[key]) {
+                        totalCells[key].textContent = formatTotal(jumlah[key], pakaiRp[key]);
+                    }
                 });
 
                 if (emptyEl) emptyEl.hidden = visible !== 0;
@@ -890,5 +970,7 @@
 
         document.querySelectorAll('.dt-wrap[data-dt]').forEach(initDataTable);
     </script>
+    @include('partials.pager-tabel')
+    @include('partials.cegah-kirim-ganda')
 </body>
 </html>

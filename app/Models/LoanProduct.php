@@ -18,8 +18,9 @@ class LoanProduct extends Model
         'name',
         'min_plafon',
         'max_plafon',
-        'min_tenor_months',
-        'max_tenor_months',
+        'min_tenor_days',
+        'max_tenor_days',
+        'tenor_unit',
         'calculation_method',
         'provision_fee_percentage',
         'penalty_percentage_per_day',
@@ -95,6 +96,27 @@ class LoanProduct extends Model
         }
 
         return 1;
+    }
+
+    /**
+     * Satuan tenor menempel di produk, BUKAN status "baru vs lama" — dua
+     * model bisnis hidup berdampingan selamanya: Pinjaman Anggota ditagih
+     * harian (anggota pasar menyetor tiap hari), Piutang Karyawan dipotong
+     * gaji bulanan. Dipakai LoanService untuk menentukan jalur validasi &
+     * LoanScheduleCalculator mana yang berlaku (lihat migrasi
+     * add_tenor_unit_to_loan_products_and_loans, 20 Agu 2026).
+     */
+    public function usesDailyTenor(): bool
+    {
+        return $this->tenor_unit === 'hari';
+    }
+
+    /** Label tenor untuk tampilan — "100–200 hari" (produk harian) atau "3–24 bulan" (produk bulanan). */
+    public function tenorLabel(): string
+    {
+        $unit = $this->usesDailyTenor() ? 'hari' : 'bulan';
+
+        return "{$this->min_tenor_days}–{$this->max_tenor_days} {$unit}";
     }
 
     public function isReadyForActivation(): bool

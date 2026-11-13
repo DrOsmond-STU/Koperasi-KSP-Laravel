@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreLoanProductRequest;
+use App\Http\Requests\UpdateLoanProductRequest;
 use App\Models\ChartOfAccount;
 use App\Models\LoanProduct;
 use Illuminate\Http\RedirectResponse;
@@ -51,5 +52,29 @@ class LoanProductController extends Controller
         return redirect()
             ->route('admin.master.loan-products.index')
             ->with('status', "Produk pinjaman \"{$product->name}\" berhasil dibuat.");
+    }
+
+    public function edit(LoanProduct $loanProduct): View
+    {
+        $this->authorize('master_data.update');
+
+        return view('admin.master.produk-pinjaman.edit', [
+            'product' => $loanProduct,
+            'currentRate' => $loanProduct->rateAt(),
+            'postableAccounts' => ChartOfAccount::query()->where('is_postable', true)->orderBy('code')->get(),
+        ]);
+    }
+
+    /**
+     * Update mengabaikan `initial_rate_*` — perubahan tarif jasa dilakukan
+     * lewat menu Tarif Parameter supaya versi-per-tanggal tetap terjaga.
+     */
+    public function update(UpdateLoanProductRequest $request, LoanProduct $loanProduct): RedirectResponse
+    {
+        $loanProduct->update($request->validated());
+
+        return redirect()
+            ->route('admin.master.loan-products.index')
+            ->with('status', "Produk pinjaman \"{$loanProduct->name}\" berhasil diperbarui.");
     }
 }

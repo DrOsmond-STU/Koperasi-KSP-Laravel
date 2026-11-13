@@ -21,11 +21,22 @@ class MemberController extends Controller
 
     private const PHOTO_DIRECTORY = 'members';
 
+    /** Pilihan "baris per halaman" Data Anggota; elemen pertama yang dipakai bila tidak valid. */
+    private const PILIHAN_PER_HALAMAN = [25, 10, 50, 100];
+
     public function index(Request $request): View
     {
         $this->authorize('master_data.read');
 
         $search = $request->string('q')->trim()->value();
+
+        // Pagination di server (permintaan Okt 2026): sebelumnya seluruh
+        // anggota dimuat & dirender sekaligus. Urutan diberi pengikat id
+        // karena anggota hasil impor berbagi created_at yang sama — tanpa itu
+        // urutan antarhalaman tidak stabil (ada yang muncul dua kali/hilang).
+        $perHalaman = in_array($request->integer('per_page'), self::PILIHAN_PER_HALAMAN, true)
+            ? $request->integer('per_page')
+            : self::PILIHAN_PER_HALAMAN[0];
 
         return view('admin.anggota.index', [
             'members' => Member::query()
@@ -35,8 +46,12 @@ class MemberController extends Controller
                         ->orWhere('member_number', 'like', "%{$search}%");
                 }))
                 ->latest()
-                ->get(),
+                ->latest('id')
+                ->paginate($perHalaman)
+                ->withQueryString(),
             'search' => $search,
+            'perHalaman' => $perHalaman,
+            'pilihanPerHalaman' => collect(self::PILIHAN_PER_HALAMAN)->sort()->values()->all(),
             'memberTypes' => MemberType::query()->orderBy('name')->get(),
             'branches' => $this->availableBranches(),
         ]);
@@ -51,6 +66,15 @@ class MemberController extends Controller
     {
         $this->authorize('master_data.read');
 
+        // dompdf membangun SELURUH dokumen sebagai objek frame di memori dan
+        // biayanya tumbuh linier terhadap jumlah baris. Diukur pada PHP 8.3
+        // (MemberPrintListTest): ~0,47 MB per baris, jadi 900 anggota butuh
+        // ~420 MB di atas biaya boot. Dengan memory_limit 128M bawaan hosting,
+        // request mati sebagai PHP fatal error — bukan exception, sehingga
+        // tidak tercatat di log Laravel dan pengguna hanya melihat halaman
+        // gagal tanpa pesan. LVE PMEM akun = 1G, jadi 768M masih aman.
+        ini_set('memory_limit', '768M');
+
         $memberTypeId = $request->integer('member_type_id') ?: null;
         $branchId = $request->integer('branch_id') ?: null;
 
@@ -59,10 +83,29 @@ class MemberController extends Controller
             abort(403, 'Anda tidak memiliki akses ke cabang ini.');
         }
 
-        $members = Member::query()
-            ->with(['memberType', 'branch'])
-            ->when($memberTypeId, fn ($query) => $query->where('member_type_id', $memberTypeId))
-            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+        $query = Member::query()
+            ->when($memberTypeId, fn ($q) => $q->where('member_type_id', $memberTypeId))
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+
+        // Batas keras: menaikkan memory_limit hanya menggeser titik gagalnya,
+        // tidak menghapusnya. Di atas ambang ini cetakan ditolak dengan pesan
+        // yang bisa ditindaklanjuti, bukan dibiarkan mati sebagai fatal error.
+        $maxRows = (int) config('koperasi.cetak_daftar_anggota_maks_baris', 1400);
+        $total = (clone $query)->count();
+
+        if ($total > $maxRows) {
+            return redirect()
+                ->route('admin.members.index')
+                ->with('error', "Daftar {$total} anggota terlalu besar untuk dicetak sekaligus (batas {$maxRows}). Silakan cetak per cabang atau per jenis anggota lewat filter di halaman ini.");
+        }
+
+        // Hanya kolom yang benar-benar dipakai daftar-pdf.blade.php. Selain
+        // memangkas memori, ini menghindari menghidrasi kolom PII terenkripsi
+        // (nik/address/phone/email/date_of_birth) yang ciphertext-nya panjang
+        // dan sama sekali tidak ditampilkan di cetakan ini.
+        $members = $query
+            ->select(['id', 'branch_id', 'member_type_id', 'member_number', 'name', 'status', 'joined_at'])
+            ->with(['memberType:id,name', 'branch:id,name'])
             ->orderBy('name')
             ->get();
 

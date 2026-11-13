@@ -146,13 +146,14 @@
                         <select name="loan_product_id">
                             <option value="">— Pilih Produk —</option>
                             @foreach ($loanProducts as $loanProduct)
-                                <option value="{{ $loanProduct->id }}">{{ $loanProduct->code }} — {{ $loanProduct->name }}</option>
+                                <option value="{{ $loanProduct->id }}">{{ $loanProduct->code }} — {{ $loanProduct->name }} ({{ $loanProduct->tenorLabel() }})</option>
                             @endforeach
                         </select>
                     </div>
                     <div class="field">
-                        <label>Tenor (bulan)</label>
-                        <input type="number" name="tenor_months" min="1">
+                        <label>Tenor</label>
+                        <input type="number" name="tenor_days" min="1">
+                        <p style="font-size:11px; color: var(--muted); margin-top:4px;">Isi sesuai satuan produk yang dipilih (lihat keterangan hari/bulan).</p>
                     </div>
                 </div>
 
@@ -306,7 +307,7 @@
             var savingsHidden = document.getElementById('savings_account_id');
             var memberHidden = document.getElementById('member_id');
             var loanProductSelect = document.querySelector('select[name="loan_product_id"]');
-            var tenorInput = document.querySelector('input[name="tenor_months"]');
+            var tenorInput = document.querySelector('input[name="tenor_days"]');
 
             function setPaymentMethod(method) {
                 paymentMethodInput.value = method;

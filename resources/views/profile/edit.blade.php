@@ -88,6 +88,17 @@
         <span class="mfa-status {{ $user->two_factor_confirmed_at ? 'on' : 'off' }}">
             {{ $user->two_factor_confirmed_at ? 'Aktif' : 'Nonaktif' }}
         </span>
-        <p class="hint">Pengaktifan/penonaktifan 2FA dilakukan oleh Admin Sistem.</p>
+        @if (! $user->two_factor_confirmed_at)
+            <p class="hint">
+                @if ($user->requiresMfa())
+                    Akun Anda wajib mengaktifkan MFA.
+                @else
+                    MFA opsional untuk akun Anda, tapi sangat disarankan.
+                @endif
+                <a href="{{ route('mfa.setup') }}" style="color: var(--pine); font-weight: 700;">Aktifkan sekarang &rarr;</a>
+            </p>
+        @else
+            <p class="hint">Bila kehilangan akses ke aplikasi authenticator, hubungi Admin Sistem untuk mereset MFA.</p>
+        @endif
     </div>
 @endsection

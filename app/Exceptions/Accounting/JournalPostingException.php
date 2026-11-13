@@ -31,6 +31,11 @@ class JournalPostingException extends RuntimeException
         return new self("Akun dengan kode {$code} tidak ditemukan di chart_of_accounts.");
     }
 
+    public static function alreadyReversed(int $entryId): self
+    {
+        return new self("Jurnal #{$entryId} sudah pernah dibatalkan/dibalik — pembatalan ganda ditolak supaya Buku Besar dan Neraca tidak terkoreksi dua kali.");
+    }
+
     public static function periodClosed(string $branchCode, string $entryDate): self
     {
         return new self("Periode akuntansi cabang {$branchCode} yang mencakup tanggal {$entryDate} sudah ditutup — posting mundur ditolak.");

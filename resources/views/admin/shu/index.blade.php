@@ -37,7 +37,7 @@
     </form>
 
     <div class="panel">
-        <h3>Total SHU Tahun {{ $simulation['year'] }}: Rp {{ number_format((float) $simulation['total_shu'], 0, ',', '.') }}</h3>
+        <h3>Total SHU Tahun {{ $simulation['year'] }}: Rp {{ number_format((float) $simulation['total_shu'], 2, ',', '.') }}</h3>
         <p class="{{ $simulation['is_fully_allocated'] ? 'badge-ok' : 'badge-bad' }}">
             Total Alokasi: {{ $simulation['total_percentage'] }}% — {{ $simulation['is_fully_allocated'] ? 'Teralokasi Penuh' : 'BELUM 100%' }}
         </p>
@@ -49,7 +49,7 @@
                     <tr>
                         <td>{{ $allocation['category']->name }}</td>
                         <td>{{ $allocation['category']->percentage }}%</td>
-                        <td>Rp {{ number_format((float) $allocation['amount'], 0, ',', '.') }}</td>
+                        <td>Rp {{ number_format((float) $allocation['amount'], 2, ',', '.') }}</td>
                     </tr>
                 @endforeach
             </tbody>
@@ -65,8 +65,8 @@
                     @foreach ($simulation['member_shares'] as $share)
                         <tr>
                             <td>{{ $share['member']->name }}</td>
-                            <td>Rp {{ number_format((float) $share['savings_balance'], 0, ',', '.') }}</td>
-                            <td>Rp {{ number_format((float) $share['share'], 0, ',', '.') }}</td>
+                            <td>Rp {{ number_format((float) $share['savings_balance'], 2, ',', '.') }}</td>
+                            <td>Rp {{ number_format((float) $share['share'], 2, ',', '.') }}</td>
                         </tr>
                     @endforeach
                 </tbody>

@@ -114,7 +114,10 @@ class OpeningBalanceLockService
                 'loan_product_id' => $row->loan_product_id,
                 'loan_number' => $row->external_loan_number ?? ('MIGRASI-'.$row->id),
                 'principal_amount' => $row->original_principal,
-                'tenor_months' => $row->tenor_months,
+                'tenor_days' => $row->tenor_days,
+                // Pinjaman migrasi selalu bulanan (sistem lama, sebelum
+                // tenor_unit ada) — lihat migrasi add_tenor_unit_to_loan_products_and_loans.
+                'tenor_unit' => 'bulan',
                 'interest_rate_percentage' => $rate?->rate_percentage ?? 0,
                 'required_approval_count' => 0,
                 'status' => 'dicairkan',

@@ -93,13 +93,35 @@ class JournalEngine
     /**
      * Posts a reversing entry that mirrors $entry with debit/credit swapped.
      * The original entry is never modified (append-only — LED-06).
+     *
+     * Jurnal pembalik bertanggal SAMA dengan jurnal yang dibatalkan
+     * (permintaan pemilik Okt 2026), supaya laporan harian/periode tiap
+     * modul langsung cocok dengan Kartu Buku Besar tanpa rekonsiliasi lintas
+     * tanggal. Karena itu pembatalan atas transaksi di periode akuntansi
+     * yang sudah ditutup ditolak.
      */
     public function reverse(JournalEntry $entry, string $reason, int $userId): JournalEntry
     {
         return DB::transaction(function () use ($entry, $reason, $userId) {
+            // Satu jurnal hanya boleh dibalik SEKALI. Baris jurnal asal dikunci
+            // dulu supaya dua permintaan pembatalan yang hampir bersamaan
+            // (klik ganda, kirim ulang) tidak sama-sama lolos: yang kedua
+            // menunggu sampai yang pertama selesai, lalu ditolak di sini dan
+            // seluruh transaksinya (saldo, status) ikut dibatalkan. Audit
+            // produksi 16 Okt 2026 menemukan 2 jurnal yang terlanjur dibalik
+            // dua kali — koreksinya jadi dobel di Buku Besar & Neraca.
+            $locked = JournalEntry::query()->whereKey($entry->id)->lockForUpdate()->firstOrFail();
+
+            if ($locked->reversals()->exists()) {
+                throw JournalPostingException::alreadyReversed($entry->id);
+            }
+
+            $tanggal = Carbon::parse($locked->entry_date);
+            $this->assertPeriodOpen((int) $locked->branch_id, $tanggal);
+
             $reversal = JournalEntry::query()->create([
                 'branch_id' => $entry->branch_id,
-                'entry_date' => now()->toDateString(),
+                'entry_date' => $tanggal->toDateString(),
                 'description' => "Koreksi/pembalik jurnal #{$entry->id}: {$reason}",
                 'created_by' => $userId,
                 'reversal_of_entry_id' => $entry->id,
@@ -114,6 +136,34 @@ class JournalEngine
             }
 
             return $reversal->load('lines');
+        });
+    }
+
+    /**
+     * Koreksi jurnal umum: balik entri lama lalu posting entri pengganti,
+     * keduanya dalam SATU transaksi database. Kalau posting pengganti gagal
+     * (tidak balance, akun tidak postable, periode tertutup), pembaliknya
+     * ikut di-rollback — tidak pernah ada kondisi "sudah dibatalkan tapi
+     * penggantinya tidak jadi".
+     *
+     * Entri asal tetap tidak disentuh (LED-06). Yang berubah di Buku Besar,
+     * Laba Rugi, dan Neraca adalah: entri asal + pembalik = nol, lalu entri
+     * pengganti menggantikannya.
+     *
+     * @param  array{
+     *     branch_id: int,
+     *     entry_date: string|\DateTimeInterface,
+     *     description: string,
+     *     created_by: int,
+     *     lines: array<int, array{account_code?: string, chart_of_account_id?: int, debit?: float|string, credit?: float|string}>,
+     * }  $data
+     */
+    public function reverseAndRepost(JournalEntry $entry, string $reason, array $data): JournalEntry
+    {
+        return DB::transaction(function () use ($entry, $reason, $data) {
+            $this->reverse($entry, $reason, (int) $data['created_by']);
+
+            return $this->post($data);
         });
     }
 

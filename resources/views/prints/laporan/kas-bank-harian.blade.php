@@ -10,10 +10,10 @@
     </p>
 
     <table style="margin-bottom:16px;">
-        <tr><td style="width:180px; padding:3px 0;">Saldo Awal</td><td style="padding:3px 0;">: Rp {{ number_format($report['opening_balance'], 0, ',', '.') }}</td></tr>
-        <tr><td style="padding:3px 0;">Total Kas Masuk</td><td style="padding:3px 0;">: Rp {{ number_format($report['total_in'], 0, ',', '.') }}</td></tr>
-        <tr><td style="padding:3px 0;">Total Kas Keluar</td><td style="padding:3px 0;">: Rp {{ number_format($report['total_out'], 0, ',', '.') }}</td></tr>
-        <tr><td style="padding:3px 0; font-weight:700;">Saldo Akhir</td><td style="padding:3px 0; font-weight:700;">: Rp {{ number_format($report['closing_balance'], 0, ',', '.') }}</td></tr>
+        <tr><td style="width:180px; padding:3px 0;">Saldo Awal</td><td style="padding:3px 0;">: Rp {{ number_format($report['opening_balance'], 2, ',', '.') }}</td></tr>
+        <tr><td style="padding:3px 0;">Total Kas Masuk</td><td style="padding:3px 0;">: Rp {{ number_format($report['total_in'], 2, ',', '.') }}</td></tr>
+        <tr><td style="padding:3px 0;">Total Kas Keluar</td><td style="padding:3px 0;">: Rp {{ number_format($report['total_out'], 2, ',', '.') }}</td></tr>
+        <tr><td style="padding:3px 0; font-weight:700;">Saldo Akhir</td><td style="padding:3px 0; font-weight:700;">: Rp {{ number_format($report['closing_balance'], 2, ',', '.') }}</td></tr>
     </table>
 
     <table class="data-table" style="margin-bottom: 10px;">
@@ -24,8 +24,8 @@
                     <td>{{ $row['description'] }}</td>
                     <td>{{ $row['account_name'] }}</td>
                     <td>{{ $row['created_by_name'] }}</td>
-                    <td style="text-align:right;">{{ $row['debit'] > 0 ? number_format($row['debit'], 0, ',', '.') : '-' }}</td>
-                    <td style="text-align:right;">{{ $row['credit'] > 0 ? number_format($row['credit'], 0, ',', '.') : '-' }}</td>
+                    <td style="text-align:right;">{{ $row['debit'] > 0 ? number_format($row['debit'], 2, ',', '.') : '-' }}</td>
+                    <td style="text-align:right;">{{ $row['credit'] > 0 ? number_format($row['credit'], 2, ',', '.') : '-' }}</td>
                 </tr>
             @empty
                 <tr><td colspan="5">Tidak ada transaksi kas/bank pada tanggal ini.</td></tr>

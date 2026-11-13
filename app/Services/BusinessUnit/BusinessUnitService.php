@@ -4,7 +4,7 @@ namespace App\Services\BusinessUnit;
 
 use App\Models\BusinessUnit;
 use App\Models\BusinessUnitTransaction;
-use App\Models\ChartOfAccount;
+use App\Services\Accounting\CashAccountResolver;
 use App\Services\Accounting\JournalEngine;
 use Illuminate\Support\Facades\DB;
 
@@ -14,9 +14,10 @@ use Illuminate\Support\Facades\DB;
  */
 class BusinessUnitService
 {
-    private const DEFAULT_CASH_ACCOUNT_CODE = '1101';
-
-    public function __construct(private readonly JournalEngine $journalEngine) {}
+    public function __construct(
+        private readonly JournalEngine $journalEngine,
+        private readonly CashAccountResolver $cashAccounts,
+    ) {}
 
     public function record(
         BusinessUnit $unit,
@@ -27,7 +28,7 @@ class BusinessUnitService
         ?string $description = null,
     ): BusinessUnitTransaction {
         return DB::transaction(function () use ($unit, $type, $amount, $branchId, $createdBy, $description) {
-            $cashAccountId = $this->cashAccountId();
+            $cashAccountId = $this->cashAccounts->forBranch($branchId)->id;
             $unitAccountId = $type === 'pendapatan' ? $unit->coa_revenue_account_id : $unit->coa_expense_account_id;
 
             $lines = $type === 'pendapatan'
@@ -59,10 +60,5 @@ class BusinessUnitService
                 'created_by' => $createdBy,
             ]);
         });
-    }
-
-    private function cashAccountId(): int
-    {
-        return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->value('id');
     }
 }
