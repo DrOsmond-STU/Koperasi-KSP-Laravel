@@ -39,6 +39,7 @@ use App\Models\TellerCashTransaction;
 use App\Models\User;
 use App\Services\Inventory\InventoryReportService;
 use App\Services\Loans\SisaPinjamanCalculator;
+use App\Services\OpeningBalance\OpeningBalanceNeracaCorrectionService;
 use App\Services\Reporting\LaporanRegistry;
 use App\Services\Reporting\PenjumlahLaporan;
 use Illuminate\Http\Request;
@@ -421,10 +422,15 @@ class LaporanController extends Controller
             ->with('branch')
             ->get();
 
-        $entries = OpeningBalanceCoa::query()
-            ->whereIn('opening_balance_batch_id', $batches->pluck('id'))
-            ->with('account')
-            ->get();
+        // Koreksi Saldo Awal Neraca (jurnal koreksi) ikut digabung — baris
+        // asal opening_balance_coa tidak diubah, lihat gabungKoreksi().
+        $entries = app(OpeningBalanceNeracaCorrectionService::class)->gabungKoreksi(
+            OpeningBalanceCoa::query()
+                ->whereIn('opening_balance_batch_id', $batches->pluck('id'))
+                ->with('account')
+                ->get(),
+            $batches->pluck('id'),
+        );
 
         $shuAccountCode = (string) config('koperasi.akun_shu_berjalan', '3150');
         $balanceByCode = [];
@@ -634,9 +640,11 @@ class LaporanController extends Controller
         // digit melompat ke atas seluruh akun aset tujuh digit. Dibandingkan
         // sebagai teks, urutannya mengikuti hierarki bagan akun sebagaimana
         // mestinya.
-        $semua = OpeningBalanceCoa::query()
-            ->with('account')
-            ->get()
+        // Koreksi Saldo Awal Neraca ikut digabung (baris asal tidak diubah).
+        $semua = app(OpeningBalanceNeracaCorrectionService::class)->gabungKoreksi(
+            OpeningBalanceCoa::query()->with('account')->get(),
+            OpeningBalanceBatch::query()->pluck('id'),
+        )
             ->sortBy(fn (OpeningBalanceCoa $line) => $line->account->code ?? '', SORT_STRING)
             ->values();
 
