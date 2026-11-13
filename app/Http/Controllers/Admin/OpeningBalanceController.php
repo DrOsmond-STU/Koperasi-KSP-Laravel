@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Exceptions\Accounting\JournalPostingException;
+use App\Exceptions\OpeningBalance\OpeningBalanceAdjustmentException;
 use App\Exceptions\OpeningBalance\OpeningBalanceLockException;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\AdjustOpeningBalanceRequest;
 use App\Http\Requests\ImportOpeningBalanceRequest;
 use App\Http\Requests\StoreOpeningBalanceBatchRequest;
 use App\Http\Requests\StoreOpeningBalanceCoaRowRequest;
@@ -20,6 +23,7 @@ use App\Models\OpeningBalanceBatch;
 use App\Models\Product;
 use App\Models\RetributionType;
 use App\Models\SavingsProduct;
+use App\Services\OpeningBalance\OpeningBalanceAdjustmentService;
 use App\Services\OpeningBalance\OpeningBalanceImportService;
 use App\Services\OpeningBalance\OpeningBalanceLockService;
 use App\Services\OpeningBalance\OpeningBalanceReconciliationService;
@@ -36,6 +40,7 @@ class OpeningBalanceController extends Controller
         private readonly OpeningBalanceImportService $importService,
         private readonly OpeningBalanceReconciliationService $reconciliationService,
         private readonly OpeningBalanceLockService $lockService,
+        private readonly OpeningBalanceAdjustmentService $adjustmentService,
     ) {}
 
     public function index(): View
@@ -165,6 +170,16 @@ class OpeningBalanceController extends Controller
         return $this->rowStoredResponse($batch);
     }
 
+    public function updateCoaRow(StoreOpeningBalanceCoaRowRequest $request, OpeningBalanceBatch $batch, int $rowId): RedirectResponse
+    {
+        $this->authorize('saldo_awal.update');
+        $this->assertDraft($batch);
+        $batch->coaLines()->findOrFail($rowId)->update($request->validated());
+
+        return redirect()->route('admin.saldo-awal.show', $batch)
+            ->with('status', 'Baris COA berhasil diubah.');
+    }
+
     public function storeUpfRow(StoreOpeningBalanceUpfRowRequest $request, OpeningBalanceBatch $batch): RedirectResponse
     {
         $this->assertDraft($batch);
@@ -275,6 +290,52 @@ class OpeningBalanceController extends Controller
 
         return redirect()->route('admin.saldo-awal.show', $batch)
             ->with('status', 'Migrasi terkunci — jurnal pembukaan telah dibuat.');
+    }
+
+    /**
+     * Ubah / Koreksi Saldo Awal Neraca — form saldo baru per akun Neraca.
+     */
+    public function adjustForm(OpeningBalanceBatch $batch): View
+    {
+        $this->authorize('saldo_awal.read');
+
+        $rows = $this->adjustmentService->accountRows($batch);
+
+        return view('admin.saldo-awal.koreksi', [
+            'batch' => $batch,
+            'rows' => $rows,
+            'totals' => $this->adjustmentService->totals($batch),
+            'defaultBalancingAccountId' => $rows->first(
+                fn ($row) => $row['account']->code === OpeningBalanceAdjustmentService::DEFAULT_BALANCING_ACCOUNT_CODE
+            )['account']->id ?? null,
+            'adjustments' => $batch->adjustments()->with(['lines.account', 'creator'])->latest()->get(),
+        ]);
+    }
+
+    public function adjust(AdjustOpeningBalanceRequest $request, OpeningBalanceBatch $batch): RedirectResponse
+    {
+        $wasDraft = $batch->isDraft();
+
+        try {
+            $this->adjustmentService->apply(
+                $batch,
+                $request->user(),
+                $request->validated('balances'),
+                $request->validated('balancing_account_id') ? (int) $request->validated('balancing_account_id') : null,
+                (string) ($request->validated('reason') ?? ''),
+                $request->validated('entry_date'),
+                $request->validated('password'),
+            );
+        } catch (OpeningBalanceAdjustmentException|JournalPostingException $exception) {
+            return redirect()->route('admin.saldo-awal.koreksi', $batch)
+                ->withInput($request->except('password'))
+                ->with('error', $exception->getMessage());
+        }
+
+        return redirect()->route($wasDraft ? 'admin.saldo-awal.show' : 'admin.saldo-awal.koreksi', $batch)
+            ->with('status', $wasDraft
+                ? 'Saldo awal neraca diperbarui pada baris COA batch.'
+                : 'Koreksi saldo awal neraca tersimpan — jurnal koreksi telah diposting.');
     }
 
     private function countLabel($result): int

@@ -65,6 +65,11 @@ class OpeningBalanceBatch extends Model
         return $this->hasMany(OpeningBalanceStock::class);
     }
 
+    public function adjustments(): HasMany
+    {
+        return $this->hasMany(OpeningBalanceAdjustment::class);
+    }
+
     public function isDraft(): bool
     {
         return $this->status === 'draft';

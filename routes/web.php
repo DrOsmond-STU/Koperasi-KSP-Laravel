@@ -438,6 +438,12 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
         ->name('admin.saldo-awal.row.stock.store');
     Route::delete('/admin/saldo-awal/{batch}/baris/{subModule}/{rowId}', [OpeningBalanceController::class, 'destroyRow'])
         ->name('admin.saldo-awal.row.destroy');
+    Route::put('/admin/saldo-awal/{batch}/baris/coa/{rowId}', [OpeningBalanceController::class, 'updateCoaRow'])
+        ->name('admin.saldo-awal.row.coa.update');
+    Route::get('/admin/saldo-awal/{batch}/koreksi-neraca', [OpeningBalanceController::class, 'adjustForm'])
+        ->name('admin.saldo-awal.koreksi');
+    Route::post('/admin/saldo-awal/{batch}/koreksi-neraca', [OpeningBalanceController::class, 'adjust'])
+        ->name('admin.saldo-awal.koreksi.store');
     Route::post('/admin/saldo-awal/{batch}/lock', [OpeningBalanceController::class, 'lock'])
         ->name('admin.saldo-awal.lock');
 

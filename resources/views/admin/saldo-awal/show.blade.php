@@ -400,10 +400,19 @@
     <div class="panel">
         <div class="panel-head">
             <h3>Saldo Awal Buku Besar / COA ({{ $batch->coaLines->count() }} baris)</h3>
-            @if ($isDraft)
-                <button type="button" class="toggle-link" onclick="document.getElementById('form-coa').classList.toggle('open')">+ Tambah manual</button>
-            @endif
+            <div style="display:flex; gap:12px; align-items:center">
+                @if ($isDraft)
+                    <button type="button" class="toggle-link" onclick="document.getElementById('form-coa').classList.toggle('open')">+ Tambah manual</button>
+                @endif
+                @can($isDraft ? 'saldo_awal.update' : 'saldo_awal.lock')
+                    <a class="btn-secondary" href="{{ route('admin.saldo-awal.koreksi', $batch) }}">✎ Ubah Saldo Awal Neraca</a>
+                @endcan
+            </div>
         </div>
+
+        @if (! $isDraft && $batch->adjustments()->exists())
+            <p class="field-guide">Saldo di bawah adalah saldo awal asli saat dikunci. Sudah ada {{ $batch->adjustments()->count() }} koreksi saldo awal — lihat rinciannya di halaman <a href="{{ route('admin.saldo-awal.koreksi', $batch) }}">Ubah Saldo Awal Neraca</a>.</p>
+        @endif
 
         @if ($batch->coaLines->count() > 0)
             <table class="data-table">
@@ -416,6 +425,7 @@
                         <td>Rp {{ number_format($row->amount, 0, ',', '.') }}</td>
                         @if ($isDraft)
                         <td>
+                            <button type="button" class="btn-secondary" style="padding:3px 8px; font-size:11px" onclick="document.getElementById('edit-coa-{{ $row->id }}').classList.toggle('open')">Ubah</button>
                             <form method="POST" action="{{ route('admin.saldo-awal.row.destroy', [$batch, 'coa', $row->id]) }}" onsubmit="return confirm('Hapus baris ini?');" style="display:inline">
                                 @csrf @method('DELETE')
                                 <button type="submit" class="btn-danger">Hapus</button>
@@ -423,6 +433,37 @@
                         </td>
                         @endif
                     </tr>
+                    @if ($isDraft)
+                    <tr>
+                        <td colspan="4" style="padding:0; border:none">
+                            <form id="edit-coa-{{ $row->id }}" class="manual-form" method="POST" action="{{ route('admin.saldo-awal.row.coa.update', [$batch, $row->id]) }}">
+                                @csrf @method('PUT')
+                                <div class="field-row">
+                                    <div>
+                                        <label>Akun (COA)</label>
+                                        <select name="chart_of_account_id" required>
+                                            @foreach ($postableAccounts as $a)
+                                                <option value="{{ $a->id }}" @selected($a->id === $row->chart_of_account_id)>{{ $a->code }} — {{ $a->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label>Posisi</label>
+                                        <select name="position" required>
+                                            <option value="debit" @selected($row->position === 'debit')>Debit</option>
+                                            <option value="kredit" @selected($row->position === 'kredit')>Kredit</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label>Saldo</label>
+                                        <input type="number" step="0.01" min="0" name="amount" value="{{ $row->amount }}" required>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn-primary">Simpan Perubahan</button>
+                            </form>
+                        </td>
+                    </tr>
+                    @endif
                 @endforeach
                 </tbody>
             </table>
