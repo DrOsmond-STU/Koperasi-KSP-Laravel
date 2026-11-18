@@ -51,6 +51,13 @@
         .field-row { display: flex; gap: 14px; }
         .field-row .field { flex: 1; }
         .btn-primary { padding: 10px 18px; background: var(--pine); color: #fff; border: none; border-radius: 9px; font-weight: 700; cursor: pointer; }
+        .btn-secondary { display: inline-block; padding: 9px 16px; background: var(--paper); color: var(--pine); border: 1px solid var(--line); border-radius: 9px; font-weight: 700; font-size: 13px; cursor: pointer; text-decoration: none; }
+        .btn-secondary[aria-disabled="true"] { opacity: .5; cursor: default; pointer-events: none; }
+        .filter-toolbar .field-row { flex-wrap: wrap; align-items: end; row-gap: 10px; }
+        .filter-toolbar .field { min-width: 160px; margin-bottom: 0; }
+        .filter-toolbar .field.field-search { flex: 2 1 240px; }
+        .pager-row { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 10px; }
+        .pager-links { display: flex; align-items: center; gap: 8px; }
         .payer-toggle { display: flex; gap: 8px; margin-bottom: 14px; }
         .payer-toggle label { flex: 1; text-align: center; padding: 9px; border: 1px solid var(--line); border-radius: 9px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); }
         .payer-toggle input { display: none; }
@@ -285,22 +292,44 @@
                     @csrf
 
                     <div class="payer-toggle">
-                        <label><input type="radio" name="payer_type" value="umum" id="payer-umum" checked><span>Umum</span></label>
-                        <label><input type="radio" name="payer_type" value="anggota" id="payer-anggota"><span>Anggota</span></label>
+                        <label><input type="radio" name="payer_type" value="umum" id="payer-umum" @checked(old('payer_type', 'umum') === 'umum')><span>Umum</span></label>
+                        <label><input type="radio" name="payer_type" value="anggota" id="payer-anggota" @checked(old('payer_type') === 'anggota')><span>Anggota</span></label>
                     </div>
 
                     <div class="field" id="field-payer-name">
                         <label>Nama Pembayar</label>
-                        <input type="text" name="payer_name" placeholder="Nama pembayar umum">
+                        <input type="text" name="payer_name" value="{{ old('payer_name') }}" placeholder="Nama pembayar umum">
                     </div>
-                    <div class="field" id="field-member" style="display:none;">
-                        <label>Anggota (Kios/Blok)</label>
-                        <select name="member_id" class="js-searchable">
-                            <option value="">— Pilih Anggota —</option>
-                            @foreach ($members as $member)
-                                <option value="{{ $member->id }}">{{ $member->member_number }} — {{ $member->name }}</option>
+                    <div class="field" id="field-retribution-type">
+                        <label>Jenis Retribusi <span style="color:var(--brick);">*</span></label>
+                        <select name="retribution_type_id" id="retribution-type-select">
+                            <option value="">— Pilih Jenis Retribusi —</option>
+                            @foreach ($umumTypes as $type)
+                                <option value="{{ $type->id }}"
+                                        data-code="{{ $type->revenueAccount?->code }}"
+                                        data-name="{{ $type->name }}"
+                                        @selected((string) old('retribution_type_id') === (string) $type->id)>
+                                    {{ $type->code }} — {{ $type->name }}
+                                </option>
                             @endforeach
                         </select>
+                        @if ($umumTypes->isEmpty())
+                            <p class="error-msg" style="margin-top:6px;">⚠ Belum ada jenis retribusi umum (persentase = 100%) yang aktif. Tambahkan di menu <em>Pengaturan → Jenis Retribusi</em>.</p>
+                        @endif
+                    </div>
+                    <div class="field" id="field-member" style="display:none;">
+                        <label>Anggota (Kios/Blok) <span style="color:var(--brick);">*</span></label>
+                        <select name="member_id" class="js-searchable" id="member-select">
+                            <option value="">— Pilih Anggota —</option>
+                            @foreach ($members as $member)
+                                <option value="{{ $member->id }}" @selected((string) old('member_id') === (string) $member->id)>
+                                    {{ $member->member_number }} — {{ $member->name }}@if ($member->memberType) ({{ $member->memberType->code }})@endif
+                                </option>
+                            @endforeach
+                        </select>
+                        @if ($members->isEmpty())
+                            <p class="error-msg" style="margin-top:6px;">⚠ Belum ada data anggota yang bisa dipilih. Pastikan master data Anggota sudah terisi (khususnya jenis KIOS/BLOK).</p>
+                        @endif
                     </div>
 
                     <div class="field-row">
@@ -343,12 +372,67 @@
 
             <div class="panel">
                 <h3>Preview Jurnal</h3>
-                <p class="preview-empty" id="preview-empty-msg">Isi total iuran untuk melihat pembagian jurnal.</p>
+                <p class="preview-empty" id="preview-empty-msg">Pilih mode transaksi &amp; isi total iuran untuk melihat pembagian jurnal.</p>
                 <div id="preview-lines" style="display:none;"></div>
-                @if ($activePercentageTotal != 100)
-                    <p class="error-msg" style="margin-top:12px;">⚠ Total persentase jenis retribusi aktif baru {{ number_format($activePercentageTotal, 2) }}% — belum bisa memproses transaksi sampai mencapai 100%.</p>
+                @if ($splitPercentageTotal != 100 && $splitTypes->isNotEmpty())
+                    <p class="error-msg" style="margin-top:12px;">⚠ Total persentase jenis retribusi <em>split</em> (untuk pembagian otomatis Anggota) baru {{ number_format($splitPercentageTotal, 2) }}% — transaksi Anggota belum bisa diproses sampai mencapai 100%.</p>
                 @endif
+                @if ($splitTypes->isEmpty())
+                    <p class="error-msg" style="margin-top:12px;">⚠ Belum ada jenis retribusi <em>split</em> (persentase &lt; 100%) yang aktif — transaksi <strong>Anggota</strong> belum tersedia. Tambahkan di menu <em>Pengaturan → Jenis Retribusi</em>.</p>
+                @endif
+                <p class="preview-empty" style="margin-top:14px; font-size:11px;">
+                    Jurnal LAWAN (debit) diarahkan ke akun kas
+                    <strong>@if ($cashAccount) {{ $cashAccount->code }} — {{ $cashAccount->name }} @else (belum di-set) @endif</strong>.
+                </p>
             </div>
+        </div>
+
+        @php
+            $filtersActive = $filters['q'] || $filters['date_from'] || $filters['date_to'] || $filters['payment_method'] || $filters['status'];
+        @endphp
+        <div class="panel filter-toolbar" style="margin-top:18px;">
+            <form method="GET" action="{{ route('staf.retribusi-upf.index') }}">
+                <input type="hidden" name="tab" value="transaksi">
+                @if ($selectedBranchId)<input type="hidden" name="branch_id" value="{{ $selectedBranchId }}">@endif
+                <div class="field-row">
+                    <div class="field field-search">
+                        <label>Cari</label>
+                        <input type="text" name="q" value="{{ $filters['q'] }}" placeholder="No. transaksi atau nama pembayar...">
+                    </div>
+                    <div class="field">
+                        <label>Dari Tanggal</label>
+                        <input type="date" name="date_from" value="{{ $filters['date_from'] }}">
+                    </div>
+                    <div class="field">
+                        <label>Sampai Tanggal</label>
+                        <input type="date" name="date_to" value="{{ $filters['date_to'] }}">
+                    </div>
+                    <div class="field">
+                        <label>Metode Bayar</label>
+                        <select name="payment_method">
+                            <option value="">Semua</option>
+                            <option value="tunai" @selected($filters['payment_method'] === 'tunai')>Tunai</option>
+                            <option value="transfer" @selected($filters['payment_method'] === 'transfer')>Transfer</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Status</label>
+                        <select name="status">
+                            <option value="">Semua</option>
+                            <option value="aktif" @selected($filters['status'] === 'aktif')>Aktif</option>
+                            <option value="dibatalkan" @selected($filters['status'] === 'dibatalkan')>Dibatalkan</option>
+                        </select>
+                    </div>
+                    <div class="field" style="min-width:0;">
+                        <button type="submit" class="btn-primary">Terapkan</button>
+                    </div>
+                    @if ($filtersActive)
+                        <div class="field" style="min-width:0;">
+                            <a href="{{ route('staf.retribusi-upf.index', array_filter(['tab' => 'transaksi', 'branch_id' => $selectedBranchId])) }}" class="btn-secondary">Reset</a>
+                        </div>
+                    @endif
+                </div>
+            </form>
         </div>
 
         <table class="data-table">
@@ -356,7 +440,7 @@
                 <tr><th>No. Transaksi</th><th>Tanggal</th><th>Pembayar</th><th>Cabang</th><th>Total</th><th>Metode</th><th>Status</th></tr>
             </thead>
             <tbody>
-                @forelse ($recentTransactions as $trx)
+                @forelse ($transactions as $trx)
                     <tr>
                         <td>{{ $trx->transaction_number }}</td>
                         <td>{{ $trx->transaction_date->format('d/m/Y') }}</td>
@@ -378,10 +462,23 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="7">Belum ada transaksi retribusi.</td></tr>
+                    <tr><td colspan="7">{{ $filtersActive ? 'Tidak ada transaksi yang cocok dengan filter ini.' : 'Belum ada transaksi retribusi.' }}</td></tr>
                 @endforelse
             </tbody>
         </table>
+
+        @if ($transactions->total() > 0)
+            <div class="pager-row">
+                <span>Menampilkan {{ $transactions->firstItem() }}–{{ $transactions->lastItem() }} dari {{ $transactions->total() }} transaksi</span>
+                @if ($transactions->hasPages())
+                    <div class="pager-links">
+                        <a href="{{ $transactions->previousPageUrl() ?? '#' }}" class="btn-secondary" @if ($transactions->onFirstPage()) aria-disabled="true" @endif>‹ Sebelumnya</a>
+                        <span>Halaman {{ $transactions->currentPage() }} / {{ $transactions->lastPage() }}</span>
+                        <a href="{{ $transactions->nextPageUrl() ?? '#' }}" class="btn-secondary" @if (! $transactions->hasMorePages()) aria-disabled="true" @endif>Berikutnya ›</a>
+                    </div>
+                @endif
+            </div>
+        @endif
     </div>
 
     {{-- ================= LAPORAN TAB ================= --}}
@@ -403,6 +500,39 @@
                     </select>
                 </div>
                 <button type="submit" class="btn-secondary">Cetak</button>
+            </form>
+        </div>
+
+        <div class="panel">
+            <h3>Rekap Pendapatan UPF (Portrait)</h3>
+            <p style="color: var(--muted); font-size: 12px; margin-top: -4px; margin-bottom: 12px;">
+                Cetak PDF portrait berisi total kas masuk &amp; rekap per jenis retribusi.
+                Preset periode: <a href="#" data-preset-rekap="today" style="color:var(--pine);">Hari ini</a> ·
+                <a href="#" data-preset-rekap="2days" style="color:var(--pine);">2 hari</a> ·
+                <a href="#" data-preset-rekap="week" style="color:var(--pine);">1 minggu</a> ·
+                <a href="#" data-preset-rekap="month" style="color:var(--pine);">1 bulan</a>.
+            </p>
+            <form method="GET" action="{{ route('staf.retribusi-upf.print-rekap') }}" target="_blank" id="rekap-form">
+                <div class="field-row">
+                    <div class="field">
+                        <label>Periode Mulai</label>
+                        <input type="date" name="period_start" id="rekap-start" value="{{ now()->startOfMonth()->toDateString() }}" required>
+                    </div>
+                    <div class="field">
+                        <label>Periode Akhir</label>
+                        <input type="date" name="period_end" id="rekap-end" value="{{ now()->toDateString() }}" required>
+                    </div>
+                    <div class="field">
+                        <label>Cabang</label>
+                        <select name="branch_id">
+                            <option value="">Semua Cabang</option>
+                            @foreach ($branches as $branch)
+                                <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" class="btn-primary">Cetak Rekap</button>
             </form>
         </div>
 
@@ -487,14 +617,25 @@
             var payerAnggota = document.getElementById('payer-anggota');
             var fieldPayerName = document.getElementById('field-payer-name');
             var fieldMember = document.getElementById('field-member');
+            var fieldRetType = document.getElementById('field-retribution-type');
+            var retTypeSelect = document.getElementById('retribution-type-select');
+            var memberSelect = document.getElementById('member-select');
+
             function syncPayerFields() {
                 var isAnggota = payerAnggota.checked;
                 fieldPayerName.style.display = isAnggota ? 'none' : '';
                 fieldMember.style.display = isAnggota ? '' : 'none';
+                fieldRetType.style.display = isAnggota ? 'none' : '';
+                // Clear values on the hidden side so validators don't see stale data.
+                if (isAnggota) {
+                    if (retTypeSelect) { retTypeSelect.value = ''; }
+                } else {
+                    if (memberSelect) { memberSelect.value = ''; }
+                }
+                renderPreview();
             }
             payerUmum.addEventListener('change', syncPayerFields);
             payerAnggota.addEventListener('change', syncPayerFields);
-            syncPayerFields();
 
             // --- Live journal preview ---
             // PENTING: algoritma di bawah ini adalah PROYEKSI saja untuk tampilan.
@@ -505,14 +646,15 @@
             // ini. Logika largest-remainder di bawah HARUS sinkron dengan
             // app/Services/Retribution/RetributionSplitCalculator.php.
             @php
-                $activeTypesForJs = $activeTypes->map(fn ($type) => [
+                $splitTypesForJs = $splitTypes->map(fn ($type) => [
                     'id' => $type->id,
                     'name' => $type->name,
                     'percentage' => (float) $type->percentage,
                     'account_code' => $type->revenueAccount?->code,
                 ]);
             @endphp
-            var activeTypes = @json($activeTypesForJs);
+            var splitTypes = @json($splitTypesForJs);
+            var cashAccountLabel = {{ Js::from($cashAccount ? "{$cashAccount->name} ({$cashAccount->code})" : 'Kas') }};
 
             function splitCents(totalCents, types) {
                 var rows = types.map(function (t) {
@@ -540,19 +682,50 @@
 
             function renderPreview() {
                 var value = parseFloat(amountInput.value);
-                if (!value || value <= 0 || activeTypes.length === 0) {
+                var isAnggota = payerAnggota.checked;
+
+                if (!value || value <= 0) {
                     previewLines.style.display = 'none';
                     previewEmptyMsg.style.display = '';
                     return;
                 }
-                var totalCents = Math.round(value * 100);
-                var splits = splitCents(totalCents, activeTypes);
 
+                var totalCents = Math.round(value * 100);
                 var html = '';
-                activeTypes.forEach(function (t) {
-                    html += '<div class="preview-line"><span>Kredit — ' + t.name + (t.account_code ? ' (' + t.account_code + ')' : ' (belum di-link)') + '</span><span>' + formatRupiah(splits[t.id]) + '</span></div>';
-                });
-                html += '<div class="preview-line"><span>Debit — Kas</span><span>' + formatRupiah(totalCents) + '</span></div>';
+
+                if (isAnggota) {
+                    if (splitTypes.length === 0) {
+                        previewLines.style.display = 'none';
+                        previewEmptyMsg.style.display = '';
+                        return;
+                    }
+                    var splits = splitCents(totalCents, splitTypes);
+                    splitTypes.forEach(function (t) {
+                        html += '<div class="preview-line"><span>Kredit — ' + t.name
+                            + (t.account_code ? ' (' + t.account_code + ')' : ' (belum di-link)')
+                            + '</span><span>' + formatRupiah(splits[t.id]) + '</span></div>';
+                    });
+                } else {
+                    // Umum: satu jenis retribusi (100%), tanpa pembagian.
+                    var selectedOption = retTypeSelect && retTypeSelect.selectedIndex >= 0
+                        ? retTypeSelect.options[retTypeSelect.selectedIndex]
+                        : null;
+
+                    if (!selectedOption || selectedOption.value === '') {
+                        previewLines.innerHTML = '<p class="preview-empty">Pilih Jenis Retribusi terlebih dahulu untuk melihat pembagian jurnal.</p>';
+                        previewLines.style.display = '';
+                        previewEmptyMsg.style.display = 'none';
+                        return;
+                    }
+
+                    var name = selectedOption.getAttribute('data-name') || selectedOption.text;
+                    var code = selectedOption.getAttribute('data-code');
+                    html += '<div class="preview-line"><span>Kredit — ' + name
+                        + (code ? ' (' + code + ')' : ' (belum di-link)')
+                        + '</span><span>' + formatRupiah(totalCents) + '</span></div>';
+                }
+
+                html += '<div class="preview-line"><span>Debit — ' + cashAccountLabel + '</span><span>' + formatRupiah(totalCents) + '</span></div>';
                 html += '<div class="preview-line total"><span>Total</span><span>' + formatRupiah(totalCents) + '</span></div>';
 
                 previewLines.innerHTML = html;
@@ -561,6 +734,9 @@
             }
 
             amountInput.addEventListener('input', renderPreview);
+            if (retTypeSelect) { retTypeSelect.addEventListener('change', renderPreview); }
+
+            syncPayerFields();
         })();
 
         document.querySelectorAll('[data-toggle-cancel]').forEach(function (btn) {
@@ -569,5 +745,41 @@
                 form.style.display = form.style.display === 'none' ? 'flex' : 'none';
             });
         });
+
+        // Preset periode untuk form Rekap Pendapatan UPF (harian, 2 hari, 1
+        // minggu, 1 bulan) — hanya mengisi input tanggal; user tetap klik
+        // tombol "Cetak Rekap" untuk membuka PDF.
+        (function () {
+            var startInput = document.getElementById('rekap-start');
+            var endInput = document.getElementById('rekap-end');
+            if (!startInput || !endInput) return;
+
+            function toDateInputValue(d) {
+                var y = d.getFullYear();
+                var m = ('0' + (d.getMonth() + 1)).slice(-2);
+                var day = ('0' + d.getDate()).slice(-2);
+                return y + '-' + m + '-' + day;
+            }
+
+            document.querySelectorAll('[data-preset-rekap]').forEach(function (link) {
+                link.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    var preset = link.dataset.presetRekap;
+                    var end = new Date();
+                    var start = new Date();
+                    if (preset === 'today') {
+                        // start === end === today
+                    } else if (preset === '2days') {
+                        start.setDate(end.getDate() - 1);
+                    } else if (preset === 'week') {
+                        start.setDate(end.getDate() - 6);
+                    } else if (preset === 'month') {
+                        start.setDate(end.getDate() - 29);
+                    }
+                    startInput.value = toDateInputValue(start);
+                    endInput.value = toDateInputValue(end);
+                });
+            });
+        })();
     </script>
 @endsection

@@ -96,7 +96,7 @@
             @if ($summary['members_by_type']->isEmpty())
                 <p class="empty-note">Belum ada anggota.</p>
             @else
-                <table class="data-table">
+                <table class="data-table" data-no-paginate>
                     <thead><tr><th>Jenis Anggota</th><th>Jumlah</th></tr></thead>
                     <tbody>
                         @foreach ($summary['members_by_type'] as $row)
@@ -111,7 +111,7 @@
             @if ($summary['savings_by_product']->isEmpty())
                 <p class="empty-note">Belum ada transaksi simpanan.</p>
             @else
-                <table class="data-table">
+                <table class="data-table" data-no-paginate>
                     <thead><tr><th>Produk</th><th>Total Saldo</th></tr></thead>
                     <tbody>
                         @foreach ($summary['savings_by_product'] as $row)
@@ -129,7 +129,7 @@
             @if ($summary['loan_outstanding_by_collectibility']->isEmpty())
                 <p class="empty-note">Belum ada pinjaman berjalan.</p>
             @else
-                <table class="data-table">
+                <table class="data-table" data-no-paginate>
                     <thead><tr><th>Kolektibilitas</th><th>Jumlah Pinjaman</th><th>Total Outstanding</th></tr></thead>
                     <tbody>
                         @foreach ($summary['loan_outstanding_by_collectibility'] as $row)
@@ -145,7 +145,7 @@
         </div>
         <div class="kpi-detail" id="kpi-detail-shu" hidden>
             <h4>Rincian SHU Berjalan</h4>
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <tbody>
                     <tr><td>Pendapatan</td><td>Rp {{ number_format($summary['shu_breakdown']['pendapatan'], 0, ',', '.') }}</td></tr>
                     <tr><td>Beban</td><td>Rp {{ number_format($summary['shu_breakdown']['beban'], 0, ',', '.') }}</td></tr>
@@ -256,7 +256,7 @@
                     </div>
                 </div>
             @endforeach
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>Produk</th><th>Total Saldo</th></tr></thead>
                 <tbody>
                     @foreach ($savingsRows as $row)

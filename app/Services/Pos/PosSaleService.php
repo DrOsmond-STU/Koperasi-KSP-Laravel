@@ -2,10 +2,10 @@
 
 namespace App\Services\Pos;
 
-use App\Models\ChartOfAccount;
 use App\Models\PosSale;
 use App\Models\Product;
 use App\Models\SavingsAccount;
+use App\Services\Accounting\CashAccountResolver;
 use App\Services\Accounting\JournalEngine;
 use App\Services\Inventory\StockLedgerEngine;
 use App\Services\Loans\LoanService;
@@ -20,18 +20,17 @@ use Illuminate\Support\Facades\DB;
  */
 class PosSaleService
 {
-    private const DEFAULT_CASH_ACCOUNT_CODE = '1101';
-
     public function __construct(
         private readonly StockLedgerEngine $stockLedgerEngine,
         private readonly JournalEngine $journalEngine,
         private readonly SavingsService $savingsService,
         private readonly LoanService $loanService,
+        private readonly CashAccountResolver $cashAccounts,
     ) {}
 
     /**
      * @param  array<int, array{product_id: int, qty: string}>  $items
-     * @param  array{member: \App\Models\Member, loan_product: \App\Models\LoanProduct, tenor_months: int}|null  $hutang
+     * @param  array{member: \App\Models\Member, loan_product: \App\Models\LoanProduct, tenor_days: int}|null  $hutang
      */
     public function sell(
         int $branchId,
@@ -103,7 +102,7 @@ class PosSaleService
                     $hutang['member'],
                     $hutang['loan_product'],
                     (float) $totalAmount,
-                    $hutang['tenor_months'],
+                    $hutang['tenor_days'],
                     $branchId,
                     $createdBy,
                 );
@@ -112,7 +111,7 @@ class PosSaleService
             $debitAccountId = match ($paymentMethod) {
                 'potong_simpanan' => $savingsAccount->savingsProduct->coa_liability_account_id,
                 'hutang' => $hutang['loan_product']->coa_receivable_account_id,
-                default => $this->cashAccount()->id,
+                default => $this->cashAccounts->forBranch($branchId)->id,
             };
 
             $journalLines[] = ['chart_of_account_id' => $debitAccountId, 'debit' => $totalAmount, 'credit' => 0];
@@ -158,10 +157,5 @@ class PosSaleService
         } while (PosSale::query()->where('sale_number', $candidate)->exists());
 
         return $candidate;
-    }
-
-    private function cashAccount(): ChartOfAccount
-    {
-        return ChartOfAccount::query()->where('code', self::DEFAULT_CASH_ACCOUNT_CODE)->firstOrFail();
     }
 }

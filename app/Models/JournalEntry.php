@@ -49,6 +49,17 @@ class JournalEntry extends Model
         return $this->belongsTo(JournalEntry::class, 'reversal_of_entry_id');
     }
 
+    /**
+     * Entri jurnal balik yang membatalkan entri ini (jika ada). Dipakai UI
+     * untuk menandai transaksi sebagai "Dibatalkan" dan menyembunyikan
+     * tombol Batalkan agar entri yang sama tidak dibalik dua kali — bukan
+     * penegakan di level data, jadi bukan pengganti validasi service.
+     */
+    public function reversals(): HasMany
+    {
+        return $this->hasMany(JournalEntry::class, 'reversal_of_entry_id');
+    }
+
     public function source(): MorphTo
     {
         return $this->morphTo();

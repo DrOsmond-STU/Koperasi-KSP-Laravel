@@ -4,11 +4,14 @@ namespace App\Http\Controllers\Anggota;
 
 use App\Http\Controllers\Controller;
 use App\Models\LoanSchedule;
+use App\Services\Loans\SisaPinjamanCalculator;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class PortalController extends Controller
 {
+    public function __construct(private readonly SisaPinjamanCalculator $sisaPinjaman) {}
+
     /**
      * Ringkasan Portal Anggota — semua data diambil lewat $request->user()->member,
      * tidak pernah dari input, sehingga tidak mungkin melihat data anggota lain.
@@ -31,7 +34,11 @@ class PortalController extends Controller
         return view('portal.dashboard', [
             'member' => $member,
             'totalSavings' => (float) $savingsAccounts->sum('balance'),
-            'totalLoanOutstanding' => (float) $activeLoans->sum('principal_amount'),
+            // Sisa pokok, bukan plafon — lihat SisaPinjamanCalculator.
+            'totalLoanOutstanding' => round((float) array_sum(array_map(
+                fn (float $sisa) => max(0.0, $sisa),
+                $this->sisaPinjaman->saatIni($activeLoans->pluck('id')),
+            )), 2),
             'savingsAccounts' => $savingsAccounts,
             'activeLoans' => $activeLoans,
             'dueInstallments' => $dueInstallments,

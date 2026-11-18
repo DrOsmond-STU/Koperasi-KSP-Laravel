@@ -67,7 +67,7 @@
     <div class="kpi-detail-panels">
         <div class="kpi-detail" id="kpi-detail-pendapatan" hidden>
             <h4>Rincian Pendapatan per Bulan — Tahun {{ $summary['year'] }}</h4>
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>Bulan</th><th>Pendapatan</th></tr></thead>
                 <tbody>
                     @foreach ($summary['monthly_income_expense'] as $row)
@@ -78,7 +78,7 @@
         </div>
         <div class="kpi-detail" id="kpi-detail-beban" hidden>
             <h4>Rincian Beban per Bulan — Tahun {{ $summary['year'] }}</h4>
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>Bulan</th><th>Beban</th></tr></thead>
                 <tbody>
                     @foreach ($summary['monthly_income_expense'] as $row)
@@ -89,7 +89,7 @@
         </div>
         <div class="kpi-detail" id="kpi-detail-shu-rat" hidden>
             <h4>Rincian Net (Pendapatan − Beban) per Bulan — Tahun {{ $summary['year'] }}</h4>
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>Bulan</th><th>Net</th></tr></thead>
                 <tbody>
                     @foreach ($summary['monthly_income_expense'] as $row)
@@ -206,7 +206,7 @@
                 </svg>
                 <div class="chart-tooltip" role="status" aria-live="polite"></div>
             </div>
-            <table class="data-table">
+            <table class="data-table" data-no-paginate>
                 <thead><tr><th>Bulan</th><th>Anggota Baru</th></tr></thead>
                 <tbody>
                     @foreach ($summary['member_growth'] as $row)

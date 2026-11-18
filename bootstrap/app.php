@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\Accounting\JournalPostingException;
 use App\Http\Middleware\BootstrapInstallerEnvironment;
 use App\Http\Middleware\EnsureBranchScope;
 use App\Http\Middleware\EnsureHasLinkedMember;
@@ -17,6 +18,20 @@ return Application::configure(basePath: dirname(__DIR__))
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
+        then: function (): void {
+            // Import massal Master Anggota - lihat routes/member-import.php.
+            require __DIR__.'/../routes/member-import.php';
+            // Master Kategori Produk Simpanan.
+            require __DIR__.'/../routes/master-kategori-simpanan.php';
+            // Koreksi Data Saldo Awal (pengosongan massal sebelum dikunci).
+            require __DIR__.'/../routes/saldo-awal-koreksi.php';
+            // Import massal & hapus massal Bagan Akun.
+            require __DIR__.'/../routes/coa-import.php';
+            // Ubah/hapus Produk Simpanan & Produk Pinjaman.
+            require __DIR__.'/../routes/master-produk.php';
+            // Import massal Jadwal Angsuran (tambal jadwal yang luput saat migrasi).
+            require __DIR__.'/../routes/jadwal-angsuran-import.php';
+        },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
@@ -34,4 +49,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*'),
         );
+        // Jurnal ditolak JournalEngine (mis. pembatalan ganda karena tombol
+        // Batalkan terklik dua kali) — kembalikan ke halaman asal dengan pesan,
+        // bukan halaman error 500. Transaksi DB-nya sudah dibatalkan utuh.
+        $exceptions->render(function (JournalPostingException $exception, Request $request) {
+            if ($request->expectsJson() || $request->isMethod('GET')) {
+                return null;
+            }
+
+            return back()->with('error', $exception->getMessage());
+        });
     })->create();

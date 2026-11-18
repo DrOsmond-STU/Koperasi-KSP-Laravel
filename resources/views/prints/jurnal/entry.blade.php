@@ -22,14 +22,14 @@
                 <tr>
                     <td>{{ $line->account->code }}</td>
                     <td>{{ $line->account->name }}</td>
-                    <td style="text-align:right;">{{ $line->debit > 0 ? number_format($line->debit, 0, ',', '.') : '-' }}</td>
-                    <td style="text-align:right;">{{ $line->credit > 0 ? number_format($line->credit, 0, ',', '.') : '-' }}</td>
+                    <td style="text-align:right;">{{ $line->debit > 0 ? number_format($line->debit, 2, ',', '.') : '-' }}</td>
+                    <td style="text-align:right;">{{ $line->credit > 0 ? number_format($line->credit, 2, ',', '.') : '-' }}</td>
                 </tr>
             @endforeach
             <tr>
                 <td colspan="2" style="text-align:right; font-weight:700;">Total</td>
-                <td style="text-align:right; font-weight:700;">{{ number_format($entry->lines->sum('debit'), 0, ',', '.') }}</td>
-                <td style="text-align:right; font-weight:700;">{{ number_format($entry->lines->sum('credit'), 0, ',', '.') }}</td>
+                <td style="text-align:right; font-weight:700;">{{ number_format($entry->lines->sum('debit'), 2, ',', '.') }}</td>
+                <td style="text-align:right; font-weight:700;">{{ number_format($entry->lines->sum('credit'), 2, ',', '.') }}</td>
             </tr>
         </tbody>
     </table>
