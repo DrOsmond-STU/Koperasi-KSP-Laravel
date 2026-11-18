@@ -29,6 +29,14 @@
         }
         .balance-bar.unbalanced { background: var(--brick-soft); color: var(--brick); }
 
+        /* Pencarian riwayat jurnal umum (server). */
+        .riwayat-cari { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 12px; }
+        .riwayat-cari label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; font-weight: 600; color: var(--muted); }
+        .riwayat-cari input, .riwayat-cari select { padding: 7px 9px; font-size: 13px; }
+        .riwayat-cari input[name="cari"] { min-width: 220px; }
+        .riwayat-cari .btn-primary { margin: 0; }
+        .riwayat-reset { font-size: 13px; font-weight: 600; color: var(--pine); align-self: center; }
+
         /* Pembatalan jurnal umum — form kecil di dalam baris riwayat. */
         details.batal-jurnal { display: inline-block; }
         details.batal-jurnal > summary { list-style: none; cursor: pointer; color: var(--brick); font-weight: 600; }
@@ -118,16 +126,53 @@
     </div>
 
     <div class="form-card form-card--wide">
-        <h3 style="margin-top:0;">Transaksi Jurnal Umum Terbaru</h3>
+        <h3 style="margin-top:0;">{{ $adaFilter ? 'Hasil Pencarian Jurnal Umum ('.$recentEntries->count().($batasTercapai ? '+' : '').')' : 'Transaksi Jurnal Umum Terbaru' }}</h3>
+
+        {{-- Pencarian di server atas SELURUH jurnal umum (bukan hanya 100 terbaru). --}}
+        <form method="GET" action="{{ route('admin.jurnal-umum.create') }}" class="riwayat-cari">
+            @if (request()->filled('branch_id'))
+                <input type="hidden" name="branch_id" value="{{ request('branch_id') }}">
+            @endif
+            <label>Cari (no. jurnal / keterangan)
+                <input type="search" name="cari" value="{{ $filter['cari'] }}" placeholder="mis. 9901 atau Sucipto" maxlength="100">
+            </label>
+            <label>Tanggal dari
+                <input type="date" name="cari_dari" value="{{ $filter['dari'] }}">
+            </label>
+            <label>s/d
+                <input type="date" name="cari_sampai" value="{{ $filter['sampai'] }}">
+            </label>
+            <label>Nominal (Rp)
+                <input type="text" inputmode="numeric" name="cari_nominal" value="{{ $filter['nominal'] !== null ? number_format((float) $filter['nominal'], 0, ',', '.') : '' }}" placeholder="mis. 1.966.000">
+            </label>
+            <label>Cabang
+                <select name="cari_cabang">
+                    <option value="">Semua cabang</option>
+                    @foreach ($branches as $branch)
+                        <option value="{{ $branch->id }}" @selected($filter['cabang'] === $branch->id)>{{ $branch->name }}</option>
+                    @endforeach
+                </select>
+            </label>
+            <button type="submit" class="btn-primary">Cari</button>
+            @if ($adaFilter)
+                <a href="{{ route('admin.jurnal-umum.create', request()->only('branch_id')) }}" class="riwayat-reset">Reset</a>
+            @endif
+        </form>
+        @if ($adaFilter && $batasTercapai)
+            <p class="hint" style="color: var(--brick);">Hanya {{ $batasHasil }} hasil terbaru yang ditampilkan — persempit pencarian (tanggal, nominal, atau cabang).</p>
+        @elseif (! $adaFilter)
+            <p class="hint" style="margin-top:-4px;">Daftar di bawah hanya {{ $batasHasil }} jurnal terbaru. Jurnal yang lebih lama: cari dengan nomor jurnal, keterangan, tanggal, atau nominal di atas.</p>
+        @endif
+
         @if ($recentEntries->isEmpty())
-            <p class="hint">Belum ada transaksi jurnal umum.</p>
+            <p class="hint">{{ $adaFilter ? 'Tidak ada jurnal umum yang cocok dengan pencarian.' : 'Belum ada transaksi jurnal umum.' }}</p>
         @else
             @php
                 $branchOptions = $recentEntries->pluck('branch.name')->filter()->unique()->sort()->values();
             @endphp
             <div class="dt-wrap" data-dt data-date-column="tanggal">
                 <div class="dt-toolbar">
-                    <input type="search" class="dt-search" placeholder="Cari keterangan, cabang, dll...">
+                    <input type="search" class="dt-search" placeholder="Saring baris di tabel ini...">
 
                     <div class="dt-period">
                         <span>Periode</span>
@@ -145,21 +190,27 @@
 
                     <select class="dt-filter" data-filter-column="status">
                         <option value="">Status — Semua</option>
-                        <option value="Aktif" selected>Aktif</option>
+                        {{-- Hasil pencarian menampilkan semua status (termasuk yang sudah dibatalkan). --}}
+                        <option value="Aktif" @selected(! $adaFilter)>Aktif</option>
                         <option value="Dibatalkan">Dibatalkan</option>
                     </select>
 
                     <span class="dt-count"></span>
                 </div>
-                <p class="hint" style="margin-top:-6px; margin-bottom:10px;">Tabel secara bawaan hanya menampilkan jurnal berstatus <strong>Aktif</strong>. Pilih <strong>Status &rarr; Dibatalkan</strong> atau <strong>Semua</strong> untuk melihat riwayat pembatalan (data tetap tersimpan).</p>
+                @if ($adaFilter)
+                    <p class="hint" style="margin-top:-6px; margin-bottom:10px;">Hasil pencarian menampilkan semua status (<strong>Aktif</strong> dan <strong>Dibatalkan</strong>). Pakai filter Status untuk menyaring.</p>
+                @else
+                    <p class="hint" style="margin-top:-6px; margin-bottom:10px;">Tabel secara bawaan hanya menampilkan jurnal berstatus <strong>Aktif</strong>. Pilih <strong>Status &rarr; Dibatalkan</strong> atau <strong>Semua</strong> untuk melihat riwayat pembatalan (data tetap tersimpan).</p>
+                @endif
 
                 <div class="dt-table-scroll">
                     <table class="dt-table">
-                        <thead><tr><th>Tanggal</th><th>Keterangan</th><th>Cabang</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
+                        <thead><tr><th>No.</th><th>Tanggal</th><th>Keterangan</th><th>Cabang</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
                         <tbody>
                             @foreach ($recentEntries as $entry)
                                 @php $isCancelled = $entry->reversals->isNotEmpty(); @endphp
                                 <tr>
+                                    <td data-column="nomor">#{{ $entry->id }}</td>
                                     <td data-column="tanggal">{{ $entry->entry_date->format('d-m-Y') }}</td>
                                     <td data-column="keterangan">{{ $entry->description }}</td>
                                     <td data-column="cabang">{{ $entry->branch?->name }}</td>

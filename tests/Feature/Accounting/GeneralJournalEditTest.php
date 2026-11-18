@@ -197,4 +197,38 @@ class GeneralJournalEditTest extends TestCase
         );
         $this->assertNotNull($tetap);
     }
+
+    public function test_pencarian_riwayat_menemukan_jurnal_lama_di_luar_100_terbaru(): void
+    {
+        $branch = $this->branch();
+        $user = $this->user('bendahara');
+        $lama = $this->postManual($user, $branch, 'Admin Pinjaman a/n. Sucipto lama', 1966000);
+        $lama->forceFill(['created_at' => now()->subMonth()])->saveQuietly();
+        for ($i = 1; $i <= 101; $i++) {
+            $this->postManual($user, $branch, "Jurnal rutin {$i}", 1000 + $i);
+        }
+
+        // Tanpa pencarian: jurnal lama tergeser dari 100 terbaru.
+        $this->actingAs($user)->get(route('admin.jurnal-umum.create'))
+            ->assertOk()->assertDontSee('Sucipto lama');
+
+        foreach ([['cari' => 'Sucipto'], ['cari' => (string) $lama->id], ['cari' => '#'.$lama->id], ['cari_nominal' => '1.966.000']] as $q) {
+            $this->actingAs($user)->get(route('admin.jurnal-umum.create', $q))
+                ->assertOk()->assertSee('Hasil Pencarian Jurnal Umum')->assertSee('Sucipto lama')->assertDontSee('Jurnal rutin 5<');
+        }
+
+        $this->actingAs($user)->get(route('admin.jurnal-umum.create', ['cari' => 'Sucipto', 'cari_sampai' => now()->subDays(2)->toDateString()]))
+            ->assertOk()->assertSee('Tidak ada jurnal umum yang cocok');
+    }
+
+    public function test_pencarian_menampilkan_jurnal_yang_sudah_dibatalkan(): void
+    {
+        $branch = $this->branch();
+        $user = $this->user('bendahara');
+        $entry = $this->postManual($user, $branch, 'Jurnal dobel uji', 500000);
+        app(JournalEngine::class)->reverse($entry, 'dobel', $user->id);
+
+        $this->actingAs($user)->get(route('admin.jurnal-umum.create', ['cari' => 'dobel uji']))
+            ->assertOk()->assertSee('Jurnal dobel uji')->assertSee('Dibatalkan')->assertSee('#'.$entry->id);
+    }
 }

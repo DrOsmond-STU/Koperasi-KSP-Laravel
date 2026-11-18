@@ -35,6 +35,9 @@ class GeneralJournalController extends Controller
 {
     use GeneratesPrintPdf;
 
+    /** Jumlah maksimum baris hasil pencarian riwayat. */
+    private const BATAS_HASIL_CARI = 300;
+
     public function __construct(
         private readonly JournalEngine $journalEngine,
         private readonly AdjustmentService $adjustmentService,
@@ -50,12 +53,22 @@ class GeneralJournalController extends Controller
         // "tanpa source_type", yang ternyata ikut memuat jurnal Retribusi UPF
         // (puluhan per hari) sehingga jurnal umum tertimbun — lihat
         // queryJurnalManual().
+        // Pencarian riwayat (nomor jurnal, keterangan, tanggal, nominal,
+        // cabang) dijalankan di server atas SELURUH jurnal manual — bukan
+        // hanya 100 terbaru — supaya jurnal lama (mis. diinput sebulan lalu)
+        // tetap bisa ditemukan, dibatalkan atau dicetak.
+        $filter = $this->filterRiwayat($request);
+        $adaFilter = collect($filter)->except('cabang')->filter(fn ($v) => $v !== null && $v !== '')->isNotEmpty()
+            || $filter['cabang'] !== null;
+        $batas = $adaFilter ? self::BATAS_HASIL_CARI : 100;
+
         $recentEntries = $this->queryJurnalManual()
-            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->when(! $adaFilter && $branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($adaFilter, fn ($q) => $this->terapkanFilterRiwayat($q, $filter, $request))
             ->with(['lines.account', 'branch', 'reversals'])
             ->latest()
             ->latest('id')
-            ->limit(100)
+            ->limit($batas)
             ->get();
 
         $user = $request->user();
@@ -65,6 +78,10 @@ class GeneralJournalController extends Controller
             'branches' => $this->availableBranches($request),
             'selectedBranchId' => $branchId,
             'recentEntries' => $recentEntries,
+            'filter' => $filter,
+            'adaFilter' => $adaFilter,
+            'batasTercapai' => $recentEntries->count() >= $batas,
+            'batasHasil' => $batas,
             'idBisaDibatalkan' => $recentEntries
                 ->filter(fn (JournalEntry $entry) => $entry->reversals->isEmpty()
                     && $this->bolehMembatalkan($user, $entry))
@@ -284,6 +301,60 @@ class GeneralJournalController extends Controller
      * Cabang Scope (PRD §6): All Branch boleh pilih cabang mana pun,
      * scope terbatas dikunci ke cabang yang diizinkan.
      */
+    /**
+     * @return array{cari: string, dari: ?string, sampai: ?string, nominal: ?string, cabang: ?int}
+     */
+    private function filterRiwayat(Request $request): array
+    {
+        $tanggal = fn (string $k) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $request->query($k)) ? (string) $request->query($k) : null;
+        $nominal = preg_replace('/[^\d,]/', '', (string) $request->query('cari_nominal', ''));
+        $nominal = $nominal === '' ? null : str_replace(',', '.', $nominal);
+
+        return [
+            'cari' => mb_substr(trim((string) $request->query('cari', '')), 0, 100),
+            'dari' => $tanggal('cari_dari'),
+            'sampai' => $tanggal('cari_sampai'),
+            'nominal' => is_numeric($nominal) ? $nominal : null,
+            'cabang' => $request->integer('cari_cabang') ?: null,
+        ];
+    }
+
+    private function terapkanFilterRiwayat(Builder $query, array $filter, Request $request): Builder
+    {
+        $allowed = $request->user()->allowedBranchIds();
+        if ($filter['cabang'] !== null) {
+            abort_if($allowed !== null && ! in_array($filter['cabang'], $allowed, true), 403, 'Anda tidak memiliki akses ke cabang ini.');
+            $query->where('branch_id', $filter['cabang']);
+        } elseif ($allowed !== null) {
+            $query->whereIn('branch_id', $allowed);
+        }
+
+        if ($filter['cari'] !== '') {
+            $teks = $filter['cari'];
+            $query->where(function ($q) use ($teks) {
+                $q->where('description', 'like', '%'.addcslashes($teks, '%_\\').'%');
+                if (preg_match('/^#?(\d+)$/', $teks, $m)) {
+                    $q->orWhere('id', (int) $m[1]);
+                }
+            });
+        }
+        if ($filter['dari'] !== null) {
+            $query->whereDate('entry_date', '>=', $filter['dari']);
+        }
+        if ($filter['sampai'] !== null) {
+            $query->whereDate('entry_date', '<=', $filter['sampai']);
+        }
+        if ($filter['nominal'] !== null) {
+            $nominal = $filter['nominal'];
+            $query->where(fn ($q) => $q
+                ->whereHas('lines', fn ($l) => $l->where(fn ($w) => $w->where('debit', $nominal)->orWhere('credit', $nominal)))
+                ->orWhereIn('id', fn ($sub) => $sub->select('journal_entry_id')->from('journal_lines')
+                    ->groupBy('journal_entry_id')->havingRaw('SUM(debit) = ?', [$nominal])));
+        }
+
+        return $query;
+    }
+
     private function resolveBranchId(Request $request): ?int
     {
         $allowed = $request->user()->allowedBranchIds();
