@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Anggota;
 use App\Http\Controllers\Concerns\GeneratesPrintPdf;
 use App\Http\Controllers\Controller;
 use App\Models\Loan;
+use App\Services\Loans\SisaPinjamanCalculator;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -15,12 +16,15 @@ class PrintLoanController extends Controller
 {
     use GeneratesPrintPdf;
 
+    public function __construct(private readonly SisaPinjamanCalculator $sisaPinjaman) {}
+
     public function index(Request $request): Response
     {
         $member = $request->user()->member->load('loans.loanProduct');
 
         $pdf = $this->renderPrintPdf('prints.loans.list', [
             'members' => collect([$member]),
+            'sisaPokok' => $this->sisaPinjaman->saatIni($member->loans->pluck('id')),
             'filterDescription' => 'Anggota: '.$member->name,
             'generatedAt' => now(),
         ]);
@@ -35,6 +39,7 @@ class PrintLoanController extends Controller
         $pdf = $this->renderPrintPdf('prints.loans.schedule', [
             'loan' => $loan->load('loanProduct', 'member', 'schedules'),
             'repayments' => $loan->repayments()->latest()->get(),
+            'sisaSetelah' => $this->sisaPinjaman->setelahTiapAngsuran([$loan->id]),
             'generatedAt' => now(),
         ]);
 

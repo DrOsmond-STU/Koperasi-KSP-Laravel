@@ -4,10 +4,12 @@ namespace Tests\Feature\Accounting;
 
 use App\Models\AccountingPeriod;
 use App\Models\Branch;
+use App\Models\CashCategory;
 use App\Models\ChartOfAccount;
 use App\Models\JournalEntry;
 use App\Models\User;
 use App\Models\UserBranchScope;
+use App\Services\Cash\TellerCashService;
 use Database\Seeders\ChartOfAccountsSeeder;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -188,5 +190,140 @@ class GeneralJournalControllerTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('Beban ATK kantor');
+    }
+
+    private function postManual(User $user, Branch $branch, string $description = 'Bayar listrik kantor'): JournalEntry
+    {
+        $this->actingAs($user)->post(route('admin.jurnal-umum.store'), [
+            'entry_date' => now()->toDateString(),
+            'branch_id' => $branch->id,
+            'description' => $description,
+            'lines' => [
+                ['chart_of_account_id' => ChartOfAccount::where('code', '5203')->value('id'), 'position' => 'debit', 'amount' => 250000.75],
+                ['chart_of_account_id' => ChartOfAccount::where('code', '1101')->value('id'), 'position' => 'kredit', 'amount' => 250000.75],
+            ],
+        ]);
+
+        return JournalEntry::query()->where('description', $description)->firstOrFail();
+    }
+
+    public function test_manual_entry_can_be_cancelled_with_reason_and_password(): void
+    {
+        $branch = $this->branch();
+        $user = $this->bendahara($branch);
+        $entry = $this->postManual($user, $branch);
+
+        $this->actingAs($user)->get(route('admin.jurnal-umum.create'))
+            ->assertOk()
+            ->assertSee(route('admin.jurnal-umum.cancel', $entry), false);
+
+        $response = $this->actingAs($user)->post(route('admin.jurnal-umum.cancel', $entry), [
+            'reason' => 'Salah input akun',
+            'password' => 'password',
+        ]);
+
+        $response->assertRedirect(route('admin.jurnal-umum.create'));
+        $response->assertSessionHas('status');
+
+        $reversal = JournalEntry::query()->where('reversal_of_entry_id', $entry->id)->firstOrFail();
+        $this->assertStringContainsString('Salah input akun', $reversal->description);
+        $this->assertEquals((float) $entry->lines->sum('debit'), (float) $reversal->lines->sum('credit'));
+        $this->assertEquals((float) $entry->lines->sum('credit'), (float) $reversal->lines->sum('debit'));
+
+        // Entri asal tidak diubah (append-only) dan halaman menampilkannya sebagai Dibatalkan.
+        $this->assertCount(2, $entry->fresh()->lines);
+        $this->actingAs($user)->get(route('admin.jurnal-umum.create'))
+            ->assertSee('Dibatalkan')
+            ->assertDontSee(route('admin.jurnal-umum.cancel', $entry), false);
+    }
+
+    public function test_wrong_password_does_not_cancel(): void
+    {
+        $branch = $this->branch();
+        $user = $this->bendahara($branch);
+        $entry = $this->postManual($user, $branch);
+
+        $this->actingAs($user)->post(route('admin.jurnal-umum.cancel', $entry), [
+            'reason' => 'Salah input',
+            'password' => 'bukan-password',
+        ])->assertSessionHas('error');
+
+        $this->assertDatabaseMissing('journal_entries', ['reversal_of_entry_id' => $entry->id]);
+    }
+
+    public function test_missing_reason_is_rejected(): void
+    {
+        $branch = $this->branch();
+        $user = $this->bendahara($branch);
+        $entry = $this->postManual($user, $branch);
+
+        $this->actingAs($user)->post(route('admin.jurnal-umum.cancel', $entry), [
+            'reason' => '',
+            'password' => 'password',
+        ])->assertSessionHas('error', 'Alasan pembatalan wajib diisi.');
+
+        $this->assertDatabaseMissing('journal_entries', ['reversal_of_entry_id' => $entry->id]);
+    }
+
+    public function test_entry_cannot_be_cancelled_twice(): void
+    {
+        $branch = $this->branch();
+        $user = $this->bendahara($branch);
+        $entry = $this->postManual($user, $branch);
+
+        $payload = ['reason' => 'Salah input', 'password' => 'password'];
+        $this->actingAs($user)->post(route('admin.jurnal-umum.cancel', $entry), $payload)->assertSessionHas('status');
+        $this->actingAs($user)->post(route('admin.jurnal-umum.cancel', $entry), $payload)->assertSessionHas('error');
+
+        $this->assertSame(1, JournalEntry::query()->where('reversal_of_entry_id', $entry->id)->count());
+    }
+
+    public function test_teller_cash_journal_cannot_be_cancelled_from_general_journal(): void
+    {
+        $branch = $this->branch();
+        $user = $this->bendahara($branch);
+        $category = CashCategory::factory()->create(['coa_account_id' => ChartOfAccount::where('code', '4101')->value('id') ?? ChartOfAccount::factory()]);
+        $cash = ChartOfAccount::where('code', '1101')->firstOrFail();
+
+        $tellerTrx = app(TellerCashService::class)->record($category, 75000, $branch->id, $user->id, 'Setoran kas lain-lain', $cash);
+        $entry = JournalEntry::query()->findOrFail($tellerTrx->journal_entry_id);
+        $this->assertNull($entry->source_type);
+
+        // Jurnal Kas Teller tidak tampil di riwayat Jurnal Umum sama sekali.
+        $this->actingAs($user)->get(route('admin.jurnal-umum.create'))
+            ->assertDontSee('Setoran kas lain-lain')
+            ->assertDontSee(route('admin.jurnal-umum.cancel', $entry), false);
+
+        $this->actingAs($user)->post(route('admin.jurnal-umum.cancel', $entry), [
+            'reason' => 'Coba batalkan jurnal kas teller',
+            'password' => 'password',
+        ])->assertSessionHas('error');
+
+        $this->assertDatabaseMissing('journal_entries', ['reversal_of_entry_id' => $entry->id]);
+    }
+
+    public function test_creator_without_adjust_permission_can_only_cancel_own_entry(): void
+    {
+        $branch = $this->branch();
+        $owner = User::factory()->create(['two_factor_confirmed_at' => now()]);
+        $owner->givePermissionTo('jurnal.create');
+        UserBranchScope::query()->create(['user_id' => $owner->id, 'scope_type' => 'all']);
+        $other = User::factory()->create(['two_factor_confirmed_at' => now()]);
+        $other->givePermissionTo('jurnal.create');
+        UserBranchScope::query()->create(['user_id' => $other->id, 'scope_type' => 'all']);
+
+        $entry = $this->postManual($owner, $branch, 'Jurnal milik pembuat');
+
+        $this->actingAs($other)->post(route('admin.jurnal-umum.cancel', $entry), [
+            'reason' => 'Bukan milik saya',
+            'password' => 'password',
+        ])->assertForbidden();
+
+        $this->actingAs($owner)->post(route('admin.jurnal-umum.cancel', $entry), [
+            'reason' => 'Salah input',
+            'password' => 'password',
+        ])->assertSessionHas('status');
+
+        $this->assertSame(1, JournalEntry::query()->where('reversal_of_entry_id', $entry->id)->count());
     }
 }

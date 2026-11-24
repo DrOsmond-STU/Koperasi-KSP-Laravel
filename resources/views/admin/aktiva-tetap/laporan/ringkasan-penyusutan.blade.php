@@ -31,7 +31,7 @@
             @forelse ($rows as $row)
                 <tr>
                     <td>{{ $row['category_name'] }}</td>
-                    <td>Rp {{ number_format((float) $row['total_depreciation'], 0, ',', '.') }}</td>
+                    <td>Rp {{ number_format((float) $row['total_depreciation'], 2, ',', '.') }}</td>
                 </tr>
             @empty
                 <tr><td colspan="2">Tidak ada penyusutan pada periode ini.</td></tr>

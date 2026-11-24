@@ -34,10 +34,10 @@
                     <td>{{ $disposal->disposal_date->translatedFormat('d M Y') }}</td>
                     <td>{{ $disposal->fixedAsset->name }}</td>
                     <td>{{ ucfirst($disposal->disposal_type) }}</td>
-                    <td>Rp {{ number_format((float) $disposal->sale_amount, 0, ',', '.') }}</td>
-                    <td>Rp {{ number_format((float) $disposal->book_value_at_disposal, 0, ',', '.') }}</td>
+                    <td>Rp {{ number_format((float) $disposal->sale_amount, 2, ',', '.') }}</td>
+                    <td>Rp {{ number_format((float) $disposal->book_value_at_disposal, 2, ',', '.') }}</td>
                     <td class="{{ $disposal->isGain() ? 'gain' : 'loss' }}">
-                        Rp {{ number_format(abs((float) $disposal->gain_loss_amount), 0, ',', '.') }} {{ $disposal->isGain() ? '(Laba)' : '(Rugi)' }}
+                        Rp {{ number_format(abs((float) $disposal->gain_loss_amount), 2, ',', '.') }} {{ $disposal->isGain() ? '(Laba)' : '(Rugi)' }}
                     </td>
                 </tr>
             @empty

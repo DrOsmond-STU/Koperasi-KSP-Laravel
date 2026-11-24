@@ -164,4 +164,80 @@ class LoanRepaymentServiceTest extends TestCase
 
         app(LoanRepaymentService::class)->recordPayment($loan, 100000, $payer->id);
     }
+
+    /**
+     * Audit 11 Nov 2026: klik ganda tombol Konfirmasi di Catat Angsuran
+     * pernah menyimpan dua angsuran di detik yang sama. Kiriman kedua
+     * dengan kunci idempotensi yang sama harus mengembalikan angsuran
+     * pertama, tanpa jurnal / alokasi jadwal kedua.
+     */
+    public function test_manual_payment_with_the_same_idempotency_key_is_recorded_once(): void
+    {
+        $loan = $this->disbursedLoanWithThreeInstallments();
+        $payer = User::factory()->create();
+        $service = app(LoanRepaymentService::class);
+
+        $first = $service->recordManualPayment($loan, 1000000, 100000, 0, $payer->id, null, 'kunci-angsuran-1');
+        $second = $service->recordManualPayment($loan, 1000000, 100000, 0, $payer->id, null, 'kunci-angsuran-1');
+
+        $this->assertSame($first->id, $second->id);
+        $this->assertDatabaseCount('loan_repayments', 1);
+        $this->assertDatabaseCount('journal_entries', 1);
+        $this->assertDatabaseHas('loan_schedules', ['loan_id' => $loan->id, 'installment_number' => 1, 'paid_amount' => 1100000, 'status' => 'lunas']);
+        $this->assertDatabaseHas('loan_schedules', ['loan_id' => $loan->id, 'installment_number' => 2, 'paid_amount' => 0]);
+    }
+
+    public function test_replayed_payment_that_settled_the_loan_returns_the_original_instead_of_an_error(): void
+    {
+        $loan = $this->disbursedLoanWithThreeInstallments();
+        $payer = User::factory()->create();
+        $service = app(LoanRepaymentService::class);
+
+        $first = $service->recordManualPayment($loan, 3000000, 300000, 0, $payer->id, null, 'kunci-pelunasan');
+        $stale = Loan::query()->findOrFail($loan->id);
+        $stale->status = 'dicairkan';
+        $second = $service->recordManualPayment($stale, 3000000, 300000, 0, $payer->id, null, 'kunci-pelunasan');
+
+        $this->assertSame($first->id, $second->id);
+        $this->assertDatabaseCount('loan_repayments', 1);
+        $this->assertSame('lunas', $loan->fresh()->status);
+    }
+
+    public function test_manual_payment_rechecks_the_loan_status_from_the_database(): void
+    {
+        $loan = $this->disbursedLoanWithThreeInstallments();
+        $stale = Loan::query()->findOrFail($loan->id);
+        $payer = User::factory()->create();
+        $service = app(LoanRepaymentService::class);
+
+        $service->recordManualPayment($loan, 3000000, 300000, 0, $payer->id, null, 'kunci-a');
+
+        $this->expectExceptionMessage('tidak dapat menerima pembayaran angsuran');
+
+        try {
+            $service->recordManualPayment($stale, 1000000, 100000, 0, $payer->id, null, 'kunci-b');
+        } finally {
+            $this->assertDatabaseCount('loan_repayments', 1);
+        }
+    }
+
+    public function test_cancelling_the_same_repayment_twice_is_rejected_with_a_message(): void
+    {
+        $loan = $this->disbursedLoanWithThreeInstallments();
+        $payer = User::factory()->create();
+        $service = app(LoanRepaymentService::class);
+
+        $repayment = $service->recordManualPayment($loan, 1000000, 100000, 0, $payer->id, null, 'kunci-batal');
+        $stale = $repayment->fresh();
+        $service->reverseRepayment($repayment, 'salah catat', $payer->id);
+
+        $this->expectExceptionMessage('sudah dibatalkan sebelumnya');
+
+        try {
+            $service->reverseRepayment($stale, 'salah catat', $payer->id);
+        } finally {
+            $this->assertDatabaseCount('journal_entries', 2);
+            $this->assertDatabaseHas('loan_schedules', ['loan_id' => $loan->id, 'installment_number' => 1, 'paid_amount' => 0]);
+        }
+    }
 }

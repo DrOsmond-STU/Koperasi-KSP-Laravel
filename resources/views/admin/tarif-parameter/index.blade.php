@@ -13,6 +13,9 @@
         .data-table th, .data-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
         .status-msg { color: var(--ok); font-size: 13px; margin-bottom: 14px; }
         .error-text { color: var(--brick); font-size: 12px; margin-bottom: 14px; }
+        .btn-edit-toggle { background: transparent; border: none; color: var(--pine); font-size: 11px; font-weight: 600; cursor: pointer; text-decoration: underline; padding: 0; }
+        .edit-rate-row .field-row { margin: 0; }
+        .edit-rate-row .field-row > div { width: auto; }
     </style>
 
     <h2>Tarif & Parameter</h2>
@@ -78,10 +81,31 @@
             </form>
 
             <table class="data-table">
-                <thead><tr><th>Berlaku Sejak</th><th>Tarif (%)</th></tr></thead>
+                <thead><tr><th>Berlaku Sejak</th><th>Tarif (%)</th><th></th></tr></thead>
                 <tbody>
                     @foreach ($product->rateHistory as $rate)
-                        <tr><td>{{ $rate->effective_from->translatedFormat('d M Y') }}</td><td>{{ $rate->rate_percentage }}</td></tr>
+                        <tr>
+                            <td>{{ $rate->effective_from->translatedFormat('d M Y') }}</td>
+                            <td>{{ $rate->rate_percentage }}</td>
+                            <td><button type="button" class="btn-edit-toggle" data-toggle-edit="savings-rate-{{ $rate->id }}">Ubah</button></td>
+                        </tr>
+                        <tr class="edit-rate-row" id="edit-row-savings-rate-{{ $rate->id }}" style="display:none;">
+                            <td colspan="3">
+                                <form method="POST" action="{{ route('admin.tarif-parameter.savings.rate.update', [$product, $rate]) }}" class="field-row">
+                                    @csrf
+                                    @method('PUT')
+                                    <div>
+                                        <label>Tarif (%)</label>
+                                        <input type="number" step="0.001" name="rate_percentage" value="{{ $rate->rate_percentage }}" required>
+                                    </div>
+                                    <div>
+                                        <label>Berlaku Sejak</label>
+                                        <input type="date" name="effective_from" value="{{ $rate->effective_from->toDateString() }}" required>
+                                    </div>
+                                    <button type="submit" class="btn-primary">Simpan</button>
+                                </form>
+                            </td>
+                        </tr>
                     @endforeach
                 </tbody>
             </table>
@@ -137,13 +161,43 @@
             </form>
 
             <table class="data-table">
-                <thead><tr><th>Berlaku Sejak</th><th>Tarif (%)</th></tr></thead>
+                <thead><tr><th>Berlaku Sejak</th><th>Tarif (%)</th><th></th></tr></thead>
                 <tbody>
                     @foreach ($product->rateHistory as $rate)
-                        <tr><td>{{ $rate->effective_from->translatedFormat('d M Y') }}</td><td>{{ $rate->rate_percentage }}</td></tr>
+                        <tr>
+                            <td>{{ $rate->effective_from->translatedFormat('d M Y') }}</td>
+                            <td>{{ $rate->rate_percentage }}</td>
+                            <td><button type="button" class="btn-edit-toggle" data-toggle-edit="loan-rate-{{ $rate->id }}">Ubah</button></td>
+                        </tr>
+                        <tr class="edit-rate-row" id="edit-row-loan-rate-{{ $rate->id }}" style="display:none;">
+                            <td colspan="3">
+                                <form method="POST" action="{{ route('admin.tarif-parameter.loan.rate.update', [$product, $rate]) }}" class="field-row">
+                                    @csrf
+                                    @method('PUT')
+                                    <div>
+                                        <label>Tarif (%)</label>
+                                        <input type="number" step="0.001" name="rate_percentage" value="{{ $rate->rate_percentage }}" required>
+                                    </div>
+                                    <div>
+                                        <label>Berlaku Sejak</label>
+                                        <input type="date" name="effective_from" value="{{ $rate->effective_from->toDateString() }}" required>
+                                    </div>
+                                    <button type="submit" class="btn-primary">Simpan</button>
+                                </form>
+                            </td>
+                        </tr>
                     @endforeach
                 </tbody>
             </table>
         </div>
     @endforeach
+
+    <script>
+        document.querySelectorAll('[data-toggle-edit]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var row = document.getElementById('edit-row-' + btn.dataset.toggleEdit);
+                row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+            });
+        });
+    </script>
 @endsection

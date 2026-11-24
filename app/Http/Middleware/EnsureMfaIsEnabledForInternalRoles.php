@@ -23,6 +23,15 @@ class EnsureMfaIsEnabledForInternalRoles
      */
     public function handle(Request $request, Closure $next): Response
     {
+        // Kewajiban MFA bisa dimatikan lewat konfigurasi. Alasannya panjang dan
+        // ditulis di config/koperasi.php: halaman tantangan 2FA tidak pernah
+        // dibangun, sehingga menegakkan kewajiban ini justru mengunci pengguna
+        // dari sistem tanpa jalan keluar. Middleware sengaja dibiarkan terpasang
+        // di rute supaya bisa dihidupkan lagi dengan satu setelan.
+        if (! config('koperasi.wajib_mfa', true)) {
+            return $next($request);
+        }
+
         $user = $request->user();
 
         if ($user && $user->requiresMfa() && ! $user->two_factor_confirmed_at) {
