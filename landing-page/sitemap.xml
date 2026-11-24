@@ -9,7 +9,7 @@
       <image:loc>https://aplikasikoperasisimpanpinjam.semestateknologiutama.com/og-image.png</image:loc>
     </image:image>
     <image:image>
-      <image:loc>https://aplikasikoperasisimpanpinjam.semestateknologiutama.com/img/dashboard.webp</image:loc>
+      <image:loc>https://aplikasikoperasisimpanpinjam.semestateknologiutama.com/img/dasbor.webp</image:loc>
     </image:image>
     <image:image>
       <image:loc>https://aplikasikoperasisimpanpinjam.semestateknologiutama.com/img/portal.webp</image:loc>
@@ -24,16 +24,25 @@
       <image:loc>https://aplikasikoperasisimpanpinjam.semestateknologiutama.com/img/pinjaman.webp</image:loc>
     </image:image>
     <image:image>
-      <image:loc>https://aplikasikoperasisimpanpinjam.semestateknologiutama.com/img/teller.webp</image:loc>
+      <image:loc>https://aplikasikoperasisimpanpinjam.semestateknologiutama.com/img/simpanan.webp</image:loc>
     </image:image>
     <image:image>
-      <image:loc>https://aplikasikoperasisimpanpinjam.semestateknologiutama.com/img/laporan-keuangan.webp</image:loc>
+      <image:loc>https://aplikasikoperasisimpanpinjam.semestateknologiutama.com/img/laporan.webp</image:loc>
+    </image:image>
+    <image:image>
+      <image:loc>https://aplikasikoperasisimpanpinjam.semestateknologiutama.com/img/persediaan.webp</image:loc>
+    </image:image>
+    <image:image>
+      <image:loc>https://aplikasikoperasisimpanpinjam.semestateknologiutama.com/img/bi.webp</image:loc>
     </image:image>
     <image:image>
       <image:loc>https://aplikasikoperasisimpanpinjam.semestateknologiutama.com/img/rat.webp</image:loc>
     </image:image>
     <image:image>
-      <image:loc>https://aplikasikoperasisimpanpinjam.semestateknologiutama.com/img/anggota.webp</image:loc>
+      <image:loc>https://aplikasikoperasisimpanpinjam.semestateknologiutama.com/img/approval.webp</image:loc>
+    </image:image>
+    <image:image>
+      <image:loc>https://aplikasikoperasisimpanpinjam.semestateknologiutama.com/img/risiko.webp</image:loc>
     </image:image>
   </url>
 </urlset>
