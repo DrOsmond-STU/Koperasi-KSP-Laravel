@@ -106,6 +106,7 @@ class GeneralLedgerService
 
             $result->push([
                 'date' => $line->journalEntry->entry_date->toDateString(),
+                'entry_id' => $line->journalEntry->id,
                 'description' => $line->journalEntry->description,
                 'debit' => (string) $line->debit,
                 'credit' => (string) $line->credit,

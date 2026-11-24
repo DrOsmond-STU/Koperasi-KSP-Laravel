@@ -199,6 +199,10 @@ Route::middleware(['auth', 'active.user', 'mfa.required'])->group(function () {
 
     Route::get('/admin/jurnal-buku-besar', [GeneralLedgerController::class, 'index'])
         ->name('admin.jurnal-buku-besar.index');
+    Route::get('/admin/jurnal-buku-besar/export-excel', [GeneralLedgerController::class, 'exportExcel'])
+        ->name('admin.jurnal-buku-besar.excel');
+    Route::get('/admin/jurnal-buku-besar/export-pdf', [GeneralLedgerController::class, 'exportPdf'])
+        ->name('admin.jurnal-buku-besar.pdf');
 
     Route::get('/admin/jurnal-transaksi', [JournalReportController::class, 'index'])
         ->name('admin.jurnal-transaksi.index');
