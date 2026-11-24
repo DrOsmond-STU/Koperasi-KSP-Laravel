@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://aplikasikoperasisimpanpinjam.semestateknologiutama.com/sitemap.xml
